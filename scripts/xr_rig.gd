@@ -8,6 +8,8 @@ var tank: Node3D = null    # PlayerTank or PlayerPlane (same input API)
 var camera: XRCamera3D
 var hand_l: XRHand
 var hand_r: XRHand
+var hand_l_mesh: XRNode3D
+var hand_r_mesh: XRNode3D
 var _calibrated := true
 var _calib_t := 0.0
 var _fp_pos := Vector3.ZERO   # calibrated first-person eye position
@@ -199,6 +201,14 @@ func _ready() -> void:
 	# read the aim pose in origin space, not compounded with the grip pose.
 	hand_l.aim = _make_aim("left_hand")
 	hand_r.aim = _make_aim("right_hand")
+	# Bare-hand visuals: Meta's own runtime-supplied skinned hand mesh
+	# (XR_FB_hand_tracking_mesh via OpenXRFbHandTrackingMesh — zero bundled
+	# assets, same "fetch it live from the OS" trick as the controller model),
+	# posed by the stock XRHandModifier3D from the same hand tracker. Each root
+	# auto-hides via show_when_tracked whenever this hand isn't optically
+	# tracked, so it and the controller model never show at once.
+	hand_l_mesh = _make_hand_mesh("/user/hand_tracker/left", OpenXRFbHandTrackingMesh.HAND_LEFT)
+	hand_r_mesh = _make_hand_mesh("/user/hand_tracker/right", OpenXRFbHandTrackingMesh.HAND_RIGHT)
 	var wind := AudioStreamPlayer.new()
 	wind.stream = Sfx.streams.get("wind_loop")
 	wind.volume_db = -22.0
@@ -227,6 +237,28 @@ func _make_aim(tracker_name: String) -> XRController3D:
 	c.pose = "aim_pose"
 	add_child(c)
 	return c
+
+# hand_tracker_path: "/user/hand_tracker/left" or "/user/hand_tracker/right".
+# hand_side: OpenXRFbHandTrackingMesh.HAND_LEFT or HAND_RIGHT.
+func _make_hand_mesh(hand_tracker_path: String, hand_side: int) -> XRNode3D:
+	var root := XRNode3D.new()
+	root.tracker = hand_tracker_path
+	root.show_when_tracked = true
+	var mesh := OpenXRFbHandTrackingMesh.new()
+	mesh.hand = hand_side
+	mesh.openxr_fb_hand_tracking_mesh_ready.connect(func() -> void:
+		var mi := mesh.get_mesh_instance()
+		if mi:
+			mi.layers = 2)
+	mesh.openxr_fb_hand_tracking_mesh_unavailable.connect(func() -> void:
+		push_warning("[xr] hand tracking mesh unavailable for " + hand_tracker_path \
+			+ " — runtime/permission may not support XR_FB_hand_tracking_mesh"))
+	root.add_child(mesh)
+	var modifier := XRHandModifier3D.new()
+	modifier.hand_tracker = hand_tracker_path
+	mesh.add_child(modifier)
+	add_child(root)
+	return root
 
 func to_menu_anchor(parent: Node3D) -> void:
 	tank = null
