@@ -244,6 +244,7 @@ func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank:
 	my_tank.global_position.y = t.height(my_tank.global_position.x, my_tank.global_position.z) + 0.04
 	remote_tank = RemoteTank.new()
 	world.add_child(remote_tank)
+	Sfx.vo("robot_versus_2", 3, 20.0)  # "Round begin. Fight!"
 	remote_tank.global_position = Vector3(-s.x, t.height(-s.x, -s.y) + 0.04, -s.y) if not client \
 		else Vector3(s.x, t.height(s.x, s.y) + 0.04, s.y)
 	Game.game_over.connect(_on_versus_death)

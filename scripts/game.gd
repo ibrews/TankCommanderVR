@@ -19,7 +19,12 @@ var level_id := "outdoor"
 var difficulty := 1        # 0 easy, 1 medium, 2 hard
 var mutator := ""          # "", "lowg", "underwater", "balloon", "paintball"
 var vehicle := "tank"      # "tank", "plane", "biplane", "heli", "runner"
-var time_night := false
+var time_of_day := 0       # 0 day, 1 golden hour, 2 night
+var time_night: bool:
+	get:
+		return time_of_day == 2
+	set(v):
+		time_of_day = 2 if v else 0
 var player_lights := false
 var noise_t := 0.0         # seconds since the player made big noise (reveals you)
 var state: int = GState.MENU

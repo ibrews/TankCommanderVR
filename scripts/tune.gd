@@ -56,6 +56,10 @@ const DEFAULTS := {
 	# --- VO
 	"vo_idle_period": 45.0,
 	"vo_cooldown_scale": 1.0,     # >1 = dad talks less
+	# --- pretty
+	"glow_enabled": 1.0,
+	"glow_intensity": 0.55,
+	"foveation_level": 3.0,   # 0-3; lower = sharper periphery, more GPU
 }
 
 var _values := {}
@@ -64,6 +68,10 @@ func _ready() -> void:
 	_values = DEFAULTS.duplicate()
 	var cfg := ConfigFile.new()
 	var path := "user://tuning.cfg"
+	# adb-pushable external override wins (Android playtesting)
+	var ext := "/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg"
+	if FileAccess.file_exists(ext):
+		path = ext
 	if cfg.load(path) == OK:
 		var overridden := 0
 		for key in cfg.get_section_keys("tuning") if cfg.has_section("tuning") else []:

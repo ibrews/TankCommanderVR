@@ -12,8 +12,11 @@ var world: Node3D         # container for the current level
 var hangar: Node3D
 var menu: MainMenu
 var sun: DirectionalLight3D
+var fill: DirectionalLight3D
 var env: Environment
 var _sky_mat: ProceduralSkyMaterial
+var _demo := false
+var _demo_t := 0.0
 
 var _perf_t := 0.0
 var _smoke_frames := -1
@@ -23,6 +26,7 @@ func _ready() -> void:
 	_setup_environment()
 	_setup_rig()
 	to_menu()
+	_check_autostart()
 	var args := OS.get_cmdline_user_args()
 	if "--smoke" in args:
 		_smoke_frames = 200
@@ -86,6 +90,21 @@ func _setup_environment() -> void:
 	sun.shadow_enabled = false
 	sun.light_cull_mask = 0xFFFFF & ~2
 	add_child(sun)
+	# fake GI: a dim upward "bounce" fill from the opposite azimuth
+	fill = DirectionalLight3D.new()
+	fill.rotation = Vector3(deg_to_rad(-12), deg_to_rad(48 + 180), 0)
+	fill.light_color = Color(0.85, 0.75, 0.6)
+	fill.light_energy = 0.22
+	fill.shadow_enabled = false
+	fill.light_cull_mask = 0xFFFFF & ~2
+	add_child(fill)
+	# glow: mobile renderer supports it in 4.x — emissives (lava, tracers,
+	# gauges, muzzle flashes) bloom. Tunable off via tuning.cfg.
+	env.glow_enabled = Tune.v("glow_enabled") > 0.5
+	env.glow_intensity = Tune.v("glow_intensity")
+	env.glow_bloom = 0.06
+	env.glow_hdr_threshold = 1.08
+	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 
 func _apply_ambience(menu_mode: bool) -> void:
 	if menu_mode:
@@ -104,7 +123,24 @@ func _apply_ambience(menu_mode: bool) -> void:
 		env.fog_density = 0.0005
 		_sky_mat.sky_top_color = Color(0.28, 0.42, 0.66)
 		_sky_mat.sky_horizon_color = Color(0.66, 0.60, 0.50)
-		if Game.time_night:
+		sun.rotation = Vector3(deg_to_rad(-38), deg_to_rad(48), 0)
+		if fill:
+			fill.light_energy = 0.22
+			fill.light_color = Color(0.85, 0.75, 0.6)
+		if Game.time_of_day == 1:
+			# GOLDEN HOUR: low warm sun, long light, pink horizon
+			sun.rotation = Vector3(deg_to_rad(-9), deg_to_rad(96), 0)
+			sun.light_energy = 1.15
+			sun.light_color = Color(1.0, 0.62, 0.32)
+			env.ambient_light_energy = 0.62
+			env.fog_light_color = Color(0.9, 0.6, 0.42)
+			env.fog_density = 0.0009
+			_sky_mat.sky_top_color = Color(0.30, 0.32, 0.55)
+			_sky_mat.sky_horizon_color = Color(0.98, 0.55, 0.32)
+			if fill:
+				fill.light_energy = 0.3
+				fill.light_color = Color(0.55, 0.45, 0.65)  # cool sky bounce
+		elif Game.time_night:
 			# moonlight: dark enough that headlights matter
 			sun.light_energy = 0.09
 			sun.light_color = Color(0.65, 0.72, 1.0)
@@ -112,6 +148,9 @@ func _apply_ambience(menu_mode: bool) -> void:
 			env.fog_light_color = Color(0.05, 0.06, 0.10)
 			_sky_mat.sky_top_color = Color(0.01, 0.015, 0.05)
 			_sky_mat.sky_horizon_color = Color(0.04, 0.05, 0.10)
+			if fill:
+				fill.light_energy = 0.05
+				fill.light_color = Color(0.3, 0.4, 0.7)
 		if Game.mutator == "underwater":
 			env.fog_light_color = Color(0.15, 0.4, 0.45)
 			env.fog_density = 0.012
@@ -139,6 +178,9 @@ func _setup_rig() -> void:
 	if xr and xr.is_initialized():
 		get_viewport().use_xr = true
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
+		if "foveation_level" in xr:
+			xr.foveation_level = int(Tune.v("foveation_level"))
+			print("[main] foveation_level=", xr.foveation_level)
 		rig = XRRig.new()
 		print("[main] XR active")
 	else:
@@ -314,8 +356,47 @@ func _clear_world() -> void:
 	player = null
 	plane = null
 
+# ---------------------------------------------------------------- autostart (device profiling)
+# adb push a config to the app's files dir and the game boots straight into
+# a self-playing scene — no one needs to wear the headset:
+#   [auto]
+#   level="beach"  vehicle="tank"  mutator=""  time=1  demo=true  delay=6.0
+const EXT_FILES := "/sdcard/Android/data/com.agilelens.tankcommander/files"
+
+func _check_autostart() -> void:
+	var cfg := ConfigFile.new()
+	# user:// is internal on Android; also check the adb-pushable external dir
+	if cfg.load("user://autostart.cfg") != OK and cfg.load(EXT_FILES + "/autostart.cfg") != OK:
+		return
+	var level: String = cfg.get_value("auto", "level", "beach")
+	var delay: float = cfg.get_value("auto", "delay", 6.0)
+	print("[auto] autostart: ", level, " in ", delay, "s")
+	get_tree().create_timer(delay).timeout.connect(func():
+		Game.mode = Game.Mode.SOLO
+		Game.level_id = level
+		Game.difficulty = int(cfg.get_value("auto", "difficulty", 1))
+		Game.mutator = str(cfg.get_value("auto", "mutator", ""))
+		Game.vehicle = str(cfg.get_value("auto", "vehicle", "tank"))
+		Game.time_of_day = int(cfg.get_value("auto", "time", 0))
+		_demo = bool(cfg.get_value("auto", "demo", true))
+		start_game())
+
+func _demo_tick(delta: float) -> void:
+	if not _demo or Game.state != Game.GState.PLAYING or player == null:
+		return
+	_demo_t += delta
+	if _demo_t < 4.0:
+		player.quick_start()
+	player.set_stick_drive(Vector2(0.3 * sin(_demo_t * 0.13), 0.85))
+	player.set_stick_turret(Vector2(0.5 * sin(_demo_t * 0.3), 0.1 * sin(_demo_t * 0.17)))
+	if fmod(_demo_t, 7.0) < delta:
+		player.stick_fire()
+	if fmod(_demo_t, 19.0) < delta:
+		player.stick_rockets()
+
 # ---------------------------------------------------------------- perf + test modes
 func _process(delta: float) -> void:
+	_demo_tick(delta)
 	# lava is not a swimming pool
 	if Game.state == Game.GState.PLAYING and Levels.current.has("lava_y"):
 		var veh: Node3D = plane if plane else (player if player else null)
@@ -366,6 +447,8 @@ func _run_shot_sequence() -> void:
 		var cam: Camera3D = rig.get("camera")
 		_shot(cam, "00_menu")
 		if menu:
+			if OS.get_environment("SHOT_TIME") != "":
+				Game.time_of_day = int(OS.get_environment("SHOT_TIME"))
 			menu.start_requested.emit(Game.Mode.SOLO,
 				OS.get_environment("SHOT_LEVEL") if OS.get_environment("SHOT_LEVEL") != "" else "outdoor",
 				1, OS.get_environment("SHOT_MUT"))

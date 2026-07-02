@@ -39,6 +39,12 @@ radio_x_6
 radio_x_7
 radio_x_8
 radio_x_9
+robot_lowammo
+robot_online
+robot_repair
+robot_versus_1
+robot_versus_2
+robot_victory
 vo_ammo_low_2
 vo_ammo_low_3
 vo_ammo_low_4

@@ -32,6 +32,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-110, -120), Vector2(110, -120), Vector2(0, -170)],
 		"tint": Color(0.96, 0.96, 1.0),
 		"sun_energy": 1.15,
+		"calm_track": "music_city",
 	},
 	"town": {
 		"title": "TOWN",
@@ -45,6 +46,7 @@ const CONFIGS := {
 		"mortars": [Vector2(140, -140)],
 		"tint": Color(1.0, 1.0, 0.94),
 		"sun_energy": 1.3,
+		"calm_track": "music_town",
 	},
 	"mudpit": {
 		"title": "MUDPIT",
@@ -59,6 +61,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-130, -60), Vector2(130, -60)],
 		"tint": Color(0.85, 0.78, 0.7),
 		"sun_energy": 1.0,
+		"calm_track": "music_mudpit",
 	},
 	"gym": {
 		"title": "GYM",
@@ -75,6 +78,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-60, -70), Vector2(60, -70)],
 		"tint": Color(1, 1, 1),
 		"sun_energy": 1.1,
+		"calm_track": "music_gym",
 	},
 	"beach": {
 		"title": "BEACH",
@@ -105,7 +109,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-70, -70)],
 		"tint": Color(1.0, 1.02, 0.95),
 		"sun_energy": 1.35,
-		"calm_track": "music_beach",
+		"calm_track": "music_island",
 		"ambient_loop": "waves_loop",
 	},
 	"volcano": {
@@ -123,6 +127,7 @@ const CONFIGS := {
 		"tint": Color(0.85, 0.72, 0.68),
 		"sun_energy": 0.85,
 		"ambient_loop": "lava_loop",
+		"calm_track": "music_volcano",
 	},
 	"babyroom": {
 		"title": "BABY ROOM",
@@ -154,6 +159,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-45, -75), Vector2(45, -75)],  # inside the walls
 		"tint": Color(1.0, 0.97, 0.9),
 		"sun_energy": 1.2,
+		"calm_track": "music_castle",
 	},
 }
 

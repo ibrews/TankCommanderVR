@@ -19,7 +19,8 @@ var sel_level := "outdoor"
 var sel_diff := 1
 var sel_mut := ""
 var sel_vehicle := 0
-var sel_night := false
+var sel_time := 0   # 0 day, 1 golden hour, 2 night
+const TIMES := ["TIME: DAY", "TIME: GOLDEN HOUR", "TIME: NIGHT OPS"]
 var page := 0   # 0 main, 1..4 how-to
 
 const MUTATORS := [["", "NORMAL"], ["lowg", "LOW-G"], ["underwater", "WATER"], ["balloon", "BALLOON"], ["paintball", "PAINT"]]
@@ -127,7 +128,7 @@ func _show_main() -> void:
 	_text("DIFFICULTY", Vector2(-0.94, 0.02), 15, Color(0.7, 0.75, 0.7))
 	for i in 3:
 		_button("diff:%d" % i, ["EASY", "MEDIUM", "HARD"][i], Vector2(-0.80 + i * 0.42, -0.05), Vector2(0.38, 0.12), 14)
-	_button("timecycle", "NIGHT OPS: ON" if sel_night else "NIGHT OPS: OFF", Vector2(0.72, -0.05), Vector2(0.62, 0.12), 13)
+	_button("timecycle", TIMES[sel_time], Vector2(0.72, -0.05), Vector2(0.62, 0.12), 12)
 	_text("SILLY MODE", Vector2(-0.94, -0.17), 15, Color(0.7, 0.75, 0.7))
 	for i in MUTATORS.size():
 		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.12), 14)
@@ -217,7 +218,7 @@ func _press(id: String) -> void:
 			_show_main()
 		"start":
 			Game.vehicle = VEHICLES[sel_vehicle][0]
-			Game.time_night = sel_night
+			Game.time_of_day = sel_time
 			start_requested.emit(sel_mode, sel_level, sel_diff, sel_mut)
 		"vehcycle":
 			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()
@@ -228,8 +229,8 @@ func _press(id: String) -> void:
 				"plane": Sfx.vo("vo_plane", 2, 30.0)
 			_show_main()
 		"timecycle":
-			sel_night = not sel_night
-			if sel_night:
+			sel_time = (sel_time + 1) % 3
+			if sel_time == 2:
 				Sfx.vo("vo_night", 2, 30.0)
 			_show_main()
 		_:

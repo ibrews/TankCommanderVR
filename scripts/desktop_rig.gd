@@ -31,6 +31,7 @@ func to_menu_anchor(parent: Node3D) -> void:
 	position = Vector3(0, 1.5, 0.4)
 	camera.rotation = Vector3.ZERO
 	camera.top_level = false
+	camera.current = true
 
 func attach_to_vehicle(v: Node3D) -> void:
 	tank = v
@@ -42,6 +43,7 @@ func attach_to_vehicle(v: Node3D) -> void:
 	position = v.cockpit["eye_local"]
 	camera.top_level = false
 	camera.transform = Transform3D()
+	camera.current = true
 	_yaw = 0.0
 	_pitch = 0.0
 

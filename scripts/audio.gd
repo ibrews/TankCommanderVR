@@ -12,6 +12,11 @@ const NAMES := [
 	"rain_loop", "thunder1", "thunder2", "wind_gust", "tornado_loop",
 	"volcano_loop", "eruption", "bubbles_loop", "squeak", "pop", "splat",
 	"static_loop", "whistle", "sneaker", "boing", "thud", "jingle",
+	"music_beach", "music_toy", "lava_loop", "waves_loop",
+	"music_city", "music_city_b", "music_town", "music_town_b",
+	"music_mudpit", "music_mudpit_b", "music_castle", "music_castle_b",
+	"music_gym", "music_gym_b", "music_island", "music_island_b",
+	"music_volcano", "music_volcano_b",
 ]
 const VO_NAMES := [
 	"vo_title", "vo_welcome", "vo_menu_pick", "vo_howto1", "vo_howto2",
@@ -33,7 +38,11 @@ var _pool_i := 0
 # music
 var _m_menu: AudioStreamPlayer
 var _m_calm: AudioStreamPlayer
+var _m_calm_b: AudioStreamPlayer     # variation crossfade partner
 var _m_combat: AudioStreamPlayer
+var _calm_variants: Array = []
+var _calm_active := 0                # 0 = _m_calm, 1 = _m_calm_b
+var _variation_t := 60.0
 var _threat := 0.0
 var _threat_target := 0.0
 var _music_mode := ""  # "menu" | "game" | "off"
@@ -96,6 +105,7 @@ func _ready() -> void:
 		_pool.append(p)
 	_m_menu = _mk_music("music_menu")
 	_m_calm = _mk_music("music_calm")
+	_m_calm_b = _mk_music("music_calm")
 	_m_combat = _mk_music("music_combat")
 	_vo_player = AudioStreamPlayer.new()
 	_vo_player.volume_db = 2.0
@@ -155,12 +165,28 @@ func music_menu() -> void:
 func music_game() -> void:
 	_music_mode = "game"
 	_threat = 0.0
-	# per-level calm track (beach calypso, toybox music-box...)
+	# per-level calm track + its variation ("_b") — the game alternates
+	# between them on a randomized timer so the loop never wears out
 	var calm_name: String = Levels.current.get("calm_track", "music_calm")
+	_calm_variants = [calm_name]
+	if streams.has(calm_name + "_b"):
+		_calm_variants.append(calm_name + "_b")
+	_calm_active = 0
+	_variation_t = Game.rng.randf_range(40.0, 70.0)
 	_m_calm.stream = streams.get(calm_name, streams.get("music_calm"))
-	# start both layers together so they stay phase-locked for crossfades
+	_m_calm_b.stream = streams.get(_calm_variants[1] if _calm_variants.size() > 1 else calm_name)
 	_m_calm.play()
 	_m_combat.play()
+
+func _variation_tick(delta: float) -> void:
+	if _music_mode != "game" or _calm_variants.size() < 2:
+		return
+	_variation_t -= delta
+	if _variation_t <= 0.0:
+		_variation_t = Game.rng.randf_range(40.0, 75.0)
+		_calm_active = 1 - _calm_active
+		if _calm_active == 1 and not _m_calm_b.playing:
+			_m_calm_b.play()
 
 func music_off() -> void:
 	_music_mode = "off"
@@ -190,6 +216,12 @@ func _process(delta: float) -> void:
 				combat_target = -12.0 + gain_db
 			4:  # OFF
 				pass
+	# split the calm target across the two variation players
+	var calm_a := calm_target if _calm_active == 0 else -80.0
+	var calm_b := calm_target if _calm_active == 1 else -80.0
+	_m_calm_b.volume_db = move_toward(_m_calm_b.volume_db, calm_b, delta * 10.0)
+	calm_target = calm_a
+	_variation_tick(delta)
 	_radio_tick(delta)
 	_vo_idle_tick(delta)
 	_m_menu.volume_db = move_toward(_m_menu.volume_db, menu_target, delta * 30.0)

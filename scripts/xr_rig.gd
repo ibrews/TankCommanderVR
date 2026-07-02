@@ -159,6 +159,10 @@ func to_menu_anchor(parent: Node3D) -> void:
 		parent.add_child(self)
 	transform = Transform3D()
 	_calibrated = true  # natural floor height at the menu
+	# reparenting knocks the camera out of the tree and clears `current` —
+	# without this the XR viewport renders NOTHING (black, draws=0)
+	camera.current = true
+	camera.make_current()
 
 func attach_to_vehicle(v: Node3D) -> void:
 	tank = v
@@ -169,6 +173,8 @@ func attach_to_vehicle(v: Node3D) -> void:
 	transform = Transform3D()
 	_calibrated = false
 	_calib_t = 0.0
+	camera.current = true
+	camera.make_current()
 	v.set("_rumble_cb", func(amp, dur):
 		hand_l.pulse(amp, dur)
 		hand_r.pulse(amp, dur))

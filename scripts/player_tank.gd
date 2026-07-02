@@ -346,6 +346,8 @@ func _chamber() -> void:
 	Sfx.play_at("reload", turret.global_position, 2.0)
 	_set_lamp("reload", false)
 	cockpit["labels"]["ammo"].text = "AP %d" % ammo
+	if ammo == 6:
+		Sfx.vo("robot_lowammo" if Game.rng.randf() < 0.5 else "vo_ammo_low", 2, 60.0)
 
 func _on_restart_lever(v: float) -> void:
 	if absf(v) > 0.8 and not Game.alive:
@@ -480,7 +482,7 @@ func _begin_start() -> void:
 			engine_on = true
 			engine_p.volume_db = -6.0
 			_set_lamp("engine", true)
-			Sfx.vo("vo_start", 2, 30.0))
+			Sfx.vo("robot_online" if Game.rng.randf() < 0.3 else "vo_start", 2, 30.0))
 
 func effective_drive() -> Vector2:
 	# returns (left, right) track command; stick overrides idle tillers

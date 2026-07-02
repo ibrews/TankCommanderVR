@@ -60,6 +60,22 @@ Edit, restart, report back.
 | B | Fire rocket salvo |
 | Y | Recalibrate seat height |
 
+## Performance (measured on Quest 3S)
+
+Golden-hour beach, full combat demo, glow + fill-light on: **locked 72/72 fps,
+App GPU 9.4 ms avg of the 13.8 ms budget** (VrApi logcat). Glow costs <1 ms on
+the Adreno 740 — it stays on. Foveation, glow, and 40+ gameplay dials are
+runtime-tunable via `tuning.cfg` (see above); `autostart.cfg` in the same dir
+boots the game into a self-playing demo scene for hands-off profiling:
+
+```
+[auto]
+level="beach"
+time=1        ; 0 day, 1 golden hour, 2 night
+demo=true
+delay=6.0
+```
+
 ## Development
 
 Written overnight by [Claude Code](https://claude.com/claude-code) on the
