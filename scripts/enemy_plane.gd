@@ -10,7 +10,7 @@ static var _mesh: ArrayMesh
 var terrain: Terrain
 var projectiles: Projectiles
 var fx: FxPool
-var player: PlayerTank
+var player: CharacterBody3D
 
 var state := State.ORBIT
 var hp := 30.0
@@ -24,7 +24,7 @@ var prop: MeshInstance3D
 var engine_p: AudioStreamPlayer3D
 var _spiral_t := 0.0
 
-func _init(t: Terrain, p: Projectiles, f: FxPool, pl: PlayerTank) -> void:
+func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 	terrain = t
 	projectiles = p
 	fx = f

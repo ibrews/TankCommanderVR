@@ -1,26 +1,30 @@
-# Procedural heightfield terrain. 512x512 m arena ringed by mountains.
-# Height is analytic (FastNoiseLite + shaping) — gameplay queries height()/normal()
-# directly; there is deliberately NO terrain physics body (tanks ground-follow the
-# math, projectiles compare y against height()). Only buildings/rocks get colliders.
+# Procedural heightfield terrain, parameterized by a Levels config.
+# Height is analytic — gameplay queries height()/normal() directly; there is
+# deliberately NO terrain physics body. Only buildings/rocks get colliders.
 class_name Terrain
 extends Node3D
 
 const SIZE := 512.0
 const HALF := SIZE / 2.0
 const CHUNKS := 4
-const QUADS := 44          # per chunk side
+const QUADS := 44
 const ARENA_RADIUS := 232.0
 
-const VILLAGE_CENTER := Vector2(120, -120)
+const VILLAGE_CENTER := Vector2(120, -120)   # legacy default (outdoor)
 const POND_CENTER := Vector2(-150, -20)
 const SPAWN_CENTER := Vector2(0, 90)
+
+var cfg: Dictionary
+var spawn: Vector2
 
 var _noise := FastNoiseLite.new()
 var _dune := FastNoiseLite.new()
 var _detail := FastNoiseLite.new()
 
-func _init() -> void:
+func _init(config: Dictionary = {}) -> void:
 	name = "Terrain"
+	cfg = config if not config.is_empty() else Levels.get_config("outdoor")
+	spawn = cfg.get("spawn", Vector2(0, 90))
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	_noise.frequency = 0.006
 	_noise.fractal_octaves = 4
@@ -34,28 +38,37 @@ func _init() -> void:
 
 func _ready() -> void:
 	_build_chunks()
-	_build_water()
+	if cfg.get("pond", false):
+		_build_water()
 
 func height(x: float, z: float) -> float:
-	# rolling base
-	var h := _noise.get_noise_2d(x, z) * 9.0
+	var h := _noise.get_noise_2d(x, z) * float(cfg.get("rolling", 9.0))
 	h += _detail.get_noise_2d(x, z) * 0.35
-	# southern dunes
-	var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
-	h += _dune.get_noise_2d(x, z) * 2.2 * dune_mask
-	# rim mountains fence the arena (start close enough to read as connected walls)
+	if cfg.get("dunes", false):
+		var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
+		h += _dune.get_noise_2d(x, z) * 2.2 * dune_mask
+	# rim mountains fence the arena
 	var r: float = Vector2(x, z).length() / HALF
 	var rim: float = smoothstep(0.62, 0.98, r)
 	h += rim * rim * 85.0
 	h += _noise.get_noise_2d(x * 3.0, z * 3.0) * 14.0 * rim
-	# flatten gameplay areas
-	h = _flatten(h, Vector2(x, z), VILLAGE_CENTER, 55.0, 1.5)
-	h = _flatten(h, Vector2(x, z), SPAWN_CENTER, 45.0, 1.0)
-	# pond depression
-	var pd: float = Vector2(x, z).distance_to(POND_CENTER)
-	if pd < 34.0:
-		var t: float = smoothstep(34.0, 12.0, pd)
-		h = lerpf(h, -2.6, t)
+	# config flatten zones
+	for f in cfg.get("flatten", []):
+		h = _flatten(h, Vector2(x, z), f[0], f[1], f[2])
+	# defaults: spawn + village area
+	h = _flatten(h, Vector2(x, z), spawn, 45.0, 1.0)
+	var vil: Dictionary = cfg.get("village", {})
+	if not vil.is_empty():
+		h = _flatten(h, Vector2(x, z), vil["center"], vil["spread"] + 14.0, 1.5)
+	if cfg.get("pond", false):
+		var pd: float = Vector2(x, z).distance_to(POND_CENTER)
+		if pd < 34.0:
+			h = lerpf(h, -2.6, smoothstep(34.0, 12.0, pd))
+	# mud pools sink slightly
+	for mp in cfg.get("mud", []):
+		var md: float = Vector2(x, z).distance_to(mp)
+		if md < 30.0:
+			h = lerpf(h, h - 1.2, smoothstep(30.0, 10.0, md))
 	return h
 
 func _flatten(h: float, p: Vector2, center: Vector2, radius: float, target: float) -> float:
@@ -76,6 +89,8 @@ func _build_chunks() -> void:
 	mat.set_shader_parameter("tex_sand", load("res://assets/tex/sand.png"))
 	mat.set_shader_parameter("tex_grass", load("res://assets/tex/grass.png"))
 	mat.set_shader_parameter("tex_rock", load("res://assets/tex/rock.png"))
+	var tint: Color = cfg.get("tint", Color(1, 1, 1))
+	mat.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
 	var chunk_size := SIZE / CHUNKS
 	for cy in CHUNKS:
 		for cx in CHUNKS:
@@ -92,7 +107,6 @@ func _chunk_mesh(x0: float, z0: float, size: float) -> ArrayMesh:
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var step := size / QUADS
 	var n := QUADS + 1
-	# vertex grid
 	var verts: Array[Vector3] = []
 	var cols: Array[Color] = []
 	verts.resize(n * n)
@@ -126,9 +140,17 @@ func _splat(x: float, z: float, h: float) -> Color:
 	var slope := 1.0 - normal(x, z).y
 	var rock: float = clampf((slope - 0.18) * 5.0, 0.0, 1.0) + clampf((h - 14.0) / 20.0, 0.0, 1.0)
 	rock = clampf(rock, 0.0, 1.0)
-	var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
-	var low_mask: float = clampf((2.0 - h) / 3.0, 0.0, 1.0)
-	var sand: float = clampf(maxf(dune_mask, low_mask) - rock, 0.0, 1.0)
+	var sand: float
+	if cfg.get("dunes", false):
+		var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
+		var low_mask: float = clampf((2.0 - h) / 3.0, 0.0, 1.0)
+		sand = clampf(maxf(dune_mask, low_mask) - rock, 0.0, 1.0)
+	else:
+		sand = clampf(clampf((1.5 - h) / 3.0, 0.0, 0.55) - rock, 0.0, 1.0)
+	# mud pools force dark sand
+	for mp in cfg.get("mud", []):
+		if Vector2(x, z).distance_to(mp) < 30.0:
+			sand = 1.0 - rock
 	var grass: float = clampf(1.0 - rock - sand, 0.0, 1.0)
 	return Color(sand, grass, rock)
 
@@ -140,19 +162,18 @@ render_mode cull_back, diffuse_lambert, specular_disabled;
 uniform sampler2D tex_sand : source_color, filter_linear_mipmap;
 uniform sampler2D tex_grass : source_color, filter_linear_mipmap;
 uniform sampler2D tex_rock : source_color, filter_linear_mipmap;
+uniform vec3 tint = vec3(1.0);
 void fragment() {
 	vec3 s = texture(tex_sand, UV).rgb;
 	vec3 g = texture(tex_grass, UV).rgb;
 	vec3 r = texture(tex_rock, UV).rgb;
-	// low-frequency noise breaks the smooth sand<->grass transition into patches
 	float n = texture(tex_rock, UV * 0.037).g;
 	vec3 w = COLOR.rgb;
 	float shift = (n - 0.5) * 0.9;
 	w.r = clamp(w.r + shift * min(w.r, w.g) * 2.0, 0.0, 1.0);
 	w.g = clamp(w.g - shift * min(w.r, w.g) * 2.0, 0.0, 1.0);
 	float tot = max(w.r + w.g + w.b, 0.001);
-	vec3 alb = (s * w.r + g * w.g + r * w.b) / tot;
-	// darken with distance so far slopes separate from the pale horizon sky
+	vec3 alb = (s * w.r + g * w.g + r * w.b) / tot * tint;
 	float dist = length(VERTEX);
 	alb *= mix(1.0, 0.72, clamp((dist - 120.0) / 160.0, 0.0, 1.0));
 	ALBEDO = alb;

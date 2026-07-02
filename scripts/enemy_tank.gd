@@ -11,7 +11,7 @@ static var _turret_mesh: ArrayMesh
 var terrain: Terrain
 var projectiles: Projectiles
 var fx: FxPool
-var player: PlayerTank
+var player: CharacterBody3D
 
 var state := State.PATROL
 var hp := 55.0
@@ -27,7 +27,7 @@ var _dead_t := 0.0
 var _turret_vel := Vector3.ZERO
 var _turret_spin := Vector3.ZERO
 
-func _init(t: Terrain, p: Projectiles, f: FxPool, pl: PlayerTank) -> void:
+func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 	terrain = t
 	projectiles = p
 	fx = f

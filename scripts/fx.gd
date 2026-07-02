@@ -1,24 +1,35 @@
-# Pooled visual effects: explosions (flash + smoke + brief light), muzzle
-# flashes, dust puffs, smoke columns for wrecks. All one-shot, reused.
+# Pooled visual effects v2: multi-stage explosions (core flash, shockwave
+# ring, ballistic debris, fire), spark bursts, dust, smoke columns + fire
+# columns for burning wrecks. All one-shot, pooled, mobile-budget friendly.
 class_name FxPool
 extends Node3D
 
 var _explosions: Array = []
 var _flashes: Array = []
 var _columns: Array = []
+var _debris: Array = []
+var _rings: Array = []
+var _dusts: Array = []
 
 func _init() -> void:
 	name = "Fx"
 
 func _ready() -> void:
+	add_to_group("fx")
 	for i in 8:
 		_explosions.append(_make_explosion())
 	for i in 6:
 		_flashes.append(_make_flash())
 	for i in 5:
 		_columns.append(_make_column())
+	for i in 24:
+		_debris.append(_make_debris_chunk())
+	for i in 6:
+		_rings.append(_make_ring())
+	for i in 6:
+		_dusts.append(_make_dust())
 
-func _smoke_mat(tex_path: String, emissive := false) -> StandardMaterial3D:
+func _smoke_mat(tex_path: String, additive := false) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	m.albedo_texture = load(tex_path)
@@ -26,7 +37,7 @@ func _smoke_mat(tex_path: String, emissive := false) -> StandardMaterial3D:
 	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	m.billboard_mode = BaseMaterial3D.BILLBOARD_PARTICLES
 	m.disable_receive_shadows = true
-	if emissive:
+	if additive:
 		m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
 	return m
 
@@ -62,23 +73,27 @@ func _particles(amount: int, lifetime: float, vel_min: float, vel_max: float,
 	p.draw_pass_1 = quad
 	return p
 
+# ---------------- factories
 func _make_explosion() -> Dictionary:
 	var root := Node3D.new()
 	root.visible = false
 	add_child(root)
-	var smoke := _particles(18, 1.5, 3.0, 9.0, 1.6, 3.4, Vector3(0, 1.5, 0),
-		"res://assets/tex/smoke.png", Color(0.32, 0.30, 0.28, 1.0), Color(0.5, 0.5, 0.5, 0.0))
+	var smoke := _particles(20, 1.7, 3.0, 10.0, 1.8, 3.8, Vector3(0, 1.5, 0),
+		"res://assets/tex/smoke.png", Color(0.30, 0.28, 0.26, 1.0), Color(0.5, 0.5, 0.5, 0.0))
 	root.add_child(smoke)
-	var fire := _particles(10, 0.5, 4.0, 11.0, 1.0, 2.2, Vector3(0, 3.0, 0),
-		"res://assets/tex/flash.png", Color(1.0, 0.75, 0.3, 1.0), Color(1.0, 0.25, 0.05, 0.0), true)
+	var fire := _particles(14, 0.6, 4.0, 13.0, 1.2, 2.6, Vector3(0, 3.0, 0),
+		"res://assets/tex/flash.png", Color(1.0, 0.78, 0.3, 1.0), Color(1.0, 0.22, 0.04, 0.0), true)
 	root.add_child(fire)
+	var sparks := _particles(16, 0.9, 10.0, 22.0, 0.12, 0.3, Vector3(0, -14.0, 0),
+		"res://assets/tex/flash.png", Color(1.0, 0.9, 0.5, 1.0), Color(1.0, 0.5, 0.1, 0.0), true)
+	root.add_child(sparks)
 	var light := OmniLight3D.new()
 	light.light_color = Color(1.0, 0.7, 0.35)
-	light.omni_range = 18.0
+	light.omni_range = 22.0
 	light.light_energy = 0.0
 	light.shadow_enabled = false
 	root.add_child(light)
-	return {"root": root, "smoke": smoke, "fire": fire, "light": light, "t": 99.0}
+	return {"root": root, "smoke": smoke, "fire": fire, "sparks": sparks, "light": light, "t": 99.0}
 
 func _make_flash() -> Dictionary:
 	var root := Node3D.new()
@@ -100,31 +115,115 @@ func _make_flash() -> Dictionary:
 	return {"root": root, "quad": quad, "light": light, "t": 99.0}
 
 func _make_column() -> Dictionary:
-	var p := _particles(24, 3.5, 1.5, 3.0, 1.8, 3.2, Vector3(0, 1.2, 0),
-		"res://assets/tex/smoke.png", Color(0.12, 0.11, 0.10, 0.9), Color(0.35, 0.35, 0.35, 0.0))
+	var root := Node3D.new()
+	add_child(root)
+	var p := _particles(26, 3.5, 1.5, 3.0, 1.8, 3.4, Vector3(0, 1.2, 0),
+		"res://assets/tex/smoke.png", Color(0.10, 0.095, 0.09, 0.9), Color(0.32, 0.32, 0.32, 0.0))
 	p.one_shot = false
 	p.explosiveness = 0.0
+	root.add_child(p)
+	var fire := _particles(10, 0.8, 1.0, 2.5, 0.7, 1.5, Vector3(0, 2.5, 0),
+		"res://assets/tex/flash.png", Color(1.0, 0.6, 0.15, 0.9), Color(1.0, 0.2, 0.05, 0.0), true)
+	fire.one_shot = false
+	fire.explosiveness = 0.0
+	root.add_child(fire)
+	return {"root": root, "p": p, "fire": fire, "t": 99.0, "duration": 18.0}
+
+func _make_debris_chunk() -> Dictionary:
+	var mi := MeshInstance3D.new()
+	var bm := BoxMesh.new()
+	bm.size = Vector3(0.28, 0.22, 0.3)
+	mi.mesh = bm
+	mi.material_override = MeshKit.mat_vcol()
+	mi.visible = false
+	add_child(mi)
+	return {"mesh": mi, "vel": Vector3.ZERO, "spin": Vector3.ZERO, "t": 99.0}
+
+func _make_ring() -> Dictionary:
+	var mi := MeshInstance3D.new()
+	var tm := TorusMesh.new()
+	tm.inner_radius = 0.85
+	tm.outer_radius = 1.0
+	tm.rings = 4
+	tm.ring_segments = 20
+	mi.mesh = tm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(1.0, 0.85, 0.6, 0.55)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.blend_mode = BaseMaterial3D.BLEND_MODE_ADD
+	mi.material_override = m
+	mi.visible = false
+	add_child(mi)
+	return {"mesh": mi, "mat": m, "t": 99.0}
+
+func _make_dust() -> Dictionary:
+	var p := _particles(14, 1.4, 2.0, 5.0, 1.2, 2.6, Vector3(0, 0.6, 0),
+		"res://assets/tex/smoke.png", Color(0.55, 0.48, 0.38, 0.7), Color(0.6, 0.55, 0.45, 0.0))
 	add_child(p)
 	return {"p": p, "t": 99.0}
 
+# ---------------- public API
 func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
 	var best: Dictionary = _explosions[0]
 	for e in _explosions:
 		if e.t > best.t:
 			best = e
-		if e.t > 10.0:
-			best = e
-			break
 	best.t = 0.0
 	best.root.visible = true
 	best.root.global_position = pos
-	var s := 1.6 if big else 1.0
+	var s := 1.7 if big else 1.0
 	best.root.scale = Vector3.ONE * s
 	best.smoke.restart()
 	best.fire.restart()
-	best.light.light_energy = 6.0 * s
+	best.sparks.restart()
+	best.light.light_energy = 7.0 * s
+	shockwave(pos, s)
+	debris_burst(pos, 8 if big else 5, Color(0.2, 0.18, 0.16))
 	var d := cam_pos.distance_to(pos)
-	Sfx.play_at("explosion_far" if d > 110.0 else "explosion", pos, 2.0 if big else 0.0)
+	Sfx.play_at("explosion_far" if d > 110.0 else "explosion", pos, 3.0 if big else 0.0)
+
+func shockwave(pos: Vector3, s := 1.0) -> void:
+	var best: Dictionary = _rings[0]
+	for r in _rings:
+		if r.t > best.t:
+			best = r
+	best.t = 0.0
+	best.mesh.visible = true
+	best.mesh.global_position = pos + Vector3(0, 0.4, 0)
+	best.mesh.scale = Vector3.ONE * 0.5 * s
+	best.mesh.set_meta("s", s)
+
+func debris_burst(pos: Vector3, count: int, _col: Color) -> void:
+	var used := 0
+	for d in _debris:
+		if d.t > 10.0 and used < count:
+			used += 1
+			d.t = 0.0
+			d.mesh.visible = true
+			d.mesh.global_position = pos
+			d.mesh.scale = Vector3.ONE * Game.rng.randf_range(0.6, 1.8)
+			d.vel = Vector3(Game.rng.randf_range(-7, 7), Game.rng.randf_range(6, 15), Game.rng.randf_range(-7, 7))
+			d.spin = Vector3(Game.rng.randf_range(-8, 8), Game.rng.randf_range(-8, 8), Game.rng.randf_range(-8, 8))
+
+func spark_burst(pos: Vector3) -> void:
+	var best: Dictionary = _explosions[0]
+	for e in _explosions:
+		if e.t > best.t:
+			best = e
+	# reuse sparks pass only
+	best.sparks.global_position = pos
+	best.sparks.restart()
+
+func dust(pos: Vector3, s := 1.0) -> void:
+	var best: Dictionary = _dusts[0]
+	for d in _dusts:
+		if d.t > best.t:
+			best = d
+	best.t = 0.0
+	best.p.global_position = pos
+	best.p.scale = Vector3.ONE * s
+	best.p.restart()
 
 func muzzle_flash(pos: Vector3, scale := 1.0) -> void:
 	var best: Dictionary = _flashes[0]
@@ -144,15 +243,17 @@ func smoke_column(pos: Vector3, duration := 18.0) -> void:
 			best = c
 	best.t = 0.0
 	best.duration = duration
-	best.p.global_position = pos
+	best.root.global_position = pos
 	best.p.emitting = true
+	best.fire.emitting = true
 
+# ---------------- animation
 func _process(delta: float) -> void:
 	for e in _explosions:
 		if e.t < 10.0:
 			e.t += delta
-			e.light.light_energy = maxf(0.0, e.light.light_energy - delta * 22.0)
-			if e.t > 2.2:
+			e.light.light_energy = maxf(0.0, e.light.light_energy - delta * 24.0)
+			if e.t > 2.4:
 				e.root.visible = false
 				e.t = 99.0
 	for f in _flashes:
@@ -169,4 +270,30 @@ func _process(delta: float) -> void:
 			c.t += delta
 			if c.t > c.get("duration", 18.0):
 				c.p.emitting = false
+				c.fire.emitting = false
 				c.t = 99.0
+	for r in _rings:
+		if r.t < 10.0:
+			r.t += delta
+			var life := 0.45
+			var k := clampf(r.t / life, 0.0, 1.0)
+			var s: float = r.mesh.get_meta("s", 1.0)
+			r.mesh.scale = Vector3.ONE * lerpf(0.5, 11.0, k) * s
+			r.mat.albedo_color.a = 0.55 * (1.0 - k)
+			if k >= 1.0:
+				r.mesh.visible = false
+				r.t = 99.0
+	for d in _debris:
+		if d.t < 10.0:
+			d.t += delta
+			d.vel.y -= 22.0 * delta
+			d.mesh.global_position += d.vel * delta
+			d.mesh.rotation += d.spin * delta
+			if d.t > 1.6:
+				d.mesh.visible = false
+				d.t = 99.0
+	for du in _dusts:
+		if du.t < 10.0:
+			du.t += delta
+			if du.t > 1.6:
+				du.t = 99.0

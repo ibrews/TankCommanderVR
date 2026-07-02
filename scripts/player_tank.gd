@@ -34,6 +34,8 @@ var head_lamp_mat: StandardMaterial3D
 
 # state
 var battery_on := false
+var fuel_on := false
+var gear := 0            # -1 R, 0 N, 1 D
 var engine_on := false
 var starting := false
 var start_hold := 0.0
@@ -48,6 +50,12 @@ var mg_timer := 0.0
 var mg_held := false
 var gun_elev := 0.0
 var yaw := PI  # face -Z world at spawn (spawn is south, center is north)
+
+# net
+var puppet := false          # co-op client: host simulates, we mirror
+var _net_target := Transform3D()
+var _net_turret_y := 0.0
+var _net_has := false
 
 # inputs
 var tiller_l_v := 0.0
@@ -267,6 +275,28 @@ func _wire_controls() -> void:
 	c["rocket_arm"].toggled_on.connect(_on_arm)
 	c["rocket_fire"].pressed.connect(fire_rockets)
 	c["restart"].value_changed.connect(_on_restart_lever)
+	c["fuel_pump"].toggled_on.connect(func(on): fuel_on = on)
+	c["gear"].value_changed.connect(_on_gear)
+	c["horn"].pressed.connect(func():
+		Sfx.play_at("horn", global_position + Vector3(0, 1.5, -3), 4.0)
+		_rumble(0.3, 0.08))
+	c["radio_volume"].value_changed.connect(func(v): Sfx.music_gain = v * 1.4)
+	c["radio_channel"].value_changed.connect(func(_v): Sfx.play_ui("ui_select", -14.0))
+	c["menu_switch"].toggled_on.connect(func(_on):
+		var m := get_tree().get_first_node_in_group("main")
+		if m:
+			m.call_deferred("to_menu"))
+
+func _on_gear(v: float) -> void:
+	var g := 0
+	if v > 0.4:
+		g = 1
+	elif v < -0.4:
+		g = -1
+	if g != gear:
+		gear = g
+		Sfx.play_at("shifter", turret.global_position, -2.0)
+		_rumble(0.3, 0.03)
 
 func _on_battery(on: bool) -> void:
 	battery_on = on
@@ -284,10 +314,15 @@ func _on_lights(on: bool) -> void:
 func _on_arm(on: bool) -> void:
 	rockets_armed = on
 	_set_lamp("armed", on)
+	if on:
+		Sfx.vo("vo_armed", 1, 45.0)
 
 func _on_breech_lever(v: float) -> void:
 	if absf(v) > 0.85 and not loaded and ammo > 0:
-		_chamber()
+		if puppet:
+			NetManager.c_event.rpc_id(1, "breech")
+		else:
+			_chamber()
 
 func _chamber() -> void:
 	loaded = true
@@ -309,7 +344,8 @@ func _on_game_over() -> void:
 	c["restart"].set_highlight(true)
 	cockpit["labels"]["hint"].text = "DESTROYED — PULL YELLOW ROOF HANDLE"
 	fx.smoke_column(global_position + Vector3(0, 2.5, 0), 30.0)
-	Sfx.play_at("gameover", turret.global_position, 4.0)
+	Sfx.sting("sting_over")
+	Sfx.vo("vo_gameover", 4, 5.0)
 	_set_lamp("engine", false)
 
 func _on_restart() -> void:
@@ -343,10 +379,16 @@ func _set_lamp(name_: String, on: bool) -> void:
 		lamp["mat"].emission_energy_multiplier = 1.5
 
 func _update_plaque() -> void:
-	cockpit["labels"]["plaque"].text = "WAVE %d    SCORE %d" % [maxi(Game.wave, 1), Game.score]
+	if Game.mode == Game.Mode.VERSUS:
+		cockpit["labels"]["plaque"].text = "YOU %d    THEM %d" % [Game.my_kills, Game.their_kills]
+	else:
+		cockpit["labels"]["plaque"].text = "WAVE %d   SCORE %d   %s" % [maxi(Game.wave, 1), Game.score, Game.diff_name()]
 
 # ------------------------------------------------------------------ per-frame
 func _physics_process(delta: float) -> void:
+	if puppet:
+		_puppet_update(delta)
+		return
 	_update_engine(delta)
 	_update_drive(delta)
 	_update_turret(delta)
@@ -359,9 +401,47 @@ func _physics_process(delta: float) -> void:
 	blob.global_position = Vector3(gp.x, terrain.height(gp.x, gp.z) + 0.06, gp.z)
 	blob.rotation = Vector3(-PI / 2, yaw, 0)
 
+# co-op client: mirror host state, keep local turret prediction responsive
+func _puppet_update(delta: float) -> void:
+	if _net_has:
+		global_transform = global_transform.interpolate_with(_net_target, clampf(8.0 * delta, 0.0, 1.0))
+	var inp := turret_input
+	if inp.length() < 0.05 and stick_turret.length() > 0.08:
+		inp = stick_turret
+	turret.rotation.y += -inp.x * TURRET_SLEW * delta
+	turret.rotation.y = lerp_angle(turret.rotation.y, _net_turret_y, clampf(1.5 * delta, 0.0, 1.0))
+	gun_elev = clampf(gun_elev + inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
+	gun_pivot.rotation.x = gun_elev
+	turret_p.volume_db = -14.0 if inp.length() > 0.1 else -80.0
+	_update_gauges(delta)
+	_update_reticle()
+	var gp := global_position
+	blob.global_position = Vector3(gp.x, terrain.height(gp.x, gp.z) + 0.06, gp.z)
+	blob.rotation = Vector3(-PI / 2, yaw, 0)
+
+func net_apply(t: Transform3D, turret_y: float, _gun_e: float, na: int, nr: int, nloaded: bool, nengine: bool) -> void:
+	_net_target = t
+	_net_turret_y = turret_y
+	_net_has = true
+	if na != ammo:
+		ammo = na
+		cockpit["labels"]["ammo"].text = "AP %d" % ammo
+	if nr != rockets_left:
+		rockets_left = nr
+		cockpit["labels"]["rockets"].text = "RKT %d" % rockets_left
+	if nloaded != loaded:
+		loaded = nloaded
+		_set_lamp("reload", not loaded)
+		if loaded:
+			Sfx.play_at("reload", turret.global_position, 0.0)
+	if nengine != engine_on:
+		engine_on = nengine
+		engine_p.volume_db = -6.0 if engine_on else -80.0
+		_set_lamp("engine", engine_on)
+
 func _update_engine(delta: float) -> void:
 	var starter: VRControl.PushButton = cockpit["controls"]["starter"]
-	if starter.is_down and battery_on and not engine_on and not starting and Game.alive:
+	if starter.is_down and battery_on and fuel_on and not engine_on and not starting and Game.alive:
 		start_hold += delta
 		if start_hold > 0.25:
 			_begin_start()
@@ -383,13 +463,17 @@ func _begin_start() -> void:
 		if battery_on and Game.alive:
 			engine_on = true
 			engine_p.volume_db = -6.0
-			_set_lamp("engine", true))
+			_set_lamp("engine", true)
+			Sfx.vo("vo_start", 2, 30.0))
 
 func effective_drive() -> Vector2:
 	# returns (left, right) track command; stick overrides idle tillers
 	var l := tiller_l_v
 	var r := tiller_r_v
 	if absf(l) < 0.04 and absf(r) < 0.04 and stick_drive.length() > 0.08:
+		if gear == 0:
+			# casual auto-shift into Drive on stick input
+			cockpit["controls"]["gear"].value = 1.0
 		var fwd := stick_drive.y
 		var turn := stick_drive.x
 		l = clampf(fwd + turn, -1.0, 1.0)
@@ -397,11 +481,18 @@ func effective_drive() -> Vector2:
 		# animate the physical tillers to match
 		cockpit["controls"]["tiller_l"].value = l
 		cockpit["controls"]["tiller_r"].value = r
-	return Vector2(l, r)
+	match gear:
+		0:
+			return Vector2.ZERO      # neutral: engine revs, nothing happens
+		-1:
+			return Vector2(-l, -r) * 0.6  # reverse gear: inverted, slower
+		_:
+			return Vector2(l, r)
 
 func _update_drive(delta: float) -> void:
 	var cmd := effective_drive() if (engine_on and Game.alive) else Vector2.ZERO
-	var target_fwd := (cmd.x + cmd.y) * 0.5 * MAX_TRACK
+	var mud := Levels.mud_factor(global_position)
+	var target_fwd := (cmd.x + cmd.y) * 0.5 * MAX_TRACK * mud
 	var target_yaw_rate := (cmd.x - cmd.y) * YAW_GAIN * 2.0
 	_spd = move_toward(_spd, target_fwd, ACCEL * delta)
 	_yaw_rate = move_toward(_yaw_rate, target_yaw_rate, 2.5 * delta)
@@ -447,7 +538,9 @@ func _align(delta: float) -> void:
 
 func _update_turret(delta: float) -> void:
 	var inp := turret_input
-	if inp.length() < 0.05 and stick_turret.length() > 0.08:
+	if NetManager.hosting and Game.mode == Game.Mode.COOP:
+		inp = NetManager.gunner_input   # the gunner (client) owns the turret
+	elif inp.length() < 0.05 and stick_turret.length() > 0.08:
 		inp = stick_turret
 		var grip: VRControl.TwoAxisGrip = cockpit["controls"]["grip"]
 		grip.pivot.rotation = Vector3(inp.y * 0.28, 0, -inp.x * 0.28)
@@ -470,8 +563,15 @@ func _update_weapons(delta: float) -> void:
 		if auto_reload_t <= 0.0 and ammo > 0:
 			_chamber()
 
+func fire_primary() -> void:
+	# rig-facing alias: trigger while holding the turret grip
+	fire_cannon(false)
+
 func fire_cannon(from_stick := false) -> void:
 	if not Game.alive:
+		return
+	if puppet:
+		NetManager.c_event.rpc_id(1, "fire")
 		return
 	if not loaded:
 		Sfx.play_at("click", muzzle.global_position, -6.0)
@@ -486,6 +586,8 @@ func fire_cannon(from_stick := false) -> void:
 		auto_reload = false
 	var dir := -muzzle.global_transform.basis.z
 	projectiles.fire(Projectiles.Kind.SHELL, muzzle.global_position, dir * SHELL_SPEED + velocity, [get_rid()], true)
+	NetManager.broadcast_shot(Projectiles.Kind.SHELL, muzzle.global_position, dir * SHELL_SPEED + velocity)
+	NetManager.versus_shot(Projectiles.Kind.SHELL, muzzle.global_position, dir * SHELL_SPEED + velocity)
 	fx.muzzle_flash(muzzle.global_position + dir * 0.5, 1.6)
 	Sfx.play_at("cannon", muzzle.global_position, 4.0)
 	_set_lamp("reload", true)
@@ -496,6 +598,9 @@ func fire_cannon(from_stick := false) -> void:
 	_rumble(0.9, 0.12)
 
 func fire_rockets() -> void:
+	if puppet:
+		NetManager.c_event.rpc_id(1, "rockets")
+		return
 	if not Game.alive or not rockets_armed or rocket_cool > 0.0 or rockets_left <= 0:
 		if not rockets_armed:
 			Sfx.play_at("click", global_position, -6.0)
@@ -510,7 +615,10 @@ func fire_rockets() -> void:
 		var pos := pod.global_position
 		# slight delay on second rocket via deferred timer
 		var launch := func():
-			projectiles.fire(Projectiles.Kind.ROCKET, pos, dir * 45.0 + Vector3(0, 2.0, 0) + velocity, [get_rid()], true)
+			var rvel := dir * 45.0 + Vector3(0, 2.0, 0) + velocity
+			projectiles.fire(Projectiles.Kind.ROCKET, pos, rvel, [get_rid()], true)
+			NetManager.broadcast_shot(Projectiles.Kind.ROCKET, pos, rvel)
+			NetManager.versus_shot(Projectiles.Kind.ROCKET, pos, rvel)
 			fx.muzzle_flash(pos, 0.9)
 			Sfx.play_at("rocket", pos, 2.0)
 		if i == 0:
@@ -534,15 +642,18 @@ func _rumble(amp: float, dur: float) -> void:
 		_rumble_cb.call(amp, dur)
 
 func take_damage(amount: float, at: Vector3) -> void:
-	if not Game.alive:
+	if not Game.alive or puppet:
 		return
 	Game.damage_player(amount)
 	Sfx.play_at("hit", at, 2.0)
 	fx.muzzle_flash(turret.to_global(Vector3(-0.28, 0.1, 0.0)), 0.35)  # interior spark flash
 	_rumble(0.8, 0.2)
+	if amount > 12.0:
+		Sfx.vo("vo_hit", 2, 14.0)
 	if Game.hp < 30.0:
 		_set_lamp("low_hull", true)
 		alarm_p.volume_db = -10.0
+		Sfx.vo("vo_hull_low", 3, 25.0)
 	elif Game.alive:
 		_set_lamp("low_hull", false)
 
@@ -572,16 +683,24 @@ func _update_hints() -> void:
 			if battery_on:
 				_hint_stage = 1
 		1:
-			hint.text = "HOLD GREEN STARTER BUTTON"
-			if engine_on:
+			hint.text = "OPEN FUEL PUMP COVER + FLIP THE SWITCH"
+			if fuel_on:
 				_hint_stage = 2
 		2:
-			hint.text = "GRAB TILLERS TO DRIVE — GRIP STICK + TRIGGER TO FIRE"
-			if absf(_spd) > 2.0:
+			hint.text = "HOLD GREEN STARTER BUTTON"
+			if engine_on:
 				_hint_stage = 3
 		3:
+			hint.text = "SHIFT GEAR LEVER TO 'D' (RIGHT PEDESTAL)"
+			if gear != 0:
+				_hint_stage = 4
+		4:
+			hint.text = "GRAB TILLERS TO DRIVE — GRIP STICK + TRIGGER TO FIRE"
+			if absf(_spd) > 2.0:
+				_hint_stage = 5
+		5:
 			hint.text = ""
-			_hint_stage = 4
+			_hint_stage = 6
 
 func _update_reticle() -> void:
 	var from := muzzle.global_position
@@ -631,5 +750,13 @@ func quick_start() -> void:
 	var c: Dictionary = cockpit["controls"]
 	if not battery_on:
 		c["battery"].flip()
+	if not c["fuel_cover"].open:
+		c["fuel_cover"].open = true
+		c["fuel_cover"].lid.rotation.x = deg_to_rad(-115.0)
+		c["fuel_pump"].enabled = true
+	if not fuel_on:
+		c["fuel_pump"].flip()
+	if gear == 0:
+		c["gear"].value = 1.0
 	if not engine_on and not starting:
 		_begin_start()

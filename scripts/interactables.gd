@@ -278,6 +278,55 @@ class ToggleSwitch:
 		toggled_on.emit(on)
 
 
+# ============================================================ Knob
+# Rotary knob (radio volume, channel...). Grab and drag sideways to turn —
+# same "abstract the drag" trick as the levers. value 0..1 with detent ticks.
+class Knob:
+	extends VRControl
+
+	var value := 0.5
+	var detents := 12
+	var knob_mesh: MeshInstance3D
+	var _grab_x := 0.0
+	var _grab_value := 0.5
+	var _last_detent := -1
+
+	static func create(col := Color(0.15, 0.15, 0.16), radius := 0.028) -> Knob:
+		var k := Knob.new()
+		k.grab_radius = 0.06
+		var st := MeshKit.begin()
+		MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0, 0.012)), radius, radius * 0.9, 0.028, 10, Color.WHITE)
+		MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0.0, 0.027)), Vector3(0.006, 0.02, radius * 1.5), Color(0.9, 0.9, 0.85))
+		k.knob_mesh = MeshInstance3D.new()
+		k.knob_mesh.mesh = MeshKit.commit(st, k._make_handle_mat(col))
+		k.knob_mesh.material_override = k._handle_mat
+		k.add_child(k.knob_mesh)
+		k.handle = k.knob_mesh
+		k._apply()
+		return k
+
+	func on_grab(hand: Node) -> void:
+		super.on_grab(hand)
+		_grab_x = to_local(hand.global_position).x
+		_grab_value = value
+
+	func on_hand_update(hand_pos: Vector3) -> void:
+		var dx := to_local(hand_pos).x - _grab_x
+		var nv := clampf(_grab_value + dx * 2.4, 0.0, 1.0)
+		if absf(nv - value) > 0.002:
+			value = nv
+			_apply()
+			var det := int(value * detents)
+			if det != _last_detent:
+				_last_detent = det
+				_haptic(0.25, 0.01)
+				Sfx.play_at("knob", global_position, -10.0)
+			value_changed.emit(value)
+
+	func _apply() -> void:
+		knob_mesh.rotation.z = lerpf(deg_to_rad(135), deg_to_rad(-135), value)
+
+
 # ============================================================ SafetyCover
 # Red flip cover guarding a switch/button. Poke to open/close.
 class SafetyCover:

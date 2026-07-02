@@ -3,18 +3,24 @@
 class_name Projectiles
 extends Node3D
 
-enum Kind { SHELL, ROCKET, MG, ENEMY_SHELL, PLANE_ROCKET }
+enum Kind { SHELL, ROCKET, MG, ENEMY_SHELL, PLANE_ROCKET, ENEMY_MG, MORTAR, BOMB }
 
 const POOL := 48
-const GRAV := {Kind.SHELL: 3.0, Kind.ROCKET: 0.0, Kind.MG: 0.0, Kind.ENEMY_SHELL: 9.8, Kind.PLANE_ROCKET: 1.0}
-const TTL := {Kind.SHELL: 7.0, Kind.ROCKET: 7.0, Kind.MG: 1.4, Kind.ENEMY_SHELL: 9.0, Kind.PLANE_ROCKET: 6.0}
-const DIRECT := {Kind.SHELL: 34.0, Kind.ROCKET: 26.0, Kind.MG: 4.0, Kind.ENEMY_SHELL: 16.0, Kind.PLANE_ROCKET: 11.0}
-const SPLASH_R := {Kind.SHELL: 4.5, Kind.ROCKET: 6.0, Kind.MG: 0.0, Kind.ENEMY_SHELL: 3.5, Kind.PLANE_ROCKET: 5.0}
-const SPLASH_DMG := {Kind.SHELL: 20.0, Kind.ROCKET: 22.0, Kind.MG: 0.0, Kind.ENEMY_SHELL: 10.0, Kind.PLANE_ROCKET: 8.0}
+const GRAV := {Kind.SHELL: 3.0, Kind.ROCKET: 0.0, Kind.MG: 0.0, Kind.ENEMY_SHELL: 9.8, Kind.PLANE_ROCKET: 1.0,
+	Kind.ENEMY_MG: 0.0, Kind.MORTAR: 9.8, Kind.BOMB: 9.8}
+const TTL := {Kind.SHELL: 7.0, Kind.ROCKET: 7.0, Kind.MG: 1.4, Kind.ENEMY_SHELL: 9.0, Kind.PLANE_ROCKET: 6.0,
+	Kind.ENEMY_MG: 1.4, Kind.MORTAR: 14.0, Kind.BOMB: 12.0}
+const DIRECT := {Kind.SHELL: 34.0, Kind.ROCKET: 26.0, Kind.MG: 4.0, Kind.ENEMY_SHELL: 16.0, Kind.PLANE_ROCKET: 11.0,
+	Kind.ENEMY_MG: 2.0, Kind.MORTAR: 22.0, Kind.BOMB: 45.0}
+const SPLASH_R := {Kind.SHELL: 4.5, Kind.ROCKET: 6.0, Kind.MG: 0.0, Kind.ENEMY_SHELL: 3.5, Kind.PLANE_ROCKET: 5.0,
+	Kind.ENEMY_MG: 0.0, Kind.MORTAR: 6.5, Kind.BOMB: 11.0}
+const SPLASH_DMG := {Kind.SHELL: 20.0, Kind.ROCKET: 22.0, Kind.MG: 0.0, Kind.ENEMY_SHELL: 10.0, Kind.PLANE_ROCKET: 8.0,
+	Kind.ENEMY_MG: 0.0, Kind.MORTAR: 16.0, Kind.BOMB: 30.0}
 
 var terrain: Terrain
 var fx: FxPool
 var cam: Node3D  # for explosion sound distance
+var damage_enabled := true  # false on co-op clients (host is authoritative)
 
 var _active: Array[Dictionary] = []
 var _free_meshes := {}
@@ -32,6 +38,9 @@ func _ready() -> void:
 		Kind.MG: _make_pool(_tracer_mesh(0.65, 0.035, Color(1.0, 0.9, 0.4)), 16),
 		Kind.ENEMY_SHELL: _make_pool(_tracer_mesh(0.5, 0.09, Color(1.0, 0.35, 0.2)), 8),
 		Kind.PLANE_ROCKET: _make_pool(_tracer_mesh(0.5, 0.06, Color(1.0, 0.5, 0.3)), 8),
+		Kind.ENEMY_MG: _make_pool(_tracer_mesh(0.65, 0.035, Color(1.0, 0.55, 0.35)), 14),
+		Kind.MORTAR: _make_pool(_tracer_mesh(0.4, 0.11, Color(0.8, 0.75, 0.6)), 6),
+		Kind.BOMB: _make_pool(_tracer_mesh(0.7, 0.16, Color(0.35, 0.35, 0.32)), 5),
 	}
 	for i in 10:
 		var p := _make_trail()
@@ -100,7 +109,7 @@ func _make_trail() -> GPUParticles3D:
 	add_child(p)
 	return p
 
-func fire(kind: int, pos: Vector3, vel: Vector3, exclude: Array = [], from_player := false) -> void:
+func fire(kind: int, pos: Vector3, vel: Vector3, exclude: Array = [], from_player := false, visual := false) -> void:
 	var pool: Array = _free_meshes[kind]
 	var mesh: MeshInstance3D = null
 	for mi in pool:
@@ -123,6 +132,7 @@ func fire(kind: int, pos: Vector3, vel: Vector3, exclude: Array = [], from_playe
 	_active.append({
 		"kind": kind, "pos": pos, "vel": vel, "ttl": TTL[kind], "mesh": mesh,
 		"exclude": exclude, "player": from_player, "trail": trail, "age": 0.0,
+		"visual": visual,
 	})
 
 func _physics_process(delta: float) -> void:
@@ -145,6 +155,10 @@ func _physics_process(delta: float) -> void:
 				var want: Vector3 = (tgt - p.pos).normalized()
 				var cur: Vector3 = p.vel.normalized()
 				p.vel = cur.slerp(want, clampf(1.6 * delta, 0.0, 1.0)) * p.vel.length()
+		# incoming mortar/bomb whistle once it starts descending
+		if (kind == Kind.MORTAR or kind == Kind.BOMB) and p.vel.y < 0.0 and not p.get("whistled", false):
+			p.whistled = true
+			Sfx.play_at("mortar_whistle" if kind == Kind.MORTAR else "bomb_whistle", p.pos, 2.0, 1.0, 400.0)
 		p.vel.y -= GRAV[kind] * delta
 		var new_pos: Vector3 = p.pos + p.vel * delta
 		var hit := false
@@ -199,17 +213,20 @@ func _seek_target(pos: Vector3, vel: Vector3) -> Vector3:
 
 func _impact(p: Dictionary, at: Vector3, collider: Object) -> void:
 	var kind: int = p.kind
-	if collider and collider.has_method("take_damage"):
+	var can_damage: bool = damage_enabled and not p.get("visual", false)
+	if can_damage and collider and collider.has_method("take_damage"):
 		collider.take_damage(DIRECT[kind], at)
-	if kind == Kind.MG:
+	if kind == Kind.MG or kind == Kind.ENEMY_MG:
 		if collider == null:
 			Sfx.play_at("ricochet", at, -10.0)
+		elif fx:
+			fx.spark_burst(at)
 		return
 	var cam_pos := cam.global_position if cam else Vector3.ZERO
 	fx.explosion(at, kind == Kind.ROCKET or kind == Kind.SHELL, cam_pos)
 	# splash
 	var r: float = SPLASH_R[kind]
-	if r <= 0.0:
+	if r <= 0.0 or not can_damage:
 		return
 	var groups := ["enemies", "planes"] if p.player else ["player"]
 	for grp in groups:

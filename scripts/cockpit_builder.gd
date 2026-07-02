@@ -32,6 +32,7 @@ static func build(parent: Node3D) -> Dictionary:
 	_build_static(root)
 	_build_controls(root, out)
 	_build_panel(root, out)
+	_build_extra(root, out)
 	_build_lighting(root, out)
 	set_interior_layer(root)
 
@@ -339,6 +340,128 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 	var hint := _label(root, "", Vector3(EYE.x, 0.445, Z0 + 0.02), 0, 16)
 	hint.modulate = Color(1.0, 0.8, 0.35)
 	out["labels"]["hint"] = hint
+
+# ------------------------------------------------------------------ extra console detail (v2)
+# Modeled after a real APC driver's station: gear quadrant, guarded switches,
+# radio set with working knobs, thermal display, breaker rows, placards.
+static func _build_extra(root: Node3D, out: Dictionary) -> void:
+	var c: Dictionary = out["controls"]
+
+	# gear quadrant — front of the right pedestal: R / N / D
+	var gear := VRControl.Lever.create(0.17, Color(0.08, 0.08, 0.08), 26.0, false)
+	gear.position = Vector3(0.10, -0.10, -0.22)
+	root.add_child(gear)
+	c["gear"] = gear
+	_label(root, "R", Vector3(0.155, -0.06, -0.28), 0, 13).rotation.y = deg_to_rad(0)
+	_label(root, "N", Vector3(0.155, -0.06, -0.22), 0, 13)
+	_label(root, "D", Vector3(0.155, -0.06, -0.16), 0, 13)
+	_label(root, "GEAR", Vector3(0.10, -0.135, -0.30), -90, 16, 90)
+
+	# fuel pump — guarded switch beside battery (part of the start ritual)
+	var fuel_cover := VRControl.SafetyCover.create()
+	fuel_cover.position = Vector3(X0 + 0.13, -0.145, 0.28)
+	root.add_child(fuel_cover)
+	c["fuel_cover"] = fuel_cover
+	var fuel := VRControl.ToggleSwitch.create(Color(0.9, 0.7, 0.2))
+	fuel.position = Vector3(X0 + 0.13, -0.145, 0.28)
+	fuel.enabled = false
+	root.add_child(fuel)
+	c["fuel_pump"] = fuel
+	fuel_cover.toggled_on.connect(func(open): fuel.enabled = open)
+	_label(root, "FUEL PUMP", Vector3(X0 + 0.13, -0.135, 0.345), -90, 14, 90)
+
+	# radio set — left wall above console: box, two knobs (volume works!)
+	var rst := MeshKit.begin()
+	MeshKit.box(rst, Transform3D(Basis(), Vector3(0, 0, -0.045)), Vector3(0.26, 0.16, 0.09), Color(0.30, 0.33, 0.28))
+	MeshKit.box(rst, Transform3D(Basis(), Vector3(0, 0.045, 0.002)), Vector3(0.2, 0.03, 0.004), Color(0.1, 0.1, 0.1))
+	var radio := MeshInstance3D.new()
+	radio.mesh = MeshKit.commit(rst, MeshKit.mat_vcol(0.7, 0.2))
+	radio.position = Vector3(X0 + 0.045, 0.16, -0.05)
+	radio.rotation.y = deg_to_rad(90)
+	root.add_child(radio)
+	var vol := VRControl.Knob.create()
+	vol.position = Vector3(X0 + 0.05, 0.12, -0.11)
+	vol.rotation.y = deg_to_rad(90)
+	root.add_child(vol)
+	c["radio_volume"] = vol
+	var chan := VRControl.Knob.create(Color(0.3, 0.15, 0.1))
+	chan.position = Vector3(X0 + 0.05, 0.12, 0.01)
+	chan.rotation.y = deg_to_rad(90)
+	root.add_child(chan)
+	c["radio_channel"] = chan
+	var rl := _label(root, "R-123 RADIO   VOL      CHAN", Vector3(X0 + 0.052, 0.205, -0.05), 0, 12)
+	rl.rotation.y = deg_to_rad(90)
+
+	# thermal display — right wall above the grip: green static screen + IR switch
+	var tst := MeshKit.begin()
+	MeshKit.box(tst, Transform3D(Basis(), Vector3(0, 0, -0.03)), Vector3(0.22, 0.18, 0.06), Color(0.16, 0.17, 0.16))
+	var tbox := MeshInstance3D.new()
+	tbox.mesh = MeshKit.commit(tst, MeshKit.mat_vcol(0.6, 0.3))
+	tbox.position = Vector3(X1 - 0.04, 0.18, -0.12)
+	tbox.rotation.y = deg_to_rad(-90)
+	root.add_child(tbox)
+	var screen := MeshInstance3D.new()
+	var sq := QuadMesh.new()
+	sq.size = Vector2(0.17, 0.13)
+	screen.mesh = sq
+	var sm := StandardMaterial3D.new()
+	sm.albedo_texture = load("res://assets/tex/rock.png")
+	sm.albedo_color = Color(0.15, 0.5, 0.2)
+	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	sm.uv1_scale = Vector3(2, 2, 1)
+	screen.material_override = sm
+	screen.position = Vector3(X1 - 0.043, 0.18, -0.12)
+	screen.rotation.y = deg_to_rad(-90)
+	screen.visible = false
+	root.add_child(screen)
+	out["thermal_screen"] = screen
+	var ir := VRControl.ToggleSwitch.create(Color(0.3, 0.8, 0.4))
+	ir.position = Vector3(X1 - 0.05, 0.055, -0.12)
+	ir.rotation.z = deg_to_rad(90)
+	root.add_child(ir)
+	c["ir"] = ir
+	ir.toggled_on.connect(func(on): screen.visible = on)
+	var tl := _label(root, "THERMAL", Vector3(X1 - 0.045, 0.285, -0.12), 0, 13)
+	tl.rotation.y = deg_to_rad(-90)
+
+	# horn — big button on the left tiller mount (mandatory fun)
+	var horn := VRControl.PushButton.create(Color(0.9, 0.75, 0.2), 0.03)
+	horn.position = Vector3(EYE.x - 0.20, -0.66, -0.245)
+	horn.rotation.x = deg_to_rad(-50)
+	root.add_child(horn)
+	c["horn"] = horn
+	_label(root, "HORN", Vector3(EYE.x - 0.20, -0.60, -0.29), -40, 13)
+
+	# return-to-menu — guarded switch, rear of left console
+	var menu_cover := VRControl.SafetyCover.create()
+	menu_cover.position = Vector3(X0 + 0.22, -0.145, 0.40)
+	root.add_child(menu_cover)
+	c["menu_cover"] = menu_cover
+	var menu_sw := VRControl.ToggleSwitch.create(Color(0.4, 0.6, 0.9))
+	menu_sw.position = Vector3(X0 + 0.22, -0.145, 0.40)
+	menu_sw.enabled = false
+	root.add_child(menu_sw)
+	c["menu_switch"] = menu_sw
+	menu_cover.toggled_on.connect(func(open): menu_sw.enabled = open)
+	_label(root, "MENU", Vector3(X0 + 0.22, -0.135, 0.455), -90, 13, 90)
+
+	# decor: breaker rows + placards + wiring conduit (single merged mesh)
+	var dst := MeshKit.begin()
+	for row in 2:
+		for i in 6:
+			MeshKit.box(dst, Transform3D(Basis(), Vector3(X1 - 0.045, -0.02 - row * 0.06, 0.10 + i * 0.045)),
+				Vector3(0.02, 0.035, 0.02), Color(0.12, 0.12, 0.12) if (i + row) % 3 else Color(0.6, 0.15, 0.1))
+	MeshKit.box(dst, Transform3D(Basis(), Vector3(X1 - 0.05, 0.02, 0.21)), Vector3(0.015, 0.20, 0.36), Color(0.28, 0.30, 0.27))
+	# conduit runs
+	MeshKit.cyl(dst, Transform3D(Basis(Vector3.FORWARD, deg_to_rad(90)), Vector3(0, YR - 0.14, -0.25)), 0.015, 0.015, X1 - X0 - 0.2, 6, Color(0.1, 0.1, 0.1))
+	MeshKit.cyl(dst, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(14)), Vector3(X0 + 0.06, 0.35, 0.30)), 0.018, 0.018, 0.5, 6, Color(0.1, 0.1, 0.1))
+	MeshKit.box(dst, Transform3D(Basis(), Vector3(X0 + 0.05, 0.42, -0.30)), Vector3(0.08, 0.12, 0.16), Color(0.25, 0.27, 0.24))
+	var dm := MeshInstance3D.new()
+	dm.mesh = MeshKit.commit(dst, MeshKit.mat_vcol(0.85, 0.1))
+	root.add_child(dm)
+	_label(root, "CAUTION\nTRAVERSE", Vector3(0.10, 0.10, -0.35), 0, 10)
+	var pl2 := _label(root, "MAX 40 KMH", Vector3(EYE.x + 0.24, 0.13, Z0 + 0.03), 0, 10)
+	pl2.modulate = Color(0.9, 0.8, 0.5)
 
 # ------------------------------------------------------------------ lighting
 static func _build_lighting(root: Node3D, out: Dictionary) -> void:
