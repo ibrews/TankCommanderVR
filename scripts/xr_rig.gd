@@ -20,6 +20,12 @@ class XRHand:
 	var _grip_was := false
 	var poke_tip: Node3D
 	var laser: MeshInstance3D
+	# Separate node tracking the AIM pose (the natural pointing ray). The hand
+	# itself tracks the GRIP pose, which is right for grabbing but points up and
+	# back — using it as a laser ray made the menu impossible to point at. The
+	# aim pose also maps to hand-tracking's pinch-point ray, so one path serves
+	# controllers and bare hands alike.
+	var aim: XRController3D
 
 	func _init(tracker_name: String) -> void:
 		tracker = tracker_name
@@ -101,13 +107,36 @@ class XRHand:
 		if m == null:
 			laser.visible = false
 			return
-		var from := global_position
-		var dir := -global_transform.basis.z
-		var trig := get_float("trigger") > 0.6
-		var clicked: bool = trig and not get_meta("mtrig_was", false)
-		set_meta("mtrig_was", trig)
+		# Ray origin/direction: prefer this hand's aim pose; if the controller
+		# isn't tracked (set down, or hand-tracking lost), fall back to the head
+		# so the menu is always pointable by gaze.
+		var from: Vector3
+		var dir: Vector3
+		var head := false
+		if aim and aim.get_has_tracking_data():
+			from = aim.global_position
+			dir = -aim.global_transform.basis.z
+		elif get_has_tracking_data():
+			from = global_position
+			dir = -global_transform.basis.z
+		elif rig and rig.camera and tracker == "right_hand":
+			# only one hand drives the gaze fallback, else both double-click it
+			from = rig.camera.global_position
+			dir = -rig.camera.global_transform.basis.z
+			head = true
+		else:
+			laser.visible = false
+			return
+		# Click via trigger, A/X, or the menu button — no single dead binding
+		# should be able to lock the player out of the menu.
+		var pressed := get_float("trigger") > 0.6 or is_button_pressed("ax_button") \
+			or is_button_pressed("menu_button")
+		var clicked: bool = pressed and not get_meta("mtrig_was", false)
+		set_meta("mtrig_was", pressed)
 		var res := m.pointer(from, dir, clicked)
-		if res.is_empty():
+		# Only the head-gaze ray hides the hand laser; a tracked hand always
+		# shows its beam even when it's off the panel, so aiming has feedback.
+		if head or res.is_empty():
 			laser.visible = false
 		else:
 			laser.visible = true
@@ -143,6 +172,10 @@ func _ready() -> void:
 	hand_r = XRHand.new("right_hand")
 	hand_r.rig = self
 	add_child(hand_r)
+	# aim-pose siblings (menu laser rays). Direct children of the origin so they
+	# read the aim pose in origin space, not compounded with the grip pose.
+	hand_l.aim = _make_aim("left_hand")
+	hand_r.aim = _make_aim("right_hand")
 	var wind := AudioStreamPlayer.new()
 	wind.stream = Sfx.streams.get("wind_loop")
 	wind.volume_db = -22.0
@@ -151,6 +184,21 @@ func _ready() -> void:
 	var xr := XRServer.find_interface("OpenXR")
 	if xr and xr.has_signal("pose_recentered"):
 		xr.pose_recentered.connect(func(): _calibrated = false; _calib_t = 0.3)
+	# Defensive: if nothing is tracking a few seconds in, the OpenXR runtime or
+	# action map is misconfigured — surface it rather than leaving the player
+	# with a dead, unexplained menu.
+	get_tree().create_timer(5.0).timeout.connect(func() -> void:
+		var any := hand_r.get_has_tracking_data() or hand_l.get_has_tracking_data() \
+			or (hand_r.aim and hand_r.aim.get_has_tracking_data())
+		if not any:
+			push_warning("[xr] no controller/hand tracking 5s after start — pick up the controllers, or check the OpenXR action map"))
+
+func _make_aim(tracker_name: String) -> XRController3D:
+	var c := XRController3D.new()
+	c.tracker = tracker_name
+	c.pose = "aim_pose"
+	add_child(c)
+	return c
 
 func to_menu_anchor(parent: Node3D) -> void:
 	tank = null
