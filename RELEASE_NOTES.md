@@ -1,3 +1,15 @@
+# v0.4.0 — The Wild Pass
+
+New in v0.4.0:
+- 4 new battlefields: BEACH RESORT (calypso!), ISLAND, VOLCANO (bridges over
+  real lava), and the BABY ROOM (you are toy-sized; mind the giant baby)
+- 3 new vehicles: BIPLANE, HELICOPTER, and THE RUNNER (pump your arms!)
+- NIGHT OPS: stealth in the dark — headlights help you see AND get you seen
+- 201 lines of dialogue. Dad has a LOT of thoughts now
+- A cabbage merchant in every level. Be kind. (You will not be kind.)
+- Full hand tracking: pinch to shoot, squeeze to grab, no controllers needed
+- tuning.cfg: 40+ playtest dials, editable without a rebuild
+
 # v0.3.0 — Kids Edition + The Fun Pass
 
 New in v0.3.0:
@@ -44,6 +56,6 @@ generated. Built overnight with [Claude Code](https://claude.com/claude-code).
 ---
 To publish this release (Alex — one command from the repo root):
 
-    gh release create v0.3.0 out/TankCommanderVR.apk \
-      --title "Tank Commander VR v0.3.0 — Kids Edition + Fun Pass" \
+    gh release create v0.4.0 out/TankCommanderVR.apk \
+      --title "Tank Commander VR v0.4.0 — The Wild Pass" \
       --notes-file RELEASE_NOTES.md
