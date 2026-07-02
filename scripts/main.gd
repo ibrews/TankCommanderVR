@@ -241,6 +241,11 @@ func to_menu() -> void:
 
 func _on_start_requested(mode: int, level_id: String, diff: int, mutator := "") -> void:
 	Game.mode = mode
+	Game.endless = level_id == "endless"
+	if Game.endless:
+		level_id = Levels.ORDER[Game.rng.randi() % Levels.ORDER.size()]
+		if mode == Game.Mode.COOP or mode == Game.Mode.VERSUS:
+			Game.endless = false   # multiplayer shares one concrete level
 	Game.level_id = level_id
 	Game.difficulty = diff
 	Game.mutator = mutator
@@ -259,6 +264,21 @@ func _on_join_requested() -> void:
 		Game.difficulty = cfg.diff
 		start_game(), CONNECT_ONE_SHOT)
 	NetManager.search()
+
+# endless mode: after a few cleared waves, pack up and fight somewhere new.
+# Score/hp/wave ride along via Game.travel_carry (consumed in Game.restart).
+func endless_travel() -> void:
+	var choices := Levels.ORDER.filter(func(id: String) -> bool: return id != Game.level_id)
+	Game.level_id = choices[Game.rng.randi() % choices.size()]
+	Game.time_of_day = Game.rng.randi() % 3
+	Game.travel_carry = {"score": Game.score, "hp": Game.hp, "wave": Game.wave}
+	Sfx.vo("vo_travel", 3, 1.0)
+	start_game()
+	# arriving mid-tour: engine already hot, no start-ritual tutorial again
+	var v: Node3D = player if is_instance_valid(player) else (plane if is_instance_valid(plane) else null)
+	if v and v.has_method("quick_start"):
+		v.call("quick_start")
+		v.set("_hint_stage", 8)
 
 # ---------------------------------------------------------------- game state
 func start_game() -> void:
@@ -436,6 +456,10 @@ func _process(delta: float) -> void:
 			v.call("set_mg", true)
 		if _smoke_frames == 30 and v:
 			v.call("set_mg", false)
+		if _smoke_frames == 25 and Game.endless:
+			print("[smoke] endless travel test: ", Game.level_id, " ->")
+			endless_travel()
+			print("[smoke] arrived: ", Game.level_id, " wave=", Game.wave, " score=", Game.score)
 		if _smoke_frames == 0:
 			print("[smoke] OK — frames ran clean")
 			get_tree().quit(0)

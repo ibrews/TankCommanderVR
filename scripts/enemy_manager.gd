@@ -24,6 +24,10 @@ func _ready() -> void:
 	Game.game_restarted.connect(_on_restart)
 	if Game.mode == Game.Mode.VERSUS:
 		_running = false  # pure duel: no AI waves
+	if Game.wave > 0:
+		# arrived here mid-endless-tour: resume escalation, allow a breather
+		wave = Game.wave
+		_between = 12.0
 
 func _on_restart() -> void:
 	for n in get_tree().get_nodes_in_group("enemies") + get_tree().get_nodes_in_group("planes"):
@@ -74,6 +78,16 @@ func _ring_pos(r_min: float, r_max: float) -> Vector3:
 	return pos
 
 func _spawn_wave() -> void:
+	if Game.endless and wave > 0 and wave % 3 == 0:
+		# 3 waves cleared on this battlefield — tour moves somewhere new
+		_running = false
+		Game.add_score(400)
+		Sfx.sting("sting_wave")
+		var m: Node = get_tree().get_first_node_in_group("main")
+		if m:
+			m.call_deferred("endless_travel")
+			return
+		_running = true   # no main found (harness edge) — keep fighting here
 	wave += 1
 	Game.set_wave(wave)
 	if wave > 1:

@@ -28,6 +28,9 @@ var time_night: bool:
 var player_lights := false
 var noise_t := 0.0         # seconds since the player made big noise (reveals you)
 var state: int = GState.MENU
+var endless := false       # cycle to a random new level every few waves
+var travel_carry := {}     # score/hp/wave preserved across an endless travel
+var help_on := true        # coaching VO + written hints (menu-toggleable)
 
 func make_noise() -> void:
 	noise_t = Tune.v("noise_reveal_time")
@@ -92,6 +95,14 @@ var their_kills := 0
 
 func _ready() -> void:
 	rng.seed = 20260702
+	var cf := ConfigFile.new()
+	if cf.load("user://prefs.cfg") == OK:
+		help_on = cf.get_value("prefs", "help_on", true)
+
+func save_prefs() -> void:
+	var cf := ConfigFile.new()
+	cf.set_value("prefs", "help_on", help_on)
+	cf.save("user://prefs.cfg")
 
 func diff(easy: float, med: float, hard: float) -> float:
 	return [easy, med, hard][clampi(difficulty, 0, 2)]
@@ -132,6 +143,12 @@ func restart() -> void:
 	wave = 0
 	alive = true
 	time_since_damage = 999.0
+	if not travel_carry.is_empty():
+		# endless travel: the fight continues on a new battlefield
+		score = travel_carry.score
+		wave = travel_carry.wave
+		hp = maxf(travel_carry.hp, 45.0)   # arriving patches you up a bit
+		travel_carry = {}
 	hp_changed.emit(hp)
 	score_changed.emit(score)
 	game_restarted.emit()

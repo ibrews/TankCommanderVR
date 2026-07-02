@@ -43,10 +43,10 @@ func _ready() -> void:
 	_build_board()
 	_show_main()
 	Sfx.music_menu()
-	Sfx.vo("vo_welcome", 4, 2.0)
+	Sfx.coach("vo_welcome", 4, 2.0)
 	get_tree().create_timer(6.5).timeout.connect(func():
 		if page == 0 and is_inside_tree():
-			Sfx.vo("vo_menu_pick", 1, 60.0))
+			Sfx.coach("vo_menu_pick", 1, 60.0))
 
 func _build_board() -> void:
 	var back := MeshInstance3D.new()
@@ -119,6 +119,7 @@ func _show_main() -> void:
 	for i in modes.size():
 		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.79 + i * 0.53, 0.45), Vector2(0.50, 0.12), 15)
 	_text("BATTLEFIELD", Vector2(-0.93, 0.33), 15, Color(0.7, 0.75, 0.7))
+	_button("level:endless", "ENDLESS TOUR", Vector2(0.90, 0.33), Vector2(0.48, 0.10), 12)
 	for i in Levels.ORDER.size():
 		var id: String = Levels.ORDER[i]
 		var row := i / 5
@@ -134,6 +135,7 @@ func _show_main() -> void:
 		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.12), 14)
 	_button("vehcycle", "VEHICLE: " + VEHICLES[sel_vehicle][1], Vector2(-0.72, -0.42), Vector2(0.85, 0.14), 15)
 	_button("howto", "HOW TO PLAY", Vector2(0.22, -0.42), Vector2(0.62, 0.14), 16)
+	_button("helptoggle", "HELP: ON" if Game.help_on else "HELP: OFF", Vector2(0.85, -0.42), Vector2(0.52, 0.14), 14)
 	_button("start", "START!", Vector2(0.55, -0.62), Vector2(0.9, 0.20), 28)
 	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.62), 11, Color(0.55, 0.6, 0.55))
 	_text("secret: squeeze EVERYTHING + A...", Vector2(0, -0.78), 11, Color(0.45, 0.5, 0.45))
@@ -220,6 +222,12 @@ func _press(id: String) -> void:
 			Game.vehicle = VEHICLES[sel_vehicle][0]
 			Game.time_of_day = sel_time
 			start_requested.emit(sel_mode, sel_level, sel_diff, sel_mut)
+		"helptoggle":
+			Game.help_on = not Game.help_on
+			Game.save_prefs()
+			if Game.help_on:
+				Sfx.vo("vo_help_on", 3, 1.0)
+			_show_main()
 		"vehcycle":
 			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()
 			match VEHICLES[sel_vehicle][0]:
@@ -252,6 +260,8 @@ func _press(id: String) -> void:
 				sel_level = id.trim_prefix("level:")
 				if sel_level == "gym":
 					Sfx.vo("vo_gym", 2, 30.0)
+				elif sel_level == "endless":
+					Sfx.vo("vo_endless", 2, 30.0)
 			elif id.begins_with("mut:"):
 				sel_mut = id.trim_prefix("mut:")
 				match sel_mut:

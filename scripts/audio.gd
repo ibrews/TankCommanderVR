@@ -286,6 +286,12 @@ func _radio_tick(delta: float) -> void:
 		_radio_talk.stream = streams[line]
 		_radio_talk.play()
 
+# coaching VO: tutorial/guidance lines a veteran can silence from the menu
+# (HELP: OFF). Flavor/combat callouts stay on vo() and always play.
+func coach(name: String, prio := 1, cooldown := 6.0) -> void:
+	if Game.help_on:
+		vo(name, prio, cooldown)
+
 # ---------------- VO (the tank computer is Dad)
 # `name` can be a pool prefix ("vo_kill") — a random non-repeating variant
 # plays. Cooldowns apply to the whole pool so dad doesn't get chatty.

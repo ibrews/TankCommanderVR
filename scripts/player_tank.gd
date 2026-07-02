@@ -77,6 +77,7 @@ var _yaw_rate := 0.0
 var _vy := 0.0    # vertical velocity (airtime/bouncing in low-g)
 var _exhaust_t := 0.0
 var _hint_stage := 0
+var _hint_t := 0.0
 var _dust_t := 0.0
 
 func _init(t: Terrain, p: Projectiles, f: FxPool) -> void:
@@ -385,6 +386,7 @@ func _on_restart() -> void:
 	_set_lamp("low_hull", false)
 	_set_lamp("reload", false)
 	_hint_stage = 0
+	_hint_t = 0.0
 	_update_plaque()
 
 func _set_lamp(name_: String, on: bool) -> void:
@@ -630,7 +632,7 @@ func fire_cannon(from_stick := false) -> void:
 		return
 	if not loaded:
 		Sfx.play_at("click", muzzle.global_position, -6.0)
-		if _hint_stage >= 3:
+		if _hint_stage >= 3 and Game.help_on:
 			cockpit["labels"]["hint"].text = "PULL RED BREECH LEVER TO RELOAD"
 		return
 	loaded = false
@@ -733,6 +735,12 @@ func _update_hints() -> void:
 	if not Game.alive:
 		return
 	var hint: Label3D = cockpit["labels"]["hint"]
+	if not Game.help_on:
+		# veteran mode: no written coaching (game-over handle text still shows)
+		if _hint_stage < 90:
+			_hint_stage = 90
+			hint.text = ""
+		return
 	match _hint_stage:
 		0:
 			hint.text = "FLIP BATTERY SWITCH (LEFT CONSOLE)"
@@ -755,8 +763,19 @@ func _update_hints() -> void:
 			if absf(_spd) > 2.0:
 				_hint_stage = 5
 		5:
+			_hint_t += get_physics_process_delta_time()
+			hint.text = "ROCKETS: OPEN RED COVER, FLIP ARM, PRESS THE BUTTON"
+			if _hint_t > 11.0 or rockets_left < 12:
+				_hint_stage = 6
+				_hint_t = 0.0
+		6:
+			_hint_t += get_physics_process_delta_time()
+			hint.text = "RADIO KNOB = MUSIC  ·  X BUTTON = QUICK-START"
+			if _hint_t > 9.0:
+				_hint_stage = 7
+		7:
 			hint.text = ""
-			_hint_stage = 6
+			_hint_stage = 8
 
 func _update_reticle() -> void:
 	var from := muzzle.global_position

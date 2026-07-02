@@ -145,6 +145,7 @@ func _build() -> void:
 	hint.pixel_size = 0.0003
 	hint.modulate = Color(1.0, 0.8, 0.35)
 	hint.position = Vector3(0, 0.55, -0.7)
+	hint.visible = Game.help_on
 	root.add_child(hint)
 	CockpitBuilder.set_interior_layer(root)
 
