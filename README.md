@@ -19,8 +19,23 @@ Every texture and sound is procedurally generated — no external assets.
 | The cardboard gymnasium | Balloon mode |
 | ![cockpit](docs/screenshots/paint_03b_panel.png) | ![storm](docs/screenshots/disaster_06_exterior.png) |
 | The cockpit (battery → fuel → starter → gear) | Hurricane debris |
+| ![volcano](docs/screenshots/volcano_lava_bridge.png) | ![beach](docs/screenshots/beach_v060.png) |
+| Ridge-bridges over live lava (v0.6.0) | Beach assault | 
 
 More in [docs/EVOLUTION.md](docs/EVOLUTION.md).
+
+## Modes
+
+**Solo** waves on 10 battlefields (outdoor, city, town, mudpit, castle,
+gymnasium, beach, island, volcano, baby room) with easy/medium/hard, five
+vehicles (tank, plane, biplane, helicopter, runner), day / golden hour /
+night-ops stealth, and silly mutators (low-g, underwater, balloon,
+paintball). **ENDLESS TOUR** hops to a random new battlefield every three
+cleared waves and keeps your score rolling. **Co-op** over LAN: one headset
+drives + machine-guns, the other runs the turret. **Versus**: tank duel,
+first to five. New players get voice coaching and cockpit hints — veterans
+can switch **HELP: OFF** in the menu and the tank computer stops repeating
+itself.
 
 ## Play
 
@@ -63,8 +78,9 @@ Edit, restart, report back.
 ## Performance (measured on Quest 3S)
 
 Golden-hour beach, full combat demo, glow + fill-light on: **locked 72/72 fps,
-App GPU 9.4 ms avg of the 13.8 ms budget** (VrApi logcat). Glow costs <1 ms on
-the Adreno 740 — it stays on. Foveation, glow, and 40+ gameplay dials are
+App GPU 9.2 ms avg of the 13.8 ms budget** (VrApi logcat, v0.6.0). Glow costs
+<1 ms on the Adreno 740 — it stays on. Foveation ships at level 2: the A/B
+against level 3 measured within run variance, so the sharper periphery is free. Foveation, glow, and 40+ gameplay dials are
 runtime-tunable via `tuning.cfg` (see above); `autostart.cfg` in the same dir
 boots the game into a self-playing demo scene for hands-off profiling:
 
