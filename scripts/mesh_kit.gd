@@ -149,6 +149,12 @@ static func mat_tex(path: String, vcol := false, rough := 0.92, metal := 0.0) ->
 		_mat_cache[key] = m
 	return _mat_cache[key]
 
+static func set_layer_recursive(node: Node, layer_mask: int) -> void:
+	if node is VisualInstance3D:
+		node.layers = layer_mask
+	for c in node.get_children():
+		set_layer_recursive(c, layer_mask)
+
 static func add_static_box_collider(parent: Node3D, pos: Vector3, size: Vector3, yaw := 0.0) -> void:
 	var body := StaticBody3D.new()
 	body.collision_layer = 1

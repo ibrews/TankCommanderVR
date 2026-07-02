@@ -62,6 +62,11 @@ openxr/extensions/hand_tracking=true
 ; the board, despite the physical controllers working fine in every other app.
 openxr/extensions/hand_interaction_profile=true
 openxr/extensions/meta/application_space_warp=false
-openxr/extensions/meta/render_model=true
+; OpenXRFbRenderModel (XR_FB_render_model) is confirmed NOT supported on
+; Quest 3S specifically (Khronos runtime extension matrix; corroborated by an
+; invisible controller on real hardware 2026-07-02), so the code no longer
+; uses it — controller_visual.gd drives a bundled MIT-licensed model instead.
+; Left off to avoid requesting the unused com.oculus.permission.RENDER_MODEL.
+openxr/extensions/meta/render_model=false
 openxr/extensions/meta/hand_tracking_mesh=true
 openxr/extensions/meta/hand_tracking_aim=true
