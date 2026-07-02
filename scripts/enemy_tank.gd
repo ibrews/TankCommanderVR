@@ -140,6 +140,10 @@ func _physics_process(delta: float) -> void:
 		target_speed *= 0.3
 	spd = move_toward(spd, target_speed, 2.0 * delta)
 	var fwd := Vector3(-sin(yaw), 0, -cos(yaw))
+	# enemy tanks don't swim either: hold at the waterline (shore battery)
+	var wcheck := gp + fwd * 6.0
+	if terrain.height(wcheck.x, wcheck.z) < -1.0 and terrain.height(gp.x, gp.z) > -1.0:
+		spd = move_toward(spd, 0.0, 30.0 * delta)
 	var target_y := terrain.height(gp.x, gp.z) + 0.04
 	velocity = fwd * spd + Vector3(0, clampf((target_y - gp.y) / delta, -10.0, 10.0), 0)
 	move_and_slide()

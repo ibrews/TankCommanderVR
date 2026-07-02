@@ -74,16 +74,20 @@ static func cyl(st: SurfaceTool, tf: Transform3D, bottom_r: float, top_r: float,
 			st.set_normal(quad_n[k])
 			st.set_uv(quad_uv[k])
 			st.add_vertex(tf * quad_v[k])
+		# Caps: wound so the CCW-front face points OUTWARD (down for the bottom,
+		# up for the top). The earlier [center, b1, b0] / [center, t0, t1] order
+		# was reversed, so caps were back-face culled from outside — barrels and
+		# funnels read as hollow tubes. Order below matches the outward normal.
 		if cap_bottom and bottom_r > 0.0:
 			var nb := (tf.basis * Vector3.DOWN).normalized()
-			for v in [Vector3(0, -hh, 0), b1, b0]:
+			for v in [Vector3(0, -hh, 0), b0, b1]:
 				st.set_color(col)
 				st.set_normal(nb)
 				st.set_uv(Vector2(0.5 + v.x * 0.1, 0.5 + v.z * 0.1))
 				st.add_vertex(tf * v)
 		if cap_top and top_r > 0.0:
 			var nt := (tf.basis * Vector3.UP).normalized()
-			for v in [Vector3(0, hh, 0), t0, t1]:
+			for v in [Vector3(0, hh, 0), t1, t0]:
 				st.set_color(col)
 				st.set_normal(nt)
 				st.set_uv(Vector2(0.5 + v.x * 0.1, 0.5 + v.z * 0.1))

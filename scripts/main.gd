@@ -318,6 +318,8 @@ func start_game() -> void:
 		"runner":
 			vehicle = PlayerAlt.Runner.new(terrain, projectiles, fx)
 			vehicle.set("_rig", rig)
+		"boat":
+			vehicle = PlayerBoat.new(terrain, projectiles, fx)
 		_:
 			player = PlayerTank.new(terrain, projectiles, fx)
 			vehicle = player
@@ -442,6 +444,8 @@ func _process(delta: float) -> void:
 		if _smoke_frames == 180:
 			# drive the menu programmatically
 			var m := Game.Mode.PLANE if "--plane" in OS.get_cmdline_user_args() else Game.Mode.SOLO
+			if OS.get_environment("SHOT_VEH") != "":
+				Game.vehicle = OS.get_environment("SHOT_VEH")
 			if menu:
 				menu.start_requested.emit(m, OS.get_environment("SHOT_LEVEL") if OS.get_environment("SHOT_LEVEL") != "" else "castle", 1, OS.get_environment("SHOT_MUT"))
 		var v: Node3D = player if player else plane

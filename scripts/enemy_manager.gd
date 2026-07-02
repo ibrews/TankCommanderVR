@@ -66,15 +66,27 @@ func _process(delta: float) -> void:
 	elif wave > 0:
 		_between = 8.0
 
-func _ring_pos(r_min: float, r_max: float) -> Vector3:
+func _ring_pos(r_min: float, r_max: float, want_water := false) -> Vector3:
 	var ring: Array = Levels.current.get("spawn_ring", [])
-	if ring.size() == 2:
+	if ring.size() == 2 and not want_water:
 		r_min = ring[0]
 		r_max = ring[1]
-	var a := Game.rng.randf() * TAU
-	var r := Game.rng.randf_range(r_min, r_max)
-	var pos := Vector3(cos(a) * r, 0, sin(a) * r)
+	var wet_level: bool = Levels.current.get("coast", false) \
+		or Levels.current.get("island", false) or Levels.current.get("archipelago", false)
+	var pos := Vector3.ZERO
+	for i in 40:
+		var a := Game.rng.randf() * TAU
+		var r := Game.rng.randf_range(r_min, r_max)
+		pos = Vector3(cos(a) * r, 0, sin(a) * r)
+		var h := terrain.height(pos.x, pos.z)
+		if want_water:
+			if h < -1.8:
+				break
+		elif h > 0.2 or not wet_level:
+			break   # ground units never spawn in the drink
 	pos.y = terrain.height(pos.x, pos.z) + 0.1
+	if want_water:
+		pos.y = -0.8
 	return pos
 
 func _spawn_wave() -> void:
@@ -143,4 +155,16 @@ func _spawn_wave() -> void:
 		add_child(p)
 		var a := Game.rng.randf() * TAU
 		p.global_position = Vector3(cos(a) * 300.0, 70.0, sin(a) * 300.0)
+	# warships raid coastal levels from the deep water
+	var ships_base: int = Levels.current.get("ships", 0)
+	if ships_base > 0:
+		Sfx.vo("vo_ship", 2, 45.0)
+		var ships := mini(int(ships_base * dm) + int((wave - 1) / 2.0), 4)
+		for i in maxi(ships, 1 if wave >= 1 else 0):
+			var sh := EnemyShip.new(terrain, projectiles, fx, player)
+			sh.hp = Tune.v("enemy_ship_hp")
+			sh.accuracy = maxf(0.10 - wave * 0.01, 0.04) / (Game.diff(0.75, 1.0, 1.4) * Tune.v("enemy_accuracy_scale"))
+			sh.cadence = maxf(7.0 - wave * 0.3, 4.0) * Tune.v("enemy_cadence_scale") / Game.diff(0.8, 1.0, 1.3)
+			add_child(sh)
+			sh.global_position = _ring_pos(110.0, 185.0, true)
 	_between = 8.0

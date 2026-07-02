@@ -90,6 +90,7 @@ const CONFIGS := {
 		"village": {"center": Vector2(60, 60), "count": 8, "spread": 34.0},
 		"city": {}, "castle": {}, "mud": [],
 		"wrecks": 1,
+		"ships": 1,
 		"spawn": Vector2(0, 120),
 		"mortars": [Vector2(-120, 60)],
 		"tint": Color(1.05, 1.0, 0.92),
@@ -106,11 +107,31 @@ const CONFIGS := {
 		"village": {"center": Vector2(0, -40), "count": 7, "spread": 30.0},
 		"city": {}, "castle": {}, "mud": [],
 		"wrecks": 2,
+		"ships": 1,
 		"arena_radius": 128.0,
 		"spawn": Vector2(0, 90),
 		"spawn_ring": [50.0, 100.0],
 		"mortars": [Vector2(-70, -70)],
 		"tint": Color(1.0, 1.02, 0.95),
+		"sun_energy": 1.35,
+		"calm_track": "music_island",
+		"ambient_loop": "waves_loop",
+	},
+	"archipelago": {
+		"title": "ISLES",
+		"rolling": 2.5, "dunes": false, "pond": false, "archipelago": true,
+		"spawn_h": 4.6, "village_h": 3.4,
+		"flatten": [],
+		"trees": 50, "palms": 60, "rocks": 40,
+		"village": {"center": Vector2(0, 60), "count": 6, "spread": 26.0},
+		"city": {}, "castle": {}, "mud": [],
+		"wrecks": 1,
+		"ships": 2,
+		"arena_radius": 190.0,
+		"spawn": Vector2(0, 90),
+		"spawn_ring": [60.0, 140.0],
+		"mortars": [Vector2(-125, -35), Vector2(115, -75)],
+		"tint": Color(1.0, 1.0, 0.96),
 		"sun_energy": 1.35,
 		"calm_track": "music_island",
 		"ambient_loop": "waves_loop",
@@ -167,7 +188,7 @@ const CONFIGS := {
 	},
 }
 
-const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "volcano", "babyroom"]
+const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "archipelago", "volcano", "babyroom"]
 static var cardboard := false   # set at level build; enemies check it
 static var army_green := false  # baby room: little green army men
 

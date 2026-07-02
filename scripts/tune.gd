@@ -59,6 +59,8 @@ const DEFAULTS := {
 	# --- pretty
 	"glow_enabled": 1.0,
 	"glow_intensity": 0.55,
+	"enemy_ship_hp": 30.0,
+	"boat_speed": 14.0,
 	"foveation_level": 2.0,   # 0-3; lower = sharper periphery, more GPU
 	                          # A/B on Quest 3S: 2 vs 3 = 9.17 vs 9.20 ms — free
 }

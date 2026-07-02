@@ -60,6 +60,9 @@ vo_beach_3
 vo_beach_4
 vo_biplane_2
 vo_biplane_3
+vo_boat_2
+vo_boat_3
+vo_boat_4
 vo_cabbage_2
 vo_cabbage_3
 vo_coop
@@ -170,6 +173,8 @@ vo_plane_down_5
 vo_runner_2
 vo_runner_3
 vo_runner_4
+vo_ship_2
+vo_ship_3
 vo_spotted_2
 vo_spotted_3
 vo_start
@@ -178,6 +183,9 @@ vo_start_3
 vo_start_4
 vo_start_5
 vo_start_6
+vo_sunk_2
+vo_sunk_3
+vo_sunk_4
 vo_title
 vo_tornado
 vo_toys_2

@@ -68,6 +68,14 @@ func height(x: float, z: float) -> float:
 	if cfg.get("island", false):
 		var r_i: float = Vector2(x, z).length()
 		h = lerpf(h + float(cfg.get("inland_lift", 0.0)), -7.0, smoothstep(125.0, 165.0, r_i))
+	if cfg.get("archipelago", false):
+		# island chain: max of radial bumps; channels drop to a real seafloor
+		var best := -6.5
+		for b in [[0.0, 90.0, 85.0, 6.0], [-125.0, -35.0, 55.0, 5.0], [115.0, -75.0, 50.0, 4.5],
+				[-10.0, -165.0, 48.0, 5.5], [155.0, 75.0, 40.0, 4.0], [-150.0, 115.0, 42.0, 4.5]]:
+			var t: float = smoothstep(b[2] * 0.45, b[2], Vector2(x, z).distance_to(Vector2(b[0], b[1])))
+			best = maxf(best, lerpf(b[3], -6.5, t))
+		h = h * 0.3 + best
 	if cfg.get("volcano", false):
 		# caldera bowl with a ring ridge + three spoke bridges over the lava
 		var rv: float = Vector2(x, z).length()
@@ -89,7 +97,7 @@ func height(x: float, z: float) -> float:
 	h = _flatten(h, Vector2(x, z), spawn, 45.0, float(cfg.get("spawn_h", 1.0)))
 	var vil: Dictionary = cfg.get("village", {})
 	if not vil.is_empty():
-		h = _flatten(h, Vector2(x, z), vil["center"], vil["spread"] + 14.0, 1.5)
+		h = _flatten(h, Vector2(x, z), vil["center"], vil["spread"] + 14.0, float(cfg.get("village_h", 1.5)))
 	if cfg.get("pond", false):
 		var pd: float = Vector2(x, z).distance_to(POND_CENTER)
 		if pd < 34.0:
@@ -121,7 +129,7 @@ func _build_chunks() -> void:
 	mat.set_shader_parameter("tex_rock", load("res://assets/tex/rock.png"))
 	var tint: Color = cfg.get("tint", Color(1, 1, 1))
 	mat.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
-	if cfg.get("coast", false) or cfg.get("island", false):
+	if cfg.get("coast", false) or cfg.get("island", false) or cfg.get("archipelago", false):
 		mat.set_shader_parameter("water_y", -0.55)
 	elif cfg.get("volcano", false):
 		mat.set_shader_parameter("water_y", float(cfg.get("lava_y", -3.2)))
@@ -218,8 +226,8 @@ void vertex() {
 }
 void fragment() {
 	if (wpos.y < water_y) {
-		float depth_t = clamp((water_y - wpos.y) / 5.0, 0.0, 1.0);
-		vec3 wc = mix(water_col * 1.45, water_col * 0.5, depth_t);
+		float depth_t = clamp((water_y - wpos.y) / 3.0, 0.0, 1.0);
+		vec3 wc = mix(water_col * 1.5, water_col * 0.85, depth_t);
 		ALBEDO = wc;
 		ROUGHNESS = 0.12;
 		if (water_emiss > 0.5) {

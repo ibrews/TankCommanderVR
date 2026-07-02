@@ -25,7 +25,7 @@ const TIMES := ["TIME: DAY", "TIME: GOLDEN HOUR", "TIME: NIGHT OPS"]
 var page := 0   # 0 main, 1..4 how-to
 
 const MUTATORS := [["", "NORMAL"], ["lowg", "LOW-G"], ["underwater", "WATER"], ["balloon", "BALLOON"], ["paintball", "PAINT"]]
-const VEHICLES := [["tank", "TANK"], ["plane", "PLANE"], ["biplane", "BIPLANE"], ["heli", "HELI"], ["runner", "RUNNER"]]
+const VEHICLES := [["tank", "TANK"], ["plane", "PLANE"], ["biplane", "BIPLANE"], ["heli", "HELI"], ["runner", "RUNNER"], ["boat", "GUNBOAT"]]
 
 var _buttons: Array[Dictionary] = []
 var _labels_to_clear: Array[Node] = []
@@ -122,10 +122,10 @@ func _show_main() -> void:
 	_text("BATTLEFIELD", Vector2(-0.93, 0.33), 15, Color(0.7, 0.75, 0.7))
 	for i in Levels.ORDER.size():
 		var id: String = Levels.ORDER[i]
-		var row := i / 5
-		var col := i % 5
+		var row := i / 6
+		var col := i % 6
 		_button("level:" + id, Levels.CONFIGS[id]["title"],
-			Vector2(-0.86 + col * 0.44, 0.26 - row * 0.135), Vector2(0.41, 0.12), 13)
+			Vector2(-0.915 + col * 0.365, 0.26 - row * 0.135), Vector2(0.335, 0.12), 11)
 	_text("DIFFICULTY", Vector2(-0.94, 0.02), 15, Color(0.7, 0.75, 0.7))
 	for i in 3:
 		_button("diff:%d" % i, ["EASY", "MEDIUM", "HARD"][i], Vector2(-0.80 + i * 0.42, -0.05), Vector2(0.38, 0.12), 14)
@@ -237,6 +237,7 @@ func _press(id: String) -> void:
 				"runner": Sfx.vo("vo_runner", 2, 30.0)
 				"biplane": Sfx.vo("vo_biplane", 2, 30.0)
 				"plane": Sfx.vo("vo_plane", 2, 30.0)
+				"boat": Sfx.vo("vo_boat", 2, 30.0)
 			_show_main()
 		"timecycle":
 			sel_time = (sel_time + 1) % 3
