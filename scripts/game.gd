@@ -31,6 +31,13 @@ var state: int = GState.MENU
 var endless := false       # cycle to a random new level every few waves
 var travel_carry := {}     # score/hp/wave preserved across an endless travel
 var help_on := true        # coaching VO + written hints (menu-toggleable)
+var third_person := false  # false = in-cockpit first person (default), true = chase cam
+
+signal camera_mode_changed(third: bool)
+
+func toggle_camera_mode() -> void:
+	third_person = not third_person
+	camera_mode_changed.emit(third_person)
 
 func make_noise() -> void:
 	noise_t = Tune.v("noise_reveal_time")

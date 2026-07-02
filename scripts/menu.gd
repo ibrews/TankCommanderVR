@@ -135,7 +135,8 @@ func _show_main() -> void:
 		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.12), 14)
 	_button("vehcycle", "VEHICLE: " + VEHICLES[sel_vehicle][1], Vector2(-0.72, -0.42), Vector2(0.85, 0.14), 15)
 	_button("howto", "HOW TO PLAY", Vector2(0.22, -0.42), Vector2(0.62, 0.14), 16)
-	_button("helptoggle", "HELP: ON" if Game.help_on else "HELP: OFF", Vector2(0.85, -0.42), Vector2(0.52, 0.14), 14)
+	_button("helptoggle", "HELP: ON" if Game.help_on else "HELP: OFF", Vector2(0.72, -0.42), Vector2(0.42, 0.14), 12)
+	_button("viewtoggle", "VIEW: 3RD" if Game.third_person else "VIEW: 1ST", Vector2(1.14, -0.42), Vector2(0.42, 0.14), 12)
 	_button("start", "START!", Vector2(0.55, -0.62), Vector2(0.9, 0.20), 28)
 	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.62), 11, Color(0.55, 0.6, 0.55))
 	_text("secret: squeeze EVERYTHING + A...", Vector2(0, -0.78), 11, Color(0.45, 0.5, 0.45))
@@ -229,6 +230,9 @@ func _press(id: String) -> void:
 			Game.save_prefs()
 			if Game.help_on:
 				Sfx.vo("vo_help_on", 3, 1.0)
+			_show_main()
+		"viewtoggle":
+			Game.toggle_camera_mode()
 			_show_main()
 		"vehcycle":
 			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()

@@ -10,6 +10,7 @@ var hand_l: XRHand
 var hand_r: XRHand
 var _calibrated := true
 var _calib_t := 0.0
+var _fp_pos := Vector3.ZERO   # calibrated first-person eye position
 
 class XRHand:
 	extends XRController3D
@@ -184,6 +185,7 @@ func _ready() -> void:
 	var xr := XRServer.find_interface("OpenXR")
 	if xr and xr.has_signal("pose_recentered"):
 		xr.pose_recentered.connect(func(): _calibrated = false; _calib_t = 0.3)
+	Game.camera_mode_changed.connect(func(_t: bool): _apply_camera_mode())
 	# Defensive: if nothing is tracking a few seconds in, the OpenXR runtime or
 	# action map is misconfigured — surface it rather than leaving the player
 	# with a dead, unexplained menu.
@@ -226,6 +228,15 @@ func attach_to_vehicle(v: Node3D) -> void:
 	v.set("_rumble_cb", func(amp, dur):
 		hand_l.pulse(amp, dur)
 		hand_r.pulse(amp, dur))
+
+# Third person in VR pulls the whole rig back and up in the vehicle frame so
+# you view it like a drone — the headset still drives look, which keeps it
+# comfortable (no forced camera motion). First person seats you in the cockpit.
+func _apply_camera_mode() -> void:
+	_apply_view_offset()
+
+func _apply_view_offset() -> void:
+	position = _fp_pos + (Vector3(0, 3.0, 8.0) if Game.third_person else Vector3.ZERO)
 
 func _physics_process(delta: float) -> void:
 	if Game.state == Game.GState.MENU or tank == null:
@@ -310,6 +321,7 @@ func _calibrate() -> void:
 	var cam_yaw := atan2(-cam_fwd.x, -cam_fwd.z)
 	rotation = Vector3(0, -cam_yaw, 0)
 	position = Vector3.ZERO
-	position = eye_local - (basis * cam_t.origin)
+	_fp_pos = eye_local - (basis * cam_t.origin)
+	_apply_view_offset()
 	_calibrated = true
 	Sfx.play_at("click", global_position, -8.0)
