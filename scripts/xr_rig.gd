@@ -30,6 +30,16 @@ class XRHand:
 	# aim pose also maps to hand-tracking's pinch-point ray, so one path serves
 	# controllers and bare hands alike.
 	var aim: XRController3D
+	# Bare-hand equivalents, assigned by XRRig alongside `aim`. `hand_mesh` is
+	# the hand-tracker-bound sibling (XRRig.hand_l_mesh/hand_r_mesh) — used as
+	# this hand's effective position whenever the controller itself isn't
+	# tracked, since this node's own transform (bound to the controller
+	# tracker) goes stale/frozen once the controller is set down. `hand_aim` is
+	# XR_FB_hand_tracking_aim's per-finger pinch data (tracker
+	# /user/fbhandaim/left|right) — the source for effective_trigger()/
+	# effective_grip() below.
+	var hand_mesh: XRNode3D
+	var hand_aim: XRController3D
 
 	func _init(tracker_name: String) -> void:
 		tracker = tracker_name
@@ -66,7 +76,31 @@ class XRHand:
 		trigger_haptic_pulse("haptic", 0.0, amp, dur, 0.0)
 
 	func hand_pos() -> Vector3:
+		if not get_has_tracking_data() and hand_mesh and hand_mesh.get_has_tracking_data():
+			return hand_mesh.global_position
 		return global_position
+
+	# get_float("trigger")/("grip") only ever have data while the physical
+	# controller is tracked. XR_FB_hand_tracking_aim gives the bare-hand
+	# equivalents as continuous per-finger pinch strengths (0..1) — index
+	# finger stands in for the trigger (natural "point and pinch"), the other
+	# three together stand in for the grip squeeze (natural fist-close). Both
+	# fold in cleanly: whichever source is actually live wins, since the
+	# untracked source always reads 0.
+	func effective_trigger() -> float:
+		var t := get_float("trigger")
+		if hand_aim:
+			t = maxf(t, hand_aim.get_float("index_pinch_strength"))
+		return t
+
+	func effective_grip() -> float:
+		var g := get_float("grip")
+		if hand_aim:
+			var squeeze := (hand_aim.get_float("middle_pinch_strength")
+				+ hand_aim.get_float("ring_pinch_strength")
+				+ hand_aim.get_float("little_pinch_strength")) / 3.0
+			g = maxf(g, squeeze)
+		return g
 
 	# The runtime-supplied model loads asynchronously, sometime after the OpenXR
 	# session starts — layer it into the cockpit-interior lighting group (layer 2,
@@ -95,7 +129,7 @@ class XRHand:
 		laser.visible = false
 		if rig.tank == null:
 			return
-		var gripping := get_float("grip") > 0.55
+		var gripping := effective_grip() > 0.55
 		if holding == null:
 			var near := _nearest_control()
 			if near != _last_near:
@@ -116,15 +150,18 @@ class XRHand:
 				holding.release()
 				holding = null
 		_grip_was = gripping
-		var tip := poke_tip.global_position
+		# poke_tip is a rigid child offset in controller-grip space — meaningless
+		# once the controller's untracked and this node's own transform has gone
+		# stale, so fall back to the live hand-tracking position instead.
+		var tip := poke_tip.global_position if get_has_tracking_data() else hand_pos()
 		for c in get_tree().get_nodes_in_group("vrcontrols"):
 			var vc := c as VRControl
 			if vc and not vc.can_grab() and vc.enabled and vc.global_position.distance_to(tip) < 0.25:
 				vc.poke_check(tip, delta)
 		if holding is VRControl.TwoAxisGrip:
-			if get_float("trigger") > 0.6 and not get_meta("trig_was", false):
+			if effective_trigger() > 0.6 and not get_meta("trig_was", false):
 				rig.tank.call("fire_primary")
-			set_meta("trig_was", get_float("trigger") > 0.6)
+			set_meta("trig_was", effective_trigger() > 0.6)
 			rig.tank.call("set_mg", is_button_pressed("ax_button"))
 
 	func _menu_pointer() -> void:
@@ -144,6 +181,9 @@ class XRHand:
 		elif get_has_tracking_data():
 			from = global_position
 			dir = -global_transform.basis.z
+		elif hand_mesh and hand_mesh.get_has_tracking_data():
+			from = hand_mesh.global_position
+			dir = -hand_mesh.global_transform.basis.z
 		elif rig and rig.camera and tracker == "right_hand":
 			# only one hand drives the gaze fallback, else both double-click it
 			from = rig.camera.global_position
@@ -152,9 +192,10 @@ class XRHand:
 		else:
 			laser.visible = false
 			return
-		# Click via trigger, A/X, or the menu button — no single dead binding
-		# should be able to lock the player out of the menu.
-		var pressed := get_float("trigger") > 0.6 or is_button_pressed("ax_button") \
+		# Click via trigger, A/X, the menu button, or (bare hands) an index
+		# pinch — no single dead binding should be able to lock the player out
+		# of the menu.
+		var pressed := effective_trigger() > 0.6 or is_button_pressed("ax_button") \
 			or is_button_pressed("menu_button")
 		var clicked: bool = pressed and not get_meta("mtrig_was", false)
 		set_meta("mtrig_was", pressed)
@@ -209,6 +250,13 @@ func _ready() -> void:
 	# tracked, so it and the controller model never show at once.
 	hand_l_mesh = _make_hand_mesh("/user/hand_tracker/left", OpenXRFbHandTrackingMesh.HAND_LEFT)
 	hand_r_mesh = _make_hand_mesh("/user/hand_tracker/right", OpenXRFbHandTrackingMesh.HAND_RIGHT)
+	hand_l.hand_mesh = hand_l_mesh
+	hand_r.hand_mesh = hand_r_mesh
+	# Pinch-gesture siblings (XR_FB_hand_tracking_aim) — give grab/trigger a
+	# bare-hand equivalent. Populated directly by the extension, same as the
+	# hand trackers above: no action-map bindings needed.
+	hand_l.hand_aim = _make_hand_aim("/user/fbhandaim/left")
+	hand_r.hand_aim = _make_hand_aim("/user/fbhandaim/right")
 	var wind := AudioStreamPlayer.new()
 	wind.stream = Sfx.streams.get("wind_loop")
 	wind.volume_db = -22.0
@@ -260,6 +308,13 @@ func _make_hand_mesh(hand_tracker_path: String, hand_side: int) -> XRNode3D:
 	add_child(root)
 	return root
 
+# fbhandaim_path: "/user/fbhandaim/left" or "/user/fbhandaim/right".
+func _make_hand_aim(fbhandaim_path: String) -> XRController3D:
+	var c := XRController3D.new()
+	c.tracker = fbhandaim_path
+	add_child(c)
+	return c
+
 func to_menu_anchor(parent: Node3D) -> void:
 	tank = null
 	if get_parent() != parent:
@@ -308,7 +363,7 @@ func _physics_process(delta: float) -> void:
 	tank.call("set_stick_drive", Vector2(_dz(ls.x), _dz(ls.y)))
 	tank.call("set_stick_turret", Vector2(_dz(rs.x), _dz(rs.y)))
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
-		var trig := hand_r.get_float("trigger") > 0.6
+		var trig := hand_r.effective_trigger() > 0.6
 		if trig and not get_meta("rtrig_was", false):
 			tank.call("stick_fire")
 		set_meta("rtrig_was", trig)
@@ -336,8 +391,8 @@ var _egg_t := 0.0
 var _egg_cool := 0.0
 func _check_easter_egg(delta: float) -> void:
 	_egg_cool = maxf(0.0, _egg_cool - delta)
-	var squeeze := hand_l.get_float("grip") > 0.8 and hand_r.get_float("grip") > 0.8 \
-		and hand_l.get_float("trigger") > 0.8 and hand_r.get_float("trigger") > 0.8
+	var squeeze := hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8 \
+		and hand_l.effective_trigger() > 0.8 and hand_r.effective_trigger() > 0.8
 	var with_a := squeeze and hand_r.is_button_pressed("ax_button")
 	if squeeze and _egg_cool <= 0.0:
 		_egg_t += delta
