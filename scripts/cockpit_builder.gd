@@ -385,12 +385,19 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	root.add_child(vol)
 	c["radio_volume"] = vol
 	var chan := VRControl.Knob.create(Color(0.3, 0.15, 0.1))
+	chan.detents = 4
+	chan.value = 0.0
 	chan.position = Vector3(X0 + 0.05, 0.12, 0.01)
 	chan.rotation.y = deg_to_rad(90)
 	root.add_child(chan)
 	c["radio_channel"] = chan
 	var rl := _label(root, "R-123 RADIO   VOL      CHAN", Vector3(X0 + 0.052, 0.205, -0.05), 0, 12)
 	rl.rotation.y = deg_to_rad(90)
+	var station_l := _label(root, "AUTO", Vector3(X0 + 0.052, 0.175, -0.05), 0, 14)
+	station_l.rotation.y = deg_to_rad(90)
+	station_l.modulate = Color(0.4, 0.95, 0.5)
+	out["labels"]["radio_station"] = station_l
+	out["radio_node"] = radio
 
 	# thermal display — right wall above the grip: green static screen + IR switch
 	var tst := MeshKit.begin()

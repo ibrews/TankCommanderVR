@@ -64,6 +64,12 @@ class Jeep:
 		engine_p = Sfx.make_loop_player("jeep_loop", self, -6.0)
 		engine_p.play()
 		shot_t = Game.rng.randf_range(2.0, 5.0)
+		if Game.mutator == "balloon":
+			Game.balloonize(self)
+		elif Levels.cardboard:
+			for c in get_children():
+				if c is MeshInstance3D:
+					c.material_override = MeshKit.mat_tex("res://assets/tex/cardboard.png", false, 0.95)
 
 	func _physics_process(delta: float) -> void:
 		if _dead:

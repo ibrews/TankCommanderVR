@@ -10,6 +10,8 @@ var _columns: Array = []
 var _debris: Array = []
 var _rings: Array = []
 var _dusts: Array = []
+var _splats: Array = []
+var _confetti: Array = []
 
 func _init() -> void:
 	name = "Fx"
@@ -28,6 +30,10 @@ func _ready() -> void:
 		_rings.append(_make_ring())
 	for i in 6:
 		_dusts.append(_make_dust())
+	for i in 40:
+		_splats.append(_make_splat())
+	for i in 4:
+		_confetti.append(_make_confetti())
 
 func _smoke_mat(tex_path: String, additive := false) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -163,8 +169,43 @@ func _make_dust() -> Dictionary:
 	add_child(p)
 	return {"p": p, "t": 99.0}
 
+func _make_splat() -> Dictionary:
+	var mi := MeshInstance3D.new()
+	var qm := QuadMesh.new()
+	qm.size = Vector2(1, 1)
+	mi.mesh = qm
+	var m := StandardMaterial3D.new()
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_texture = load("res://assets/tex/blob_shadow.png")  # radial mask, tinted
+	m.albedo_color = Color(1, 0, 0, 0.9)
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mi.material_override = m
+	mi.visible = false
+	add_child(mi)
+	return {"mesh": mi, "mat": m, "t": 999.0}
+
+func _make_confetti() -> Dictionary:
+	var p := _particles(26, 1.6, 5.0, 11.0, 0.18, 0.4, Vector3(0, -9.0, 0),
+		"res://assets/tex/flash.png", Color(1, 1, 1, 1), Color(1, 1, 1, 0.0), false)
+	# rainbow ramp
+	var grad := Gradient.new()
+	grad.add_point(0.0, Color(1, 0.3, 0.3))
+	grad.add_point(0.33, Color(1, 0.9, 0.2))
+	grad.add_point(0.66, Color(0.3, 0.9, 1.0))
+	grad.add_point(1.0, Color(1, 0.4, 1.0, 0.0))
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	(p.process_material as ParticleProcessMaterial).color_ramp = gt
+	add_child(p)
+	return {"p": p, "t": 99.0}
+
 # ---------------- public API
 func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
+	if Game.mutator == "balloon":
+		balloon_pop(pos)   # total conversion: every boom is a pop
+		return
+	var paint := Game.mutator == "paintball"
 	var best: Dictionary = _explosions[0]
 	for e in _explosions:
 		if e.t > best.t:
@@ -174,6 +215,15 @@ func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
 	best.root.global_position = pos
 	var s := 1.7 if big else 1.0
 	best.root.scale = Vector3.ONE * s
+	if paint:
+		var pc := Game.paint_color()
+		_tint_particles(best.fire, pc, Color(pc, 0.0))
+		_tint_particles(best.smoke, pc.lightened(0.2), Color(pc.lightened(0.4), 0.0))
+		paint_splat(pos, pc, s * 2.2)
+		Sfx.play_at("splat", pos, 2.0)
+	else:
+		_tint_particles(best.fire, Color(1.0, 0.78, 0.3), Color(1.0, 0.22, 0.04, 0.0))
+		_tint_particles(best.smoke, Color(0.30, 0.28, 0.26), Color(0.5, 0.5, 0.5, 0.0))
 	best.smoke.restart()
 	best.fire.restart()
 	best.sparks.restart()
@@ -181,7 +231,45 @@ func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
 	shockwave(pos, s)
 	debris_burst(pos, 8 if big else 5, Color(0.2, 0.18, 0.16))
 	var d := cam_pos.distance_to(pos)
-	Sfx.play_at("explosion_far" if d > 110.0 else "explosion", pos, 3.0 if big else 0.0)
+	if paint:
+		Sfx.play_at("splat", pos, 0.0, 0.8)
+	else:
+		Sfx.play_at("explosion_far" if d > 110.0 else "explosion", pos, 3.0 if big else 0.0)
+
+func _tint_particles(p: GPUParticles3D, from: Color, to: Color) -> void:
+	var pm := p.process_material as ParticleProcessMaterial
+	var grad := Gradient.new()
+	grad.set_color(0, from)
+	grad.set_color(1, to)
+	var gt := GradientTexture1D.new()
+	gt.gradient = grad
+	pm.color_ramp = gt
+
+func paint_splat(pos: Vector3, color: Color, size := 1.6) -> void:
+	var best: Dictionary = _splats[0]
+	for sp in _splats:
+		if sp.t > best.t:
+			best = sp
+	best.t = 0.0
+	best.mesh.visible = true
+	var terrain: Terrain = get_tree().get_first_node_in_group("main").terrain
+	var gy: float = terrain.height(pos.x, pos.z) if terrain else pos.y
+	best.mesh.global_position = Vector3(pos.x, gy + 0.04 + Game.rng.randf() * 0.02, pos.z)
+	best.mesh.rotation = Vector3(-PI / 2, Game.rng.randf() * TAU, 0)
+	best.mesh.scale = Vector3.ONE * size * Game.rng.randf_range(0.8, 1.4)
+	best.mat.albedo_color = Color(color.r, color.g, color.b, 0.85)
+
+func balloon_pop(pos: Vector3) -> void:
+	var best: Dictionary = _confetti[0]
+	for c in _confetti:
+		if c.t > best.t:
+			best = c
+	best.t = 0.0
+	best.p.global_position = pos
+	best.p.restart()
+	Sfx.play_at("pop", pos, 2.0)
+	Sfx.play_at("squeak", pos, -4.0, Game.rng.randf_range(0.8, 1.3))
+	shockwave(pos, 0.7)
 
 func shockwave(pos: Vector3, s := 1.0) -> void:
 	var best: Dictionary = _rings[0]
@@ -297,3 +385,16 @@ func _process(delta: float) -> void:
 			du.t += delta
 			if du.t > 1.6:
 				du.t = 99.0
+	for sp in _splats:
+		if sp.t < 990.0:
+			sp.t += delta
+			if sp.t > 25.0:
+				sp.mat.albedo_color.a = maxf(0.0, 0.85 - (sp.t - 25.0) * 0.2)
+				if sp.t > 30.0:
+					sp.mesh.visible = false
+					sp.t = 999.0
+	for c in _confetti:
+		if c.t < 10.0:
+			c.t += delta
+			if c.t > 2.0:
+				c.t = 99.0

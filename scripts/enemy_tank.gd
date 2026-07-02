@@ -84,10 +84,22 @@ func _ready() -> void:
 	yaw = Game.rng.randf() * TAU
 	_pick_waypoint()
 	fire_timer = Game.rng.randf_range(3.0, 7.0)
+	_apply_skin()
+
+func _apply_skin() -> void:
+	if Game.mutator == "balloon":
+		Game.balloonize(self)
+	elif Levels.cardboard:
+		var card := MeshKit.mat_tex("res://assets/tex/cardboard.png", false, 0.95)
+		for c in get_children():
+			if c is MeshInstance3D and c != blob:
+				c.material_override = card
+		if turret.get_child_count() > 0:
+			(turret.get_child(0) as MeshInstance3D).material_override = card
 
 func _pick_waypoint() -> void:
 	var a := Game.rng.randf() * TAU
-	var r := Game.rng.randf_range(40.0, 170.0)
+	var r := Game.rng.randf_range(40.0, minf(170.0, terrain.arena_radius * 0.8))
 	waypoint = Vector2(cos(a) * r, sin(a) * r)
 
 func _physics_process(delta: float) -> void:
@@ -128,7 +140,7 @@ func _physics_process(delta: float) -> void:
 	velocity = fwd * spd + Vector3(0, clampf((target_y - gp.y) / delta, -10.0, 10.0), 0)
 	move_and_slide()
 	var flat := Vector2(global_position.x, global_position.z)
-	if flat.length() > Terrain.ARENA_RADIUS:
+	if flat.length() > terrain.arena_radius:
 		_pick_waypoint()
 	# align to slope
 	var n := terrain.normal(global_position.x, global_position.z)

@@ -4,11 +4,11 @@
 class_name MainMenu
 extends Node3D
 
-signal start_requested(mode: int, level_id: String, difficulty: int)
+signal start_requested(mode: int, level_id: String, difficulty: int, mutator: String)
 signal join_requested
 
 const PANEL_W := 2.3
-const PANEL_H := 1.5
+const PANEL_H := 1.78
 const ACCENT := Color(1.0, 0.55, 0.15)
 const BTN_COL := Color(0.16, 0.19, 0.16)
 const BTN_HOVER := Color(0.28, 0.33, 0.28)
@@ -17,7 +17,10 @@ const BTN_SEL := Color(0.45, 0.30, 0.10)
 var sel_mode: int = Game.Mode.SOLO
 var sel_level := "outdoor"
 var sel_diff := 1
+var sel_mut := ""
 var page := 0   # 0 main, 1..4 how-to
+
+const MUTATORS := [["", "NORMAL"], ["lowg", "LOW-G"], ["underwater", "WATER"], ["balloon", "BALLOON"], ["paintball", "PAINT"]]
 
 var _buttons: Array[Dictionary] = []
 var _labels_to_clear: Array[Node] = []
@@ -105,22 +108,25 @@ func _button(id: String, txt: String, pos: Vector2, size: Vector2, font := 20) -
 func _show_main() -> void:
 	_clear_page()
 	page = 0
-	_text("TANK COMMANDER VR", Vector2(0, 0.60), 44, ACCENT)
-	_text("Made for Ani", Vector2(0, 0.49), 22, Color(1.0, 0.75, 0.75))
-	_text("MODE", Vector2(-1.0, 0.36), 16, Color(0.7, 0.75, 0.7))
+	_text("TANK COMMANDER VR", Vector2(0, 0.74), 44, ACCENT)
+	_text("Made for Ani", Vector2(0, 0.63), 22, Color(1.0, 0.75, 0.75))
+	_text("MODE", Vector2(-1.0, 0.50), 16, Color(0.7, 0.75, 0.7))
 	var modes := [["solo", "SOLO"], ["coop", "CO-OP HOST"], ["versus", "VERSUS HOST"], ["join", "JOIN GAME"], ["plane", "PLANE"]]
 	for i in modes.size():
-		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.86 + i * 0.44, 0.28), Vector2(0.41, 0.13), 15)
-	_text("BATTLEFIELD", Vector2(-0.93, 0.14), 16, Color(0.7, 0.75, 0.7))
+		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.86 + i * 0.44, 0.42), Vector2(0.41, 0.13), 15)
+	_text("BATTLEFIELD", Vector2(-0.93, 0.28), 16, Color(0.7, 0.75, 0.7))
 	for i in Levels.ORDER.size():
 		var id: String = Levels.ORDER[i]
-		_button("level:" + id, Levels.CONFIGS[id]["title"], Vector2(-0.86 + i * 0.44, 0.06), Vector2(0.41, 0.13), 15)
-	_text("DIFFICULTY", Vector2(-0.94, -0.08), 16, Color(0.7, 0.75, 0.7))
+		_button("level:" + id, Levels.CONFIGS[id]["title"], Vector2(-0.94 + i * 0.376, 0.20), Vector2(0.35, 0.13), 14)
+	_text("DIFFICULTY", Vector2(-0.94, 0.06), 16, Color(0.7, 0.75, 0.7))
 	for i in 3:
-		_button("diff:%d" % i, ["EASY", "MEDIUM", "HARD"][i], Vector2(-0.75 + i * 0.5, -0.16), Vector2(0.46, 0.13), 16)
-	_button("howto", "HOW TO PLAY", Vector2(-0.62, -0.42), Vector2(0.75, 0.19), 20)
-	_button("start", "START!", Vector2(0.55, -0.42), Vector2(0.9, 0.22), 30)
-	_text("point + trigger to choose  ·  built overnight by dad's robot", Vector2(0, -0.64), 12, Color(0.55, 0.6, 0.55))
+		_button("diff:%d" % i, ["EASY", "MEDIUM", "HARD"][i], Vector2(-0.75 + i * 0.5, -0.02), Vector2(0.46, 0.13), 16)
+	_text("SILLY MODE", Vector2(-0.94, -0.16), 16, Color(0.7, 0.75, 0.7))
+	for i in MUTATORS.size():
+		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.13), 15)
+	_button("howto", "HOW TO PLAY", Vector2(-0.62, -0.52), Vector2(0.75, 0.19), 20)
+	_button("start", "START!", Vector2(0.55, -0.52), Vector2(0.9, 0.22), 30)
+	_text("point + trigger to choose  ·  secret: squeeze EVERYTHING + A...", Vector2(0, -0.76), 12, Color(0.55, 0.6, 0.55))
 	_refresh_selection()
 
 func _show_howto(p: int) -> void:
@@ -147,6 +153,8 @@ func _refresh_selection() -> void:
 			sel = id == "level:" + sel_level
 		elif id.begins_with("diff:"):
 			sel = id == "diff:%d" % sel_diff
+		elif id.begins_with("mut:"):
+			sel = id == "mut:" + sel_mut
 		b.mat.albedo_color = BTN_SEL if sel else (BTN_HOVER if b == _hovered else BTN_COL)
 
 func _mode_index(m: int) -> int:
@@ -199,7 +207,7 @@ func _press(id: String) -> void:
 		"howto_close":
 			_show_main()
 		"start":
-			start_requested.emit(sel_mode, sel_level, sel_diff)
+			start_requested.emit(sel_mode, sel_level, sel_diff, sel_mut)
 		_:
 			if id.begins_with("mode:"):
 				match id.trim_prefix("mode:"):
@@ -217,6 +225,15 @@ func _press(id: String) -> void:
 						join_requested.emit()
 			elif id.begins_with("level:"):
 				sel_level = id.trim_prefix("level:")
+				if sel_level == "gym":
+					Sfx.vo("vo_gym", 2, 30.0)
+			elif id.begins_with("mut:"):
+				sel_mut = id.trim_prefix("mut:")
+				match sel_mut:
+					"lowg": Sfx.vo("vo_lowg", 2, 30.0)
+					"underwater": Sfx.vo("vo_underwater", 2, 30.0)
+					"balloon": Sfx.vo("vo_balloon", 2, 30.0)
+					"paintball": Sfx.vo("vo_paintball", 2, 30.0)
 			elif id.begins_with("diff:"):
 				sel_diff = int(id.trim_prefix("diff:"))
 				if sel_diff == 0:
@@ -241,4 +258,4 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_H:
 				_show_howto(1)
 			KEY_ENTER:
-				start_requested.emit(sel_mode, sel_level, sel_diff)
+				start_requested.emit(sel_mode, sel_level, sel_diff, sel_mut)

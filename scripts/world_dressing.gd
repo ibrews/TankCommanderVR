@@ -13,6 +13,9 @@ func _init(t: Terrain) -> void:
 
 func _ready() -> void:
 	Levels.mud_pools = cfg.get("mud", [])
+	Levels.cardboard = cfg.get("cardboard", false)
+	if cfg.get("gym", false):
+		_build_gym()
 	if cfg.get("trees", 0) > 0:
 		_scatter_trees(cfg["trees"])
 	if cfg.get("rocks", 0) > 0:
@@ -284,6 +287,106 @@ func _build_castle(center: Vector2) -> void:
 	keep.mesh = MeshKit.commit(st, stone)
 	root.add_child(keep)
 	MeshKit.add_static_box_collider(root, Vector3(0, 5.5, 0), Vector3(14, 11, 14))
+
+# A giant school gymnasium: court floor (terrain texture), padded walls,
+# bleachers, basketball hoops, roof trusses, cardboard forts, bouncy balls.
+func _build_gym() -> void:
+	var W := 118.0
+	var wall_mat := MeshKit.mat_vcol(0.9)
+	var card := MeshKit.mat_tex("res://assets/tex/cardboard.png", true, 0.95)
+	var st := MeshKit.begin()
+	var wall_col := Color(0.82, 0.78, 0.70)
+	var pad_col := Color(0.25, 0.35, 0.65)
+	for side in 4:
+		var yaw := side * PI / 2.0
+		var b := Basis(Vector3.UP, yaw)
+		# wall slab + padded lower stripe + high windows
+		MeshKit.box(st, Transform3D(b, b * Vector3(0, 14.0, -W)), Vector3(2 * W + 8, 28.0, 1.5), wall_col)
+		MeshKit.box(st, Transform3D(b, b * Vector3(0, 2.2, -W + 0.9)), Vector3(2 * W + 6, 4.4, 0.4), pad_col)
+		for i in 9:
+			MeshKit.box(st, Transform3D(b, b * Vector3(-W + 24 + i * 24, 21.0, -W + 0.9)), Vector3(10, 6, 0.5), Color(0.65, 0.78, 0.9))
+	# roof trusses + hanging lights
+	for i in 5:
+		var z := -W + 40 + i * 40
+		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 27.0, z)), Vector3(2 * W, 1.6, 1.6), Color(0.45, 0.48, 0.52))
+		for lx in [-60.0, 0.0, 60.0]:
+			MeshKit.box(st, Transform3D(Basis(), Vector3(lx, 24.5, z)), Vector3(3.5, 1.2, 3.5), Color(0.95, 0.93, 0.82))
+	var walls := MeshInstance3D.new()
+	walls.mesh = MeshKit.commit(st, wall_mat)
+	add_child(walls)
+	for side in 4:
+		var yaw := side * PI / 2.0
+		var n := Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
+		MeshKit.add_static_box_collider(self, n * W + Vector3(0, 14, 0), Vector3(2 * W + 8, 28, 1.5), yaw)
+	# bleachers on east/west
+	var bst := MeshKit.begin()
+	for side in [-1.0, 1.0]:
+		for step in 6:
+			MeshKit.box(bst, Transform3D(Basis(), Vector3(side * (W - 8.0 - step * 3.0), 1.5 + step * 1.5, 0)),
+				Vector3(3.0, 3.0 + step * 3.0 * 0.0 + 1.5, 150.0), Color(0.75, 0.55, 0.3) if step % 2 == 0 else Color(0.65, 0.47, 0.25))
+	var bl := MeshInstance3D.new()
+	bl.mesh = MeshKit.commit(bst, wall_mat)
+	add_child(bl)
+	for side in [-1.0, 1.0]:
+		MeshKit.add_static_box_collider(self, Vector3(side * (W - 15.0), 5.0, 0), Vector3(20.0, 10.0, 150.0))
+	# hoops north/south
+	for side in [-1.0, 1.0]:
+		var hst := MeshKit.begin()
+		MeshKit.cyl(hst, Transform3D(Basis(), Vector3(0, 6.0, 0)), 0.35, 0.3, 12.0, 8, Color(0.4, 0.42, 0.45))
+		MeshKit.box(hst, Transform3D(Basis(), Vector3(0, 11.2, side * 1.2)), Vector3(6.5, 4.0, 0.3), Color(0.92, 0.92, 0.92))
+		MeshKit.cyl(hst, Transform3D(Basis(), Vector3(0, 9.6, side * 2.6)), 1.6, 1.6, 0.18, 12, Color(0.9, 0.4, 0.1), false, false)
+		var hoop := MeshInstance3D.new()
+		hoop.mesh = MeshKit.commit(hst, wall_mat)
+		hoop.position = Vector3(0, 0, -side * (W - 18.0))
+		add_child(hoop)
+		MeshKit.add_static_box_collider(self, hoop.position + Vector3(0, 6, 0), Vector3(1.2, 12.0, 1.2))
+	# cardboard forts (cover)
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 66
+	for i in 10:
+		var x := rng.randf_range(-80.0, 80.0)
+		var z := rng.randf_range(-80.0, 80.0)
+		if Vector2(x, z).distance_to(terrain.spawn) < 30.0:
+			continue
+		var fst := MeshKit.begin()
+		for k in rng.randi_range(2, 4):
+			var s := rng.randf_range(2.4, 4.5)
+			MeshKit.box(fst, Transform3D(Basis(Vector3.UP, rng.randf() * 0.5), Vector3(rng.randf_range(-2, 2), s / 2.0 + k * s * 0.85, rng.randf_range(-2, 2))),
+				Vector3(s, s, s), Color.WHITE, -1.0)
+		var fort := MeshInstance3D.new()
+		fort.mesh = MeshKit.commit(fst, card)
+		fort.position = Vector3(x, terrain.height(x, z), z)
+		add_child(fort)
+		MeshKit.add_static_box_collider(self, Vector3(x, 4.0, z), Vector3(6.5, 8.0, 6.5))
+	# bouncy basketballs
+	for i in 3:
+		var ball := RigidBody3D.new()
+		ball.mass = 14.0
+		var pm := PhysicsMaterial.new()
+		pm.bounce = 0.75
+		pm.friction = 0.6
+		ball.physics_material_override = pm
+		ball.collision_layer = 1
+		ball.collision_mask = 1 | 2 | 4
+		var cs := CollisionShape3D.new()
+		var sph := SphereShape3D.new()
+		sph.radius = 1.5
+		cs.shape = sph
+		ball.add_child(cs)
+		var mi := MeshInstance3D.new()
+		var sm := SphereMesh.new()
+		sm.radius = 1.5
+		sm.height = 3.0
+		sm.radial_segments = 16
+		sm.rings = 8
+		mi.mesh = sm
+		var bm := StandardMaterial3D.new()
+		bm.albedo_color = Color(0.85, 0.4, 0.12)
+		bm.roughness = 0.7
+		mi.material_override = bm
+		ball.add_child(mi)
+		ball.position = Vector3(-20.0 + i * 20.0, 6.0, 20.0)
+		add_child(ball)
 
 func _build_wrecks(count: int) -> void:
 	var rng := RandomNumberGenerator.new()

@@ -117,7 +117,7 @@ func _process(delta: float) -> void:
 				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev)
 		elif client and tank:
 			if Game.mode == Game.Mode.COOP:
-				c_gunner.rpc_id(1, tank.turret_input)
+				c_gunner.rpc_id(1, tank.turret_input, _my_head_rel())
 			elif Game.mode == Game.Mode.VERSUS:
 				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev)
 
@@ -143,6 +143,9 @@ func make_replica_pool(t: Terrain) -> ReplicaPool:
 	return replicas
 
 func _send_coop_snap() -> void:
+	var head := _my_head_rel()
+	if head != Transform3D():
+		s_driver_head.rpc(head)
 	var enemies: Array = []
 	for grp in ["enemies", "planes"]:
 		for n in get_tree().get_nodes_in_group(grp):
@@ -166,8 +169,10 @@ func _send_coop_snap() -> void:
 		Game.hp, tank.ammo, tank.rockets_left, tank.loaded, tank.engine_on, Game.wave, Game.score, enemies)
 
 @rpc("any_peer", "unreliable_ordered")
-func c_gunner(input: Vector2) -> void:
+func c_gunner(input: Vector2, head_rel := Transform3D()) -> void:
 	gunner_input = input
+	if head_rel != Transform3D():
+		_apply_crew_head(head_rel)
 
 @rpc("any_peer", "reliable")
 func c_event(kind: String) -> void:
@@ -210,6 +215,10 @@ func s_coop_snap(tank_t: Transform3D, turret_y: float, gun_e: float, hp: float,
 		Game.game_restarted.emit()
 	if replicas:
 		replicas.apply(enemies)
+
+@rpc("authority", "unreliable_ordered")
+func s_driver_head(head_rel: Transform3D) -> void:
+	_apply_crew_head(head_rel)
 
 @rpc("authority", "reliable")
 func s_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
@@ -275,6 +284,74 @@ func versus_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
 func v_damage(amount: float) -> void:
 	Game.damage_player(amount / Game.diff(0.6, 1.0, 1.35))  # undo diff scale: pvp is symmetric
 
+# ================================================================ avatars
+# Rec Room energy: round head, big visor, floating bean body. No legs. Ever.
+static func build_avatar(tint: Color) -> Node3D:
+	var root := Node3D.new()
+	var st := MeshKit.begin()
+	# bean torso
+	MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, -0.32, 0)), 0.13, 0.17, 0.30, 10, tint)
+	var body := MeshInstance3D.new()
+	body.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.6))
+	root.add_child(body)
+	# head
+	var head := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 0.135
+	sm.height = 0.27
+	sm.radial_segments = 14
+	sm.rings = 8
+	head.mesh = sm
+	var hm := StandardMaterial3D.new()
+	hm.albedo_color = tint.lightened(0.25)
+	hm.roughness = 0.5
+	head.material_override = hm
+	root.add_child(head)
+	# visor
+	var visor := MeshInstance3D.new()
+	var vb := BoxMesh.new()
+	vb.size = Vector3(0.19, 0.085, 0.09)
+	visor.mesh = vb
+	var vm := StandardMaterial3D.new()
+	vm.albedo_color = Color(0.08, 0.08, 0.1)
+	vm.roughness = 0.15
+	vm.metallic = 0.4
+	visor.material_override = vm
+	visor.position = Vector3(0, 0.02, -0.105)
+	root.add_child(visor)
+	# smile
+	var smile := MeshInstance3D.new()
+	var sb := BoxMesh.new()
+	sb.size = Vector3(0.07, 0.014, 0.01)
+	smile.mesh = sb
+	var smm := StandardMaterial3D.new()
+	smm.albedo_color = Color(0.15, 0.1, 0.1)
+	smile.material_override = smm
+	smile.position = Vector3(0, -0.075, -0.128)
+	root.add_child(smile)
+	return root
+
+var _crew_avatar: Node3D = null
+var _crew_target := Transform3D()
+
+func _ensure_crew_avatar() -> void:
+	if _crew_avatar == null and tank:
+		_crew_avatar = build_avatar(Color(0.9, 0.45, 0.15) if hosting else Color(0.2, 0.55, 0.9))
+		tank.add_child(_crew_avatar)
+		CockpitBuilder.set_interior_layer(_crew_avatar)
+
+func _my_head_rel() -> Transform3D:
+	var m = get_tree().get_first_node_in_group("main")
+	if m and tank and m.rig and m.rig.get("camera"):
+		return tank.global_transform.affine_inverse() * m.rig.camera.global_transform
+	return Transform3D()
+
+func _apply_crew_head(rel: Transform3D) -> void:
+	_ensure_crew_avatar()
+	if _crew_avatar:
+		_crew_target = rel
+		_crew_avatar.transform = _crew_avatar.transform.interpolate_with(rel, 0.5)
+
 # ================================================================ replicas
 class RemoteTank:
 	extends CharacterBody3D
@@ -300,6 +377,12 @@ class RemoteTank:
 		var tm := MeshInstance3D.new()
 		tm.mesh = EnemyTank._turret_mesh
 		turret.add_child(tm)
+		# the other kid, peeking out of the hatch
+		var av := NetManager.build_avatar(Color(0.2, 0.55, 0.9) if NetManager.hosting else Color(0.9, 0.45, 0.15))
+		av.position = Vector3(-0.28, 1.15, 0.25)
+		turret.add_child(av)
+		if Game.mutator == "balloon":
+			Game.balloonize(self)
 		var shape := CollisionShape3D.new()
 		var box := BoxShape3D.new()
 		box.size = Vector3(3.2, 1.4, 6.2)

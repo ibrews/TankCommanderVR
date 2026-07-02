@@ -11,6 +11,17 @@ to reload the cannon, and arm the rocket console behind its red safety cover.
 
 Every texture and sound is procedurally generated — no external assets.
 
+## Screenshots
+
+| | |
+|---|---|
+| ![gym](docs/screenshots/gym_07_exterior_front.png) | ![balloon](docs/screenshots/balloon_07_exterior_front.png) |
+| The cardboard gymnasium | Balloon mode |
+| ![cockpit](docs/screenshots/paint_03b_panel.png) | ![storm](docs/screenshots/disaster_06_exterior.png) |
+| The cockpit (battery → fuel → starter → gear) | Hurricane debris |
+
+More in [docs/EVOLUTION.md](docs/EVOLUTION.md).
+
 ## Play
 
 Sideload the APK from [Releases](../../releases) onto a Quest 2/3/Pro:

@@ -204,6 +204,31 @@ func _physics_process(delta: float) -> void:
 	if hand_l.is_button_pressed("primary_click") and not get_meta("lsc_was", false):
 		tank.call("quick_start")
 	set_meta("lsc_was", hand_l.is_button_pressed("primary_click"))
+	_check_easter_egg(delta)
+
+# squeeze EVERYTHING (both grips + both triggers) + A for 1.5 s → chaos
+var _egg_t := 0.0
+var _egg_cool := 0.0
+func _check_easter_egg(delta: float) -> void:
+	_egg_cool = maxf(0.0, _egg_cool - delta)
+	var all_in := hand_l.get_float("grip") > 0.8 and hand_r.get_float("grip") > 0.8 \
+		and hand_l.get_float("trigger") > 0.8 and hand_r.get_float("trigger") > 0.8 \
+		and hand_r.is_button_pressed("ax_button")
+	if all_in and _egg_cool <= 0.0:
+		_egg_t += delta
+		if fmod(_egg_t, 0.25) < delta:
+			hand_l.pulse(0.3, 0.05)
+			hand_r.pulse(0.3, 0.05)
+		if _egg_t > 1.5:
+			_egg_t = 0.0
+			_egg_cool = 180.0
+			var w: Weather = get_tree().get_first_node_in_group("weather")
+			if w:
+				w.start_disaster(["tornado", "volcano", "hurricane"][Game.rng.randi() % 3])
+				hand_l.pulse(1.0, 0.3)
+				hand_r.pulse(1.0, 0.3)
+	else:
+		_egg_t = 0.0
 
 func _dz(v: float) -> float:
 	return v if absf(v) > 0.12 else 0.0

@@ -9,6 +9,9 @@ const NAMES := [
 	"music_menu", "music_calm", "music_combat", "sting_wave", "sting_over",
 	"mortar_whistle", "mortar_launch", "jeep_loop", "rifle", "debris",
 	"wall_crumble", "horn", "bomb_whistle", "shifter", "crash", "ui_select", "knob",
+	"rain_loop", "thunder1", "thunder2", "wind_gust", "tornado_loop",
+	"volcano_loop", "eruption", "bubbles_loop", "squeak", "pop", "splat",
+	"static_loop", "whistle", "sneaker", "boing", "thud", "jingle",
 ]
 const VO_NAMES := [
 	"vo_title", "vo_welcome", "vo_menu_pick", "vo_howto1", "vo_howto2",
@@ -16,6 +19,10 @@ const VO_NAMES := [
 	"vo_wave_clear", "vo_kill", "vo_plane_down", "vo_hull_low", "vo_hit",
 	"vo_armed", "vo_gameover", "vo_coop", "vo_versus", "vo_easy", "vo_hard",
 	"vo_plane",
+	"radio_1", "radio_2", "radio_3", "radio_4", "radio_5", "radio_6",
+	"radio_7", "radio_8", "radio_9", "radio_10", "radio_11", "radio_12",
+	"vo_lowg", "vo_underwater", "vo_balloon", "vo_paintball",
+	"vo_tornado", "vo_volcano", "vo_hurricane", "vo_gym", "vo_gym_wave",
 ]
 const POOL_SIZE := 14
 
@@ -36,6 +43,13 @@ var music_gain := 1.0  # radio volume knob
 var _vo_player: AudioStreamPlayer
 var _vo_cooldowns := {}
 var _vo_prio := -1
+
+# radio (the channel knob in the cockpit)
+const STATIONS := ["AUTO", "DAD FM", "CALM FM", "BATTLE FM", "OFF"]
+var radio_station := 0
+var _radio_talk: AudioStreamPlayer3D = null
+var _radio_next := 4.0
+var _radio_queue: Array = []
 
 func _ready() -> void:
 	for n in NAMES:
@@ -134,8 +148,22 @@ func _process(delta: float) -> void:
 	_threat = move_toward(_threat, _threat_target, delta * 0.4)
 	var gain_db := linear_to_db(clampf(music_gain, 0.03, 2.0))
 	var menu_target := (-10.0 + gain_db) if _music_mode == "menu" else -80.0
-	var calm_target := (-14.0 - _threat * 18.0 + gain_db) if _music_mode == "game" else -80.0
-	var combat_target := (-34.0 + _threat * 24.0 + gain_db) if _music_mode == "game" else -80.0
+	var calm_target := -80.0
+	var combat_target := -80.0
+	if _music_mode == "game":
+		match radio_station:
+			0:  # AUTO — adaptive score
+				calm_target = -14.0 - _threat * 18.0 + gain_db
+				combat_target = -34.0 + _threat * 24.0 + gain_db
+			1:  # DAD FM — talk over a quiet bed
+				calm_target = -26.0 + gain_db
+			2:  # CALM FM
+				calm_target = -12.0 + gain_db
+			3:  # BATTLE FM
+				combat_target = -12.0 + gain_db
+			4:  # OFF
+				pass
+	_radio_tick(delta)
 	_m_menu.volume_db = move_toward(_m_menu.volume_db, menu_target, delta * 30.0)
 	_m_calm.volume_db = move_toward(_m_calm.volume_db, calm_target, delta * 20.0)
 	_m_combat.volume_db = move_toward(_m_combat.volume_db, combat_target, delta * 20.0)
@@ -146,6 +174,55 @@ func _process(delta: float) -> void:
 		_m_combat.play()
 	if not _vo_player.playing:
 		_vo_prio = -1
+
+# ---------------- radio
+func radio_attach(node: Node3D) -> void:
+	_radio_talk = AudioStreamPlayer3D.new()
+	_radio_talk.unit_size = 2.2
+	_radio_talk.max_distance = 30.0
+	_radio_talk.volume_db = 2.0
+	node.add_child(_radio_talk)
+	_radio_next = 4.0
+
+func set_radio_station(i: int) -> void:
+	var s := clampi(i, 0, STATIONS.size() - 1)
+	if s == radio_station:
+		return
+	radio_station = s
+	if _radio_talk:
+		_radio_talk.stop()
+		_radio_talk.stream = streams.get("static_loop")
+		_radio_talk.volume_db = -8.0
+		_radio_talk.play()
+		get_tree().create_timer(0.35).timeout.connect(func():
+			if _radio_talk and _radio_talk.stream == streams.get("static_loop"):
+				_radio_talk.stop()
+				_radio_talk.volume_db = 2.0)
+	if s == 1:
+		_radio_next = 1.2
+		if _radio_talk:
+			get_tree().create_timer(0.4).timeout.connect(func():
+				if radio_station == 1 and _radio_talk:
+					_radio_talk.stream = streams.get("jingle")
+					_radio_talk.play())
+
+func _radio_tick(delta: float) -> void:
+	if radio_station != 1 or _radio_talk == null or _music_mode != "game":
+		return
+	if _radio_talk.playing:
+		return
+	_radio_next -= delta
+	if _radio_next > 0.0:
+		return
+	_radio_next = Game.rng.randf_range(7.0, 16.0)
+	if _radio_queue.is_empty():
+		for i in range(1, 13):
+			_radio_queue.append("radio_%d" % i)
+		_radio_queue.shuffle()
+	var line: String = _radio_queue.pop_back()
+	if streams.has(line):
+		_radio_talk.stream = streams[line]
+		_radio_talk.play()
 
 # ---------------- VO (the tank computer is Dad)
 func vo(name: String, prio := 1, cooldown := 6.0) -> void:

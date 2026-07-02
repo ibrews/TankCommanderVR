@@ -74,8 +74,10 @@ var alarm_p: AudioStreamPlayer3D
 
 var _spd := 0.0   # current forward speed
 var _yaw_rate := 0.0
+var _vy := 0.0    # vertical velocity (airtime/bouncing in low-g)
 var _exhaust_t := 0.0
 var _hint_stage := 0
+var _dust_t := 0.0
 
 func _init(t: Terrain, p: Projectiles, f: FxPool) -> void:
 	terrain = t
@@ -88,6 +90,8 @@ func _init(t: Terrain, p: Projectiles, f: FxPool) -> void:
 
 func _ready() -> void:
 	_build_exterior()
+	if Game.mutator == "balloon":
+		Game.balloonize(self)   # exterior only — cockpit is built next
 	cockpit = CockpitBuilder.build(turret)
 	_wire_controls()
 	_build_reticle()
@@ -281,7 +285,11 @@ func _wire_controls() -> void:
 		Sfx.play_at("horn", global_position + Vector3(0, 1.5, -3), 4.0)
 		_rumble(0.3, 0.08))
 	c["radio_volume"].value_changed.connect(func(v): Sfx.music_gain = v * 1.4)
-	c["radio_channel"].value_changed.connect(func(_v): Sfx.play_ui("ui_select", -14.0))
+	c["radio_channel"].value_changed.connect(func(v):
+		var st := roundi(v * 4.0)
+		Sfx.set_radio_station(st)
+		cockpit["labels"]["radio_station"].text = Sfx.STATIONS[clampi(st, 0, 4)])
+	Sfx.radio_attach(cockpit["radio_node"])
 	c["menu_switch"].toggled_on.connect(func(_on):
 		var m := get_tree().get_first_node_in_group("main")
 		if m:
@@ -492,7 +500,7 @@ func effective_drive() -> Vector2:
 func _update_drive(delta: float) -> void:
 	var cmd := effective_drive() if (engine_on and Game.alive) else Vector2.ZERO
 	var mud := Levels.mud_factor(global_position)
-	var target_fwd := (cmd.x + cmd.y) * 0.5 * MAX_TRACK * mud
+	var target_fwd := (cmd.x + cmd.y) * 0.5 * MAX_TRACK * mud * Game.speed_scale()
 	var target_yaw_rate := (cmd.x - cmd.y) * YAW_GAIN * 2.0
 	_spd = move_toward(_spd, target_fwd, ACCEL * delta)
 	_yaw_rate = move_toward(_yaw_rate, target_yaw_rate, 2.5 * delta)
@@ -501,14 +509,45 @@ func _update_drive(delta: float) -> void:
 	var fwd_dir := Vector3(-sin(yaw), 0, -cos(yaw))
 	# NOTE: Basis yaw convention checked below in _align; forward = -Z rotated by yaw
 	var hvel := fwd_dir * _spd
+	# storm/tornado wind shove
+	var weather: Weather = get_tree().get_first_node_in_group("weather")
+	if weather:
+		hvel += weather.wind_push
 	var gp := global_position
 	var target_y := terrain.height(gp.x, gp.z) + 0.04
-	velocity = hvel + Vector3(0, clampf((target_y - gp.y) / delta, -14.0, 14.0), 0)
+	# vertical: grounded follow with real airtime (hops off crests; low-g bounces)
+	var next_y := gp.y + _vy * delta
+	if next_y <= target_y + 0.02:
+		var impact := _vy
+		next_y = target_y
+		if impact < -4.0:
+			Sfx.play_at("boing" if Game.mutator == "lowg" else "thud", gp, 0.0)
+			_rumble(0.5, 0.08)
+			fx.dust(Vector3(gp.x, target_y, gp.z), 1.4)
+			_vy = -impact * Game.bounce()
+		else:
+			_vy = 0.0
+	else:
+		_vy -= Game.fall_g() * delta
+	velocity = hvel + Vector3(0, clampf((next_y - gp.y) / delta, -60.0, 60.0), 0)
 	move_and_slide()
+	# shove rigid props (gym basketballs!) we drive into
+	for ci in get_slide_collision_count():
+		var col := get_slide_collision(ci)
+		var body := col.get_collider()
+		if body is RigidBody3D:
+			body.apply_central_impulse(-col.get_normal() * maxf(absf(_spd), 2.0) * 8.0 + Vector3(0, 24, 0))
+			Sfx.play_at("boing", body.global_position, -4.0)
+	# track dust while moving
+	_dust_t -= delta
+	if _dust_t <= 0.0 and absf(_spd) > 3.0 and _vy == 0.0:
+		_dust_t = 0.45
+		var behind := global_position - fwd_dir * signf(_spd) * 3.4
+		fx.dust(Vector3(behind.x, terrain.height(behind.x, behind.z) + 0.3, behind.z), 1.0)
 	# arena clamp
 	var flat := Vector2(global_position.x, global_position.z)
-	if flat.length() > Terrain.ARENA_RADIUS:
-		flat = flat.normalized() * Terrain.ARENA_RADIUS
+	if flat.length() > terrain.arena_radius:
+		flat = flat.normalized() * terrain.arena_radius
 		global_position.x = flat.x
 		global_position.z = flat.y
 	_align(delta)

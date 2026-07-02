@@ -63,6 +63,10 @@ func _process(delta: float) -> void:
 		_between = 8.0
 
 func _ring_pos(r_min: float, r_max: float) -> Vector3:
+	var ring: Array = Levels.current.get("spawn_ring", [])
+	if ring.size() == 2:
+		r_min = ring[0]
+		r_max = ring[1]
 	var a := Game.rng.randf() * TAU
 	var r := Game.rng.randf_range(r_min, r_max)
 	var pos := Vector3(cos(a) * r, 0, sin(a) * r)
@@ -81,6 +85,9 @@ func _spawn_wave() -> void:
 	if wave == 3:
 		Sfx.vo("vo_wave2", 1, 20.0)
 
+	if Levels.current.get("gym", false):
+		Sfx.play_ui("whistle", -4.0)
+		Sfx.vo("vo_gym_wave", 2, 25.0)
 	var dm := Game.diff(0.6, 1.0, 1.5)
 	var tanks := mini(int((1 + wave * 0.8) * dm), 6)
 	var jeeps := mini(int((wave - 1) * 0.8 * dm) + (1 if wave >= 2 else 0), 4)

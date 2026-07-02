@@ -28,6 +28,11 @@ func _ready() -> void:
 		print("[smoke] starting smoke test")
 	if "--shots" in args:
 		_run_shot_sequence()
+	if "--disaster" in args:
+		get_tree().create_timer(9.0).timeout.connect(func():
+			var w: Weather = get_tree().get_first_node_in_group("weather")
+			if w:
+				w.start_disaster(["tornado", "volcano", "hurricane"][Game.rng.randi() % 3]))
 	if "--mp-host" in args:
 		Game.mode = Game.Mode.COOP
 		Game.level_id = "outdoor"
@@ -92,6 +97,28 @@ func _apply_ambience(menu_mode: bool) -> void:
 		env.fog_enabled = true
 		env.background_mode = Environment.BG_SKY
 		sun.light_energy = Levels.current.get("sun_energy", 1.25)
+		env.fog_light_color = Color(0.78, 0.72, 0.62)
+		env.fog_density = 0.0005
+		if Game.mutator == "underwater":
+			env.fog_light_color = Color(0.15, 0.4, 0.45)
+			env.fog_density = 0.012
+			env.ambient_light_energy = 0.55
+			sun.light_energy *= 0.6
+	_set_underwater_audio(Game.mutator == "underwater" and not menu_mode)
+
+var _lp_effect_on := false
+func _set_underwater_audio(on: bool) -> void:
+	if on == _lp_effect_on:
+		return
+	_lp_effect_on = on
+	if on:
+		var lp := AudioEffectLowPassFilter.new()
+		lp.cutoff_hz = 850.0
+		AudioServer.add_bus_effect(0, lp)
+	else:
+		for i in range(AudioServer.get_bus_effect_count(0) - 1, -1, -1):
+			if AudioServer.get_bus_effect(0, i) is AudioEffectLowPassFilter:
+				AudioServer.remove_bus_effect(0, i)
 
 # ---------------------------------------------------------------- rig
 func _setup_rig() -> void:
@@ -157,10 +184,11 @@ func to_menu() -> void:
 	menu.join_requested.connect(_on_join_requested)
 	rig.call("to_menu_anchor", hangar)
 
-func _on_start_requested(mode: int, level_id: String, diff: int) -> void:
+func _on_start_requested(mode: int, level_id: String, diff: int, mutator := "") -> void:
 	Game.mode = mode
 	Game.level_id = level_id
 	Game.difficulty = diff
+	Game.mutator = mutator
 	match mode:
 		Game.Mode.COOP, Game.Mode.VERSUS:
 			NetManager.host()
@@ -218,7 +246,27 @@ func start_game() -> void:
 		elif Game.mode == Game.Mode.COOP:
 			NetManager.setup_coop(player)
 		rig.call("attach_to_vehicle", player)
+	# weather + sky events follow whichever vehicle we're in
+	var vehicle: Node3D = plane if plane else player
+	world.add_child(Weather.new(terrain, fx, vehicle, env, sun))
+	if Game.mutator == "underwater":
+		var bub := AudioStreamPlayer.new()
+		bub.stream = Sfx.streams.get("bubbles_loop")
+		bub.volume_db = -14.0
+		bub.autoplay = true
+		world.add_child(bub)
 	Sfx.music_game()
+	get_tree().create_timer(2.5).timeout.connect(_start_vo)
+
+func _start_vo() -> void:
+	if Game.state != Game.GState.PLAYING:
+		return
+	if Game.level_id == "gym":
+		Sfx.vo("vo_gym", 2, 60.0)
+	var mv := {"lowg": "vo_lowg", "underwater": "vo_underwater",
+		"balloon": "vo_balloon", "paintball": "vo_paintball"}
+	if mv.has(Game.mutator):
+		Sfx.vo(mv[Game.mutator], 1, 60.0)
 
 func _clear_world() -> void:
 	if world:
@@ -243,7 +291,7 @@ func _process(delta: float) -> void:
 			# drive the menu programmatically
 			var m := Game.Mode.PLANE if "--plane" in OS.get_cmdline_user_args() else Game.Mode.SOLO
 			if menu:
-				menu.start_requested.emit(m, "castle", 1)
+				menu.start_requested.emit(m, OS.get_environment("SHOT_LEVEL") if OS.get_environment("SHOT_LEVEL") != "" else "castle", 1, OS.get_environment("SHOT_MUT"))
 		var v: Node3D = player if player else plane
 		if _smoke_frames == 120 and v:
 			v.call("quick_start")
@@ -267,7 +315,9 @@ func _run_shot_sequence() -> void:
 		var cam: Camera3D = rig.get("camera")
 		_shot(cam, "00_menu")
 		if menu:
-			menu.start_requested.emit(Game.Mode.SOLO, OS.get_environment("SHOT_LEVEL") if OS.get_environment("SHOT_LEVEL") != "" else "outdoor", 1)
+			menu.start_requested.emit(Game.Mode.SOLO,
+				OS.get_environment("SHOT_LEVEL") if OS.get_environment("SHOT_LEVEL") != "" else "outdoor",
+				1, OS.get_environment("SHOT_MUT"))
 		await get_tree().create_timer(1.5).timeout
 		player.quick_start()
 		await get_tree().create_timer(2.5).timeout

@@ -8,7 +8,9 @@ const SIZE := 512.0
 const HALF := SIZE / 2.0
 const CHUNKS := 4
 const QUADS := 44
-const ARENA_RADIUS := 232.0
+const ARENA_RADIUS := 232.0   # default; instances use arena_radius
+
+var arena_radius := 232.0
 
 const VILLAGE_CENTER := Vector2(120, -120)   # legacy default (outdoor)
 const POND_CENTER := Vector2(-150, -20)
@@ -25,6 +27,7 @@ func _init(config: Dictionary = {}) -> void:
 	name = "Terrain"
 	cfg = config if not config.is_empty() else Levels.get_config("outdoor")
 	spawn = cfg.get("spawn", Vector2(0, 90))
+	arena_radius = cfg.get("arena_radius", 232.0)
 	_noise.noise_type = FastNoiseLite.TYPE_SIMPLEX
 	_noise.frequency = 0.006
 	_noise.fractal_octaves = 4
@@ -47,11 +50,12 @@ func height(x: float, z: float) -> float:
 	if cfg.get("dunes", false):
 		var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
 		h += _dune.get_noise_2d(x, z) * 2.2 * dune_mask
-	# rim mountains fence the arena
-	var r: float = Vector2(x, z).length() / HALF
-	var rim: float = smoothstep(0.62, 0.98, r)
-	h += rim * rim * 85.0
-	h += _noise.get_noise_2d(x * 3.0, z * 3.0) * 14.0 * rim
+	# rim mountains fence the arena (gym has walls instead)
+	if cfg.get("rim", true):
+		var r: float = Vector2(x, z).length() / HALF
+		var rim: float = smoothstep(0.62, 0.98, r)
+		h += rim * rim * 85.0
+		h += _noise.get_noise_2d(x * 3.0, z * 3.0) * 14.0 * rim
 	# config flatten zones
 	for f in cfg.get("flatten", []):
 		h = _flatten(h, Vector2(x, z), f[0], f[1], f[2])
@@ -91,6 +95,12 @@ func _build_chunks() -> void:
 	mat.set_shader_parameter("tex_rock", load("res://assets/tex/rock.png"))
 	var tint: Color = cfg.get("tint", Color(1, 1, 1))
 	mat.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
+	if cfg.has("floor_tex"):
+		var ft := load("res://assets/tex/%s.png" % cfg["floor_tex"])
+		mat.set_shader_parameter("tex_floor", ft)
+		mat.set_shader_parameter("use_floor", 1.0)
+		print("[terrain] floor tex applied: ", cfg["floor_tex"], " loaded=", ft != null,
+			" param=", mat.get_shader_parameter("use_floor"))
 	var chunk_size := SIZE / CHUNKS
 	for cy in CHUNKS:
 		for cx in CHUNKS:
@@ -162,8 +172,16 @@ render_mode cull_back, diffuse_lambert, specular_disabled;
 uniform sampler2D tex_sand : source_color, filter_linear_mipmap;
 uniform sampler2D tex_grass : source_color, filter_linear_mipmap;
 uniform sampler2D tex_rock : source_color, filter_linear_mipmap;
+uniform sampler2D tex_floor : source_color, filter_linear_mipmap;
+uniform float use_floor = 0.0;
 uniform vec3 tint = vec3(1.0);
 void fragment() {
+	if (use_floor > 0.5) {
+		// one giant non-tiling texture across the whole arena (gym court)
+		vec2 fuv = UV / (0.22 * 512.0) + 0.5;
+		ALBEDO = texture(tex_floor, fuv).rgb * tint;
+		ROUGHNESS = 0.55;
+	} else {
 	vec3 s = texture(tex_sand, UV).rgb;
 	vec3 g = texture(tex_grass, UV).rgb;
 	vec3 r = texture(tex_rock, UV).rgb;
@@ -178,6 +196,7 @@ void fragment() {
 	alb *= mix(1.0, 0.72, clamp((dist - 120.0) / 160.0, 0.0, 1.0));
 	ALBEDO = alb;
 	ROUGHNESS = 0.95;
+	}
 }
 """
 	return sh

@@ -159,7 +159,7 @@ func _physics_process(delta: float) -> void:
 		if (kind == Kind.MORTAR or kind == Kind.BOMB) and p.vel.y < 0.0 and not p.get("whistled", false):
 			p.whistled = true
 			Sfx.play_at("mortar_whistle" if kind == Kind.MORTAR else "bomb_whistle", p.pos, 2.0, 1.0, 400.0)
-		p.vel.y -= GRAV[kind] * delta
+		p.vel.y -= GRAV[kind] * Game.grav_scale() * delta
 		var new_pos: Vector3 = p.pos + p.vel * delta
 		var hit := false
 		# body hit

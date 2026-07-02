@@ -60,6 +60,22 @@ const CONFIGS := {
 		"tint": Color(0.85, 0.78, 0.7),
 		"sun_energy": 1.0,
 	},
+	"gym": {
+		"title": "GYM",
+		"rolling": 0.2, "dunes": false, "pond": false, "rim": false,
+		"flatten": [],
+		"trees": 0, "rocks": 0,
+		"village": {}, "city": {}, "castle": {}, "mud": [],
+		"wrecks": 0,
+		"gym": true, "cardboard": true,
+		"floor_tex": "court",
+		"arena_radius": 105.0,
+		"spawn": Vector2(0, 80),
+		"spawn_ring": [55.0, 90.0],
+		"mortars": [Vector2(-60, -70), Vector2(60, -70)],
+		"tint": Color(1, 1, 1),
+		"sun_energy": 1.1,
+	},
 	"castle": {
 		"title": "CASTLE",
 		"rolling": 6.0, "dunes": false, "pond": false,
@@ -76,7 +92,8 @@ const CONFIGS := {
 	},
 }
 
-const ORDER := ["outdoor", "city", "town", "mudpit", "castle"]
+const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym"]
+static var cardboard := false  # set at level build; enemies check it
 
 static func get_config(id: String) -> Dictionary:
 	return CONFIGS.get(id, CONFIGS["outdoor"])
