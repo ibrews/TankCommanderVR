@@ -478,6 +478,16 @@ func _run_shot_sequence() -> void:
 				1, OS.get_environment("SHOT_MUT"))
 		await get_tree().create_timer(1.5).timeout
 		player.quick_start()
+		# forensics: baked chunk heights vs analytic, and the sea's world y
+		var gp := player.global_position
+		print("[shots] h(tank)=%.2f tank_y=%.2f" % [terrain.height(gp.x, gp.z), gp.y])
+		for c in terrain.get_children():
+			if c is MeshInstance3D:
+				print("[shots] chunk0 aabb=", c.mesh.get_aabb(), " node_y=", c.global_position.y)
+				break
+		var sea := world.find_child("Sea", true, false)
+		if sea:
+			print("[shots] sea y=", sea.global_position.y, " aabb=", sea.mesh.get_aabb())
 		await get_tree().create_timer(2.5).timeout
 		_shot(cam, "01_cockpit_front")
 		cam.rotation = Vector3(-0.05, -1.0, 0)

@@ -521,9 +521,13 @@ func _update_drive(delta: float) -> void:
 	var fwd_dir := Vector3(-sin(yaw), 0, -cos(yaw))
 	# NOTE: Basis yaw convention checked below in _align; forward = -Z rotated by yaw
 	# tanks do not swim: refuse to drive into deep water (beach/island)
+	# — or into the lava bowl (volcano): same gate, hotter consequences
 	if Game.mutator != "underwater":
+		var floor_limit := -1.1
+		if Levels.current.has("lava_y"):
+			floor_limit = float(Levels.current["lava_y"]) + 0.8
 		var ahead := global_position + fwd_dir * signf(_spd) * 4.0
-		if terrain.height(ahead.x, ahead.z) < -1.1 and terrain.height(global_position.x, global_position.z) > -1.1:
+		if terrain.height(ahead.x, ahead.z) < floor_limit and terrain.height(global_position.x, global_position.z) > floor_limit:
 			_spd = move_toward(_spd, 0.0, 20.0 * delta)
 	var hvel := fwd_dir * _spd
 	# storm/tornado wind shove
@@ -628,6 +632,12 @@ func fire_cannon(from_stick := false) -> void:
 	if not Game.alive:
 		return
 	if puppet:
+		# gunner client: host is authoritative, but give local feedback —
+		# `loaded` is mirrored by the coop snapshot
+		if not loaded:
+			Sfx.play_at("click", muzzle.global_position, -6.0)
+			if Game.help_on:
+				cockpit["labels"]["hint"].text = "PULL RED BREECH LEVER TO RELOAD"
 		NetManager.c_event.rpc_id(1, "fire")
 		return
 	if not loaded:

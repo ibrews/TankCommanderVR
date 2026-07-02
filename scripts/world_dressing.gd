@@ -486,6 +486,8 @@ func _scatter_palms(count: int) -> void:
 			continue
 		var s := rng.randf_range(0.8, 1.4)
 		var gy := _ground_min(x, z, 0.3 * s)
+		if gy < 0.15:
+			continue   # base would poke out of the waterline
 		placed.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s)), Vector3(x, gy - 0.15 * s, z)))
 	mm.instance_count = placed.size()
 	for i in placed.size():
@@ -498,22 +500,62 @@ func _scatter_palms(count: int) -> void:
 	add_child(mmi)
 
 func _build_sea() -> void:
+	if OS.get_environment("TC_NO_SEA") != "":
+		return   # visual bisection aid
+	# The sea is a SurfaceTool quad grid over WATER CELLS ONLY. A single
+	# giant primitive CylinderMesh (r=420) rendered at the WRONG HEIGHT on
+	# the Mobile renderer — its transform was visually ignored (verified by
+	# bisection: node at y=-3 still painted the waterline at ~+2), flooding
+	# dry land map-wide. Modest ArrayMesh triangles render correctly, and
+	# skipping dry cells kills map-wide overdraw for free.
+	const CELL := 64.0
+	const EXT := 448.0
+	var y := -0.55
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var cells := 0
+	for cz in range(int(-EXT / CELL), int(EXT / CELL)):
+		for cx in range(int(-EXT / CELL), int(EXT / CELL)):
+			var x0 := cx * CELL
+			var z0 := cz * CELL
+			# a cell gets water if it lies outside the terrain square (open
+			# ocean) or any sampled point of it dips below the waterline
+			var wet := absf(x0 + CELL * 0.5) > Terrain.HALF or absf(z0 + CELL * 0.5) > Terrain.HALF
+			if not wet:
+				for sz in 5:
+					for sx in 5:
+						if terrain.height(x0 + sx * CELL / 4.0, z0 + sz * CELL / 4.0) < y + 0.3:
+							wet = true
+							break
+					if wet:
+						break
+			if not wet:
+				continue
+			cells += 1
+			var sub := CELL / 2.0
+			for qz in 2:
+				for qx in 2:
+					var ax := x0 + qx * sub
+					var az := z0 + qz * sub
+					var quad := [
+						Vector3(ax, 0, az), Vector3(ax + sub, 0, az), Vector3(ax + sub, 0, az + sub),
+						Vector3(ax, 0, az), Vector3(ax + sub, 0, az + sub), Vector3(ax, 0, az + sub),
+					]
+					for v: Vector3 in quad:
+						st.set_normal(Vector3.UP)
+						st.add_vertex(v)
 	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 420.0
-	cm.bottom_radius = 420.0
-	cm.height = 0.1
-	cm.radial_segments = 32
-	mi.mesh = cm
+	mi.name = "Sea"
+	mi.mesh = st.commit()
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.10, 0.35, 0.48, 0.86)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.albedo_color = Color(0.10, 0.33, 0.45)
 	m.roughness = 0.04
-	m.metallic = 0.35
+	m.metallic = 0.45
 	mi.material_override = m
-	mi.position = Vector3(0, -0.55, 0)
+	mi.position = Vector3(0, y, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
+	print("[sea] %d water cells" % cells)
 
 func _build_beach_props() -> void:
 	var rng := RandomNumberGenerator.new()
@@ -525,6 +567,8 @@ func _build_beach_props() -> void:
 		var h := terrain.height(x, z)
 		if h < 0.2 or terrain.normal(x, z).y < 0.85:
 			continue
+		if _ground_min(x, z, 2.0) < 0.1:
+			continue   # towel corner would sit in the water
 		var st := MeshKit.begin()
 		var col: Color = brights[rng.randi() % brights.size()]
 		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.35, 0)), 0.05, 0.05, 2.8, 6, Color(0.8, 0.8, 0.78))
@@ -541,20 +585,40 @@ func _build_beach_props() -> void:
 		add_child(mi)
 
 func _build_lava() -> void:
+	# quad grid like the sea — giant primitive cylinders render at the wrong
+	# height on the Mobile renderer (see _build_sea)
+	var ly: float = cfg.get("lava_y", -3.2) - 0.3
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	for cz in range(-4, 4):
+		for cx in range(-4, 4):
+			var x0 := cx * 32.0
+			var z0 := cz * 32.0
+			var wet := false
+			for sz in 5:
+				for sx in 5:
+					if terrain.height(x0 + sx * 8.0, z0 + sz * 8.0) < ly + 0.5:
+						wet = true
+						break
+				if wet:
+					break
+			if not wet:
+				continue
+			for v: Vector3 in [
+				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0), Vector3(x0 + 32, 0, z0 + 32),
+				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0 + 32), Vector3(x0, 0, z0 + 32)]:
+				st.set_normal(Vector3.UP)
+				st.set_uv(Vector2(v.x, v.z) * 0.07)
+				st.add_vertex(v)
 	var mi := MeshInstance3D.new()
-	var cm := CylinderMesh.new()
-	cm.top_radius = 100.0
-	cm.bottom_radius = 100.0
-	cm.height = 0.2
-	cm.radial_segments = 28
-	mi.mesh = cm
+	mi.mesh = st.commit()
 	var m := StandardMaterial3D.new()
 	m.albedo_color = Color(0.9, 0.25, 0.05)
 	m.emission_enabled = true
 	m.emission = Color(1.0, 0.35, 0.05)
 	m.emission_energy_multiplier = 1.6
 	m.albedo_texture = load("res://assets/tex/rock.png")
-	m.uv1_scale = Vector3(14, 14, 1)
+	m.uv1_scale = Vector3(1, 1, 1)   # UVs baked into the quad grid
 	mi.material_override = m
 	mi.position = Vector3(0, cfg.get("lava_y", -3.2) - 0.3, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

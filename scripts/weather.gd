@@ -269,7 +269,10 @@ func _update_disaster(delta: float) -> void:
 				var v := 55.0
 				var ang := (PI - asin(clampf(9.8 * flat / (v * v), 0, 1))) / 2.0
 				var dirf := Vector3(to.x, 0, to.z).normalized()
-				var proj: Projectiles = get_tree().get_first_node_in_group("main").projectiles
+				var m: Node = get_tree().get_first_node_in_group("main")
+				if m == null:
+					return
+				var proj: Projectiles = m.projectiles
 				# alternate sides so lava bombs threaten everyone equally
 				var as_player := Game.rng.randf() > 0.5
 				proj.fire(Projectiles.Kind.MORTAR, from, dirf * cos(ang) * v + Vector3.UP * sin(ang) * v, [], as_player)

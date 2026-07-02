@@ -76,11 +76,18 @@ func _ready() -> void:
 		var overridden := 0
 		for key in cfg.get_section_keys("tuning") if cfg.has_section("tuning") else []:
 			if _values.has(key):
-				_values[key] = float(cfg.get_value("tuning", key))
+				var raw: Variant = cfg.get_value("tuning", key)
+				if typeof(raw) == TYPE_STRING and not String(raw).is_valid_float():
+					push_warning("[tune] ignoring non-numeric %s=%s" % [key, raw])
+					continue
+				_values[key] = float(raw)
 				overridden += 1
 		print("[tune] loaded %d overrides from tuning.cfg" % overridden)
-	else:
+	elif not FileAccess.file_exists(path):
 		_write_template(path)
+	else:
+		# parse error: keep defaults but NEVER overwrite the player's edits
+		push_warning("[tune] tuning.cfg failed to parse — using defaults, file untouched")
 
 func v(key: String) -> float:
 	return _values.get(key, 0.0)

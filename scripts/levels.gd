@@ -83,7 +83,8 @@ const CONFIGS := {
 	},
 	"beach": {
 		"title": "BEACH",
-		"rolling": 4.5, "dunes": true, "pond": false, "coast": true,
+		"rolling": 3.0, "dunes": true, "pond": false, "coast": true,
+		"inland_lift": 1.6, "spawn_h": 1.8,
 		"flatten": [],
 		"trees": 0, "palms": 70, "rocks": 40,
 		"village": {"center": Vector2(60, 60), "count": 8, "spread": 34.0},
@@ -98,7 +99,8 @@ const CONFIGS := {
 	},
 	"island": {
 		"title": "ISLAND",
-		"rolling": 8.0, "dunes": false, "pond": false, "island": true,
+		"rolling": 6.0, "dunes": false, "pond": false, "island": true,
+		"inland_lift": 2.2, "spawn_h": 2.4,
 		"flatten": [],
 		"trees": 120, "palms": 50, "rocks": 50,
 		"village": {"center": Vector2(0, -40), "count": 7, "spread": 30.0},
@@ -125,7 +127,7 @@ const CONFIGS := {
 		"spawn": Vector2(0, 55),
 		"spawn_ring": [40.0, 62.0],
 		"mortars": [],
-		"tint": Color(0.85, 0.72, 0.68),
+		"tint": Color(0.52, 0.47, 0.46),
 		"sun_energy": 0.85,
 		"ambient_loop": "lava_loop",
 		"calm_track": "music_volcano",

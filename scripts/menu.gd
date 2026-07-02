@@ -15,6 +15,7 @@ const BTN_HOVER := Color(0.28, 0.33, 0.28)
 const BTN_SEL := Color(0.45, 0.30, 0.10)
 
 var sel_mode: int = Game.Mode.SOLO
+var sel_endless := false
 var sel_level := "outdoor"
 var sel_diff := 1
 var sel_mut := ""
@@ -115,11 +116,10 @@ func _show_main() -> void:
 	_text("TANK COMMANDER VR", Vector2(0, 0.74), 44, ACCENT)
 	_text("Made for Ani", Vector2(0, 0.63), 22, Color(1.0, 0.75, 0.75))
 	_text("MODE", Vector2(-1.0, 0.52), 15, Color(0.7, 0.75, 0.7))
-	var modes := [["solo", "SOLO"], ["coop", "CO-OP HOST"], ["versus", "VERSUS HOST"], ["join", "JOIN GAME"]]
+	var modes := [["solo", "SOLO"], ["endless", "ENDLESS"], ["coop", "CO-OP HOST"], ["versus", "VERSUS HOST"], ["join", "JOIN GAME"]]
 	for i in modes.size():
-		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.79 + i * 0.53, 0.45), Vector2(0.50, 0.12), 15)
+		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.84 + i * 0.435, 0.45), Vector2(0.41, 0.12), 12)
 	_text("BATTLEFIELD", Vector2(-0.93, 0.33), 15, Color(0.7, 0.75, 0.7))
-	_button("level:endless", "ENDLESS TOUR", Vector2(0.90, 0.33), Vector2(0.48, 0.10), 12)
 	for i in Levels.ORDER.size():
 		var id: String = Levels.ORDER[i]
 		var row := i / 5
@@ -173,6 +173,8 @@ func _mode_index(m: int) -> int:
 	return [Game.Mode.SOLO, Game.Mode.COOP, Game.Mode.VERSUS, Game.Mode.PLANE].find(m)
 
 func _mode_id() -> String:
+	if sel_endless:
+		return "mode:endless"
 	match sel_mode:
 		Game.Mode.COOP: return "mode:coop"
 		Game.Mode.VERSUS: return "mode:versus"
@@ -221,7 +223,7 @@ func _press(id: String) -> void:
 		"start":
 			Game.vehicle = VEHICLES[sel_vehicle][0]
 			Game.time_of_day = sel_time
-			start_requested.emit(sel_mode, sel_level, sel_diff, sel_mut)
+			start_requested.emit(sel_mode, "endless" if sel_endless else sel_level, sel_diff, sel_mut)
 		"helptoggle":
 			Game.help_on = not Game.help_on
 			Game.save_prefs()
@@ -243,8 +245,13 @@ func _press(id: String) -> void:
 			_show_main()
 		_:
 			if id.begins_with("mode:"):
+				sel_endless = false
 				match id.trim_prefix("mode:"):
 					"solo": sel_mode = Game.Mode.SOLO
+					"endless":
+						sel_mode = Game.Mode.SOLO
+						sel_endless = true
+						Sfx.vo("vo_endless", 2, 30.0)
 					"coop":
 						sel_mode = Game.Mode.COOP
 						Sfx.vo("vo_coop", 2, 20.0)
@@ -260,8 +267,6 @@ func _press(id: String) -> void:
 				sel_level = id.trim_prefix("level:")
 				if sel_level == "gym":
 					Sfx.vo("vo_gym", 2, 30.0)
-				elif sel_level == "endless":
-					Sfx.vo("vo_endless", 2, 30.0)
 			elif id.begins_with("mut:"):
 				sel_mut = id.trim_prefix("mut:")
 				match sel_mut:

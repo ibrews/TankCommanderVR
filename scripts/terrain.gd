@@ -60,12 +60,14 @@ func height(x: float, z: float) -> float:
 		h += _noise.get_noise_2d(x * 3.0, z * 3.0) * 14.0 * rim
 	# level shapes
 	if cfg.get("coast", false):
-		# ocean along the north: seafloor drops past z = -30
+		# ocean along the north: seafloor drops past z = -30. Lift the inland
+		# side clear of the sea plane — raw rolling noise dipped below it and
+		# flooded half the beach with accidental lagoons
 		var coast_t: float = smoothstep(-30.0, -85.0, z)
-		h = lerpf(h, -6.0, coast_t)
+		h = lerpf(h + float(cfg.get("inland_lift", 0.0)), -6.0, coast_t)
 	if cfg.get("island", false):
 		var r_i: float = Vector2(x, z).length()
-		h = lerpf(h, -7.0, smoothstep(125.0, 165.0, r_i))
+		h = lerpf(h + float(cfg.get("inland_lift", 0.0)), -7.0, smoothstep(125.0, 165.0, r_i))
 	if cfg.get("volcano", false):
 		# caldera bowl with a ring ridge + three spoke bridges over the lava
 		var rv: float = Vector2(x, z).length()
@@ -216,8 +218,12 @@ void fragment() {
 	w.g = clamp(w.g - shift * min(w.r, w.g) * 2.0, 0.0, 1.0);
 	float tot = max(w.r + w.g + w.b, 0.001);
 	vec3 alb = (s * w.r + g * w.g + r * w.b) / tot * tint;
+	// macro patchiness: low-freq brightness variation survives mipping, so
+	// the ground reads varied from any distance instead of one flat color
+	float macro = texture(tex_rock, UV * 0.006).g;
+	alb *= mix(0.82, 1.15, macro);
 	float dist = length(VERTEX);
-	alb *= mix(1.0, 0.72, clamp((dist - 120.0) / 160.0, 0.0, 1.0));
+	alb *= mix(1.0, 0.60, clamp((dist - 100.0) / 180.0, 0.0, 1.0));
 	ALBEDO = alb;
 	ROUGHNESS = 0.95;
 	}
@@ -234,10 +240,10 @@ func _build_water() -> void:
 	cyl.radial_segments = 24
 	mi.mesh = cyl
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.16, 0.32, 0.38, 0.82)
-	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	# opaque, like the sea — transparent planes depth-fight terrain on Mobile
+	m.albedo_color = Color(0.16, 0.32, 0.38)
 	m.roughness = 0.05
-	m.metallic = 0.4
+	m.metallic = 0.45
 	mi.material_override = m
 	mi.position = Vector3(POND_CENTER.x, -0.85, POND_CENTER.y)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF

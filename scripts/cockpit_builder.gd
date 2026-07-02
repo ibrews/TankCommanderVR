@@ -112,6 +112,38 @@ static func _build_static(root: Node3D) -> void:
 	# hatch ring detail on roof above seat
 	MeshKit.cyl(st, Transform3D(Basis(), Vector3(EYE.x, YR - 0.03, EYE.z)), 0.30, 0.30, 0.03, 12, STEEL_DARK, false, false)
 
+	# ---- wall dressing: a fighting compartment is BUSY — bare walls read as
+	# unfinished geometry in-headset. Same merged mesh, zero extra draw calls.
+	# rear wall right: shell ready-rack (backplate, two rows of brass, straps)
+	MeshKit.box(st, Transform3D(Basis(), Vector3(0.26, 0.02, Z1 - 0.055)), Vector3(0.52, 0.66, 0.045), STEEL_DARK)
+	for row in 2:
+		for i in 4:
+			MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2),
+				Vector3(0.08 + i * 0.12, 0.24 - row * 0.44, Z1 - 0.25)), 0.034, 0.043, 0.34, 6, BRASS)
+	for i in 2:
+		MeshKit.box(st, Transform3D(Basis(), Vector3(0.26, 0.24 - i * 0.44, Z1 - 0.28)), Vector3(0.52, 0.03, 0.05), STEEL)
+	# rear wall left: first-aid box (white, red cross) + canvas stowage sacks
+	MeshKit.box(st, Transform3D(Basis(), Vector3(-0.52, 0.34, Z1 - 0.08)), Vector3(0.22, 0.16, 0.10), Color(0.88, 0.88, 0.86))
+	MeshKit.box(st, Transform3D(Basis(), Vector3(-0.52, 0.34, Z1 - 0.137)), Vector3(0.10, 0.03, 0.012), Color(0.75, 0.12, 0.10))
+	MeshKit.box(st, Transform3D(Basis(), Vector3(-0.52, 0.34, Z1 - 0.137)), Vector3(0.03, 0.10, 0.012), Color(0.75, 0.12, 0.10))
+	MeshKit.box(st, Transform3D(Basis(Vector3.UP, 0.2), Vector3(-0.60, -0.02, Z1 - 0.12)), Vector3(0.22, 0.28, 0.14), Color(0.45, 0.40, 0.28))
+	MeshKit.box(st, Transform3D(Basis(Vector3.UP, -0.15), Vector3(-0.34, -0.06, Z1 - 0.10)), Vector3(0.18, 0.20, 0.12), Color(0.40, 0.36, 0.26))
+	# left wall: overhead pipe run with junction boxes
+	MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(X0 + 0.05, 0.55, 0.0)), 0.022, 0.022, 1.05, 6, STEEL_DARK)
+	for zc in [-0.30, 0.10, 0.40]:
+		MeshKit.box(st, Transform3D(Basis(), Vector3(X0 + 0.05, 0.55, zc)), Vector3(0.07, 0.10, 0.09), STEEL_DARK)
+	# right wall: fire extinguisher on a bracket + wire conduit
+	MeshKit.cyl(st, Transform3D(Basis(), Vector3(X1 - 0.08, 0.06, 0.42)), 0.055, 0.055, 0.30, 8, Color(0.72, 0.14, 0.10))
+	MeshKit.cyl(st, Transform3D(Basis(), Vector3(X1 - 0.08, 0.245, 0.42)), 0.02, 0.02, 0.07, 6, STEEL_DARK)
+	MeshKit.box(st, Transform3D(Basis(), Vector3(X1 - 0.045, 0.08, 0.42)), Vector3(0.02, 0.06, 0.12), STEEL_DARK)
+	MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(X1 - 0.04, 0.58, -0.05)), 0.016, 0.016, 0.9, 6, STEEL_DARK)
+	# roof stiffener ribs (forward of the hatch ring)
+	for zc in [-0.35, -0.02]:
+		MeshKit.box(st, Transform3D(Basis(), Vector3((X0 + X1) / 2, YR - 0.035, zc)), Vector3(X1 - X0, 0.05, 0.06), STEEL_DARK)
+	# floor: ammo cans stacked in the rear-left corner
+	MeshKit.box(st, Transform3D(Basis(Vector3.UP, 0.3), Vector3(-0.64, YF + 0.09, 0.40)), Vector3(0.16, 0.14, 0.24), Color(0.30, 0.34, 0.26))
+	MeshKit.box(st, Transform3D(Basis(Vector3.UP, -0.1), Vector3(-0.64, YF + 0.23, 0.36)), Vector3(0.14, 0.12, 0.20), Color(0.33, 0.36, 0.28))
+
 	# ---- consoles
 	# front panel slab (gauges mount here), tilted toward player
 	MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-18)), Vector3(EYE.x, 0.02, Z0 + 0.10)), Vector3(0.62, 0.34, 0.05), STEEL_DARK)
