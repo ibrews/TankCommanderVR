@@ -188,10 +188,14 @@ func _ready() -> void:
 	Game.camera_mode_changed.connect(func(_t: bool): _apply_camera_mode())
 	# Defensive: if nothing is tracking a few seconds in, the OpenXR runtime or
 	# action map is misconfigured — surface it rather than leaving the player
-	# with a dead, unexplained menu.
+	# with a dead, unexplained menu. (If this ever fires again: check
+	# get_tracker_profile() on XRServer.get_tracker("left_hand"/"right_hand") —
+	# "/interaction_profiles/none" means no profile bound at all; see the
+	# hand_interaction_profile project-setting note above _ready().)
 	get_tree().create_timer(5.0).timeout.connect(func() -> void:
 		var any := hand_r.get_has_tracking_data() or hand_l.get_has_tracking_data() \
-			or (hand_r.aim and hand_r.aim.get_has_tracking_data())
+			or (hand_r.aim and hand_r.aim.get_has_tracking_data()) \
+			or (hand_l.aim and hand_l.aim.get_has_tracking_data())
 		if not any:
 			push_warning("[xr] no controller/hand tracking 5s after start — pick up the controllers, or check the OpenXR action map"))
 

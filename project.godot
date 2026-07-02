@@ -51,4 +51,13 @@ openxr/foveation_level=3
 openxr/foveation_dynamic=false
 shaders/enabled=true
 openxr/extensions/hand_tracking=true
+; The action map declares bindings for /interaction_profiles/ext/hand_interaction_ext
+; (bare-hand pinch/grasp). Without this flag, Godot never requests XR_EXT_hand_interaction
+; at xrCreateInstance, so suggesting bindings for that profile fails at runtime — and on
+; this Quest 3S stack that failure appears to abort interaction-profile binding for EVERY
+; profile in the action map (Touch controllers included), not just the hand one. Symptom:
+; OpenXRInterface.get_action_sets() shows the set attached+active, but every tracker's
+; get_tracker_profile() reads "/interaction_profiles/none" and has_pose() is false across
+; the board, despite the physical controllers working fine in every other app.
+openxr/extensions/hand_interaction_profile=true
 openxr/extensions/meta/application_space_warp=false
