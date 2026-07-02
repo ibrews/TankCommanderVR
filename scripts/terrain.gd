@@ -46,7 +46,9 @@ func _ready() -> void:
 
 func height(x: float, z: float) -> float:
 	var h := _noise.get_noise_2d(x, z) * float(cfg.get("rolling", 9.0))
-	h += _detail.get_noise_2d(x, z) * 0.35
+	# detail bumps scale per level: indoor floors (gym court, carpet) must be
+	# dead flat or every wall/prop base shows a gap
+	h += _detail.get_noise_2d(x, z) * 0.35 * float(cfg.get("detail", 1.0))
 	if cfg.get("dunes", false):
 		var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
 		h += _dune.get_noise_2d(x, z) * 2.2 * dune_mask
@@ -80,8 +82,9 @@ func height(x: float, z: float) -> float:
 	# config flatten zones
 	for f in cfg.get("flatten", []):
 		h = _flatten(h, Vector2(x, z), f[0], f[1], f[2])
-	# defaults: spawn + village area
-	h = _flatten(h, Vector2(x, z), spawn, 45.0, 1.0)
+	# defaults: spawn + village area (indoor levels set spawn_h 0 — a 1.0
+	# target raised a smooth mound in the middle of the gym court)
+	h = _flatten(h, Vector2(x, z), spawn, 45.0, float(cfg.get("spawn_h", 1.0)))
 	var vil: Dictionary = cfg.get("village", {})
 	if not vil.is_empty():
 		h = _flatten(h, Vector2(x, z), vil["center"], vil["spread"] + 14.0, 1.5)

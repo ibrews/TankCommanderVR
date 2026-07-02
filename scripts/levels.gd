@@ -65,7 +65,8 @@ const CONFIGS := {
 	},
 	"gym": {
 		"title": "GYM",
-		"rolling": 0.2, "dunes": false, "pond": false, "rim": false,
+		"rolling": 0.0, "detail": 0.0, "spawn_h": 0.0,
+		"dunes": false, "pond": false, "rim": false,
 		"flatten": [],
 		"trees": 0, "rocks": 0,
 		"village": {}, "city": {}, "castle": {}, "mud": [],
@@ -131,7 +132,8 @@ const CONFIGS := {
 	},
 	"babyroom": {
 		"title": "BABY ROOM",
-		"rolling": 0.1, "dunes": false, "pond": false, "rim": false,
+		"rolling": 0.0, "detail": 0.0, "spawn_h": 0.0,
+		"dunes": false, "pond": false, "rim": false,
 		"flatten": [],
 		"trees": 0, "rocks": 0,
 		"village": {}, "city": {}, "castle": {}, "mud": [],

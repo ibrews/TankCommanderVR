@@ -39,7 +39,10 @@ func _wall_mesh() -> ArrayMesh:
 
 func _rubble_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()
-	var rng := Game.rng
+	# local rng, not the Game autoload — keeps this script compilable in
+	# headless -s tool mode (autoloads absent there); seeded per segment
+	var rng := RandomNumberGenerator.new()
+	rng.seed = hash(position)
 	for i in 7:
 		var x := rng.randf_range(-seg_len / 2.0, seg_len / 2.0)
 		MeshKit.box(st, Transform3D(Basis(Vector3.UP, rng.randf() * TAU).rotated(Vector3.RIGHT, rng.randf_range(-0.3, 0.3)),
@@ -51,15 +54,20 @@ func _rubble_mesh() -> ArrayMesh:
 func take_damage(amount: float, at: Vector3) -> void:
 	if _dead:
 		return
+	# autoloads via /root lookup, not bare identifiers — this script must
+	# compile in headless -s tool mode where autoload globals don't resolve
+	var sfx: Node = get_node_or_null("/root/Sfx")
 	hp -= amount
 	if hp > 0.0:
-		Sfx.play_at("debris", at, -6.0)
+		if sfx:
+			sfx.play_at("debris", at, -6.0)
 		return
 	_dead = true
 	_mesh.mesh = _rubble_mesh()
 	(_shape.shape as BoxShape3D).size = Vector3(seg_len, 1.6, 2.2)
 	_shape.position = Vector3(0, 0.8, 0)
-	Sfx.play_at("wall_crumble", global_position + Vector3(0, 2, 0), 4.0)
+	if sfx:
+		sfx.play_at("wall_crumble", global_position + Vector3(0, 2, 0), 4.0)
 	var fx: FxPool = get_tree().get_first_node_in_group("fx")
 	if fx:
 		fx.debris_burst(global_position + Vector3(0, 3, 0), 10, Color(0.7, 0.68, 0.64))

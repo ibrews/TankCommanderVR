@@ -60,6 +60,17 @@ func _avoid(p: Vector2, margin := 0.0) -> bool:
 		if p.distance_to(mp) < 34.0 + margin: return true
 	return false
 
+func _ground_min(x: float, z: float, r: float) -> float:
+	# Lowest terrain point under a footprint of radius r. Instances must sink
+	# to this, not the center sample — on slopes the downhill edge floats
+	# otherwise (v0.5.0 headset bug: floating trees/props on coast + hills).
+	var h := terrain.height(x, z)
+	h = minf(h, terrain.height(x + r, z))
+	h = minf(h, terrain.height(x - r, z))
+	h = minf(h, terrain.height(x, z + r))
+	h = minf(h, terrain.height(x, z - r))
+	return h
+
 func _tree_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()
 	var trunk := Color(0.28, 0.19, 0.11)
@@ -88,16 +99,19 @@ func _scatter_trees(count: int) -> void:
 		if _avoid(p) or p.length() > 205.0: continue
 		var h := terrain.height(x, z)
 		if h < 0.2 or h > 13.0: continue
-		if terrain.normal(x, z).y < 0.86: continue
+		if terrain.normal(x, z).y < 0.90: continue
 		var s := rng.randf_range(0.8, 1.6)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.25), s))
-		placed.append(Transform3D(basis, Vector3(x, h - 0.1, z)))
+		var gy := _ground_min(x, z, 0.3 * s)
+		placed.append(Transform3D(basis, Vector3(x, gy - 0.12 * s, z)))
 		cols.append(Color(0.75, 0.8, 0.7).lerp(Color(1.05, 1.1, 0.95), rng.randf()))
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])
 		mm.set_instance_color(i, cols[i])
 	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Trees"
+	mmi.set_meta("xforms", placed)
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
@@ -132,17 +146,20 @@ func _scatter_rocks(count: int) -> void:
 		if h < -0.5: continue
 		var s := rng.randf_range(0.5, 3.4)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.6, 1.0), s))
-		placed.append(Transform3D(basis, Vector3(x, h + 0.1, z)))
+		var gy := _ground_min(x, z, 0.7 * s)
+		placed.append(Transform3D(basis, Vector3(x, gy, z)))
 		var tint := rng.randf_range(0.75, 1.15)
 		cols.append(Color(tint, tint, tint * rng.randf_range(0.92, 1.0)))
 		if s > 2.2:
-			big.append(Vector3(x, h + 0.5, z))
+			big.append(Vector3(x, gy + 0.5, z))
 			big_scale.append(s)
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])
 		mm.set_instance_color(i, cols[i])
 	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Rocks"
+	mmi.set_meta("xforms", placed)
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
@@ -151,8 +168,20 @@ func _scatter_rocks(count: int) -> void:
 
 func _building(x: float, z: float, w: float, d: float, hgt: float, yaw: float,
 		mat_wall: Material, mat_roof: Material, rng: RandomNumberGenerator, tall := false) -> void:
+	# foundation at the LOWEST of the 4 corners, sunk slightly — a center
+	# sample leaves the downhill corner hanging in the air on any slope
 	var gy := terrain.height(x, z)
+	var ca := cos(yaw)
+	var sa := sin(yaw)
+	for cx in [-0.5, 0.5]:
+		for cz in [-0.5, 0.5]:
+			var lx: float = cx * w
+			var lz: float = cz * d
+			gy = minf(gy, terrain.height(x + lx * ca + lz * sa, z - lx * sa + lz * ca))
+	gy -= 0.12
 	var b := Node3D.new()
+	b.name = "Building"
+	b.set_meta("cat", "building")
 	b.position = Vector3(x, gy, z)
 	b.rotation.y = yaw
 	add_child(b)
@@ -191,8 +220,10 @@ func _build_village(vil: Dictionary) -> void:
 	var st3 := MeshKit.begin()
 	MeshKit.cyl(st3, Transform3D(Basis(), Vector3(0, 0.5, 0)), 1.2, 1.2, 1.0, 10, Color(0.55, 0.53, 0.5), false, false)
 	MeshKit.cyl(st3, Transform3D(Basis(), Vector3(0, 2.2, 0)), 0.08, 0.08, 2.4, 5, Color(0.4, 0.3, 0.2))
-	var wy := terrain.height(vc.x, vc.y)
+	var wy := _ground_min(vc.x, vc.y, 1.2) - 0.08
 	var well := MeshInstance3D.new()
+	well.name = "Well"
+	well.set_meta("cat", "prop")
 	well.mesh = MeshKit.commit(st3, MeshKit.mat_vcol())
 	well.position = Vector3(vc.x, wy, vc.y)
 	add_child(well)
@@ -244,9 +275,15 @@ func _build_mud() -> void:
 		var r := 118.0 + rng.randf_range(-6, 6)
 		var x := cos(a) * r
 		var z := sin(a) * r
-		var h := terrain.height(x, z)
-		MeshKit.box(st, Transform3D(Basis(Vector3.UP, a + rng.randf_range(-0.2, 0.2)), Vector3(x, h + 0.8, z)),
-			Vector3(rng.randf_range(8, 14), rng.randf_range(1.6, 2.6), 4.0), Color(0.35, 0.27, 0.2))
+		var yawb := a + rng.randf_range(-0.2, 0.2)
+		var blen := rng.randf_range(8, 14)
+		var bh := rng.randf_range(1.6, 2.6)
+		# berm boxes are long — sample both ends so neither hangs over a dip
+		var ex := cos(yawb) * blen * 0.5
+		var ez := -sin(yawb) * blen * 0.5
+		var gy := minf(terrain.height(x, z), minf(terrain.height(x + ex, z + ez), terrain.height(x - ex, z - ez)))
+		MeshKit.box(st, Transform3D(Basis(Vector3.UP, yawb), Vector3(x, gy + bh * 0.5 - 0.5, z)),
+			Vector3(blen, bh, 4.0), Color(0.35, 0.27, 0.2))
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol())
 	add_child(mi)
@@ -254,6 +291,8 @@ func _build_mud() -> void:
 func _build_castle(center: Vector2) -> void:
 	var cy := terrain.height(center.x, center.y)
 	var root := Node3D.new()
+	root.name = "Castle"
+	root.set_meta("cat", "castle")
 	root.position = Vector3(center.x, cy, center.y)
 	add_child(root)
 	var stone := MeshKit.mat_tex("res://assets/tex/rock.png", true, 0.95)
@@ -274,6 +313,16 @@ func _build_castle(center: Vector2) -> void:
 				3: pos = Vector3(-W, 0, -W + frac * 2 * W); yaw = PI / 2
 			var wall := CastleWall.new(stone, 2 * W / SEG)
 			wall.position = pos
+			# conform each segment to the terrain under it (walls step with
+			# the ground like real fortifications; center-height left segments
+			# floating over dips 60+ m from the castle center) — sample both
+			# segment ends too, the ground can dip within one 12 m span
+			var ex := W / SEG if yaw == 0.0 else 0.0
+			var ez := 0.0 if yaw == 0.0 else W / SEG
+			var wg := terrain.height(center.x + pos.x, center.y + pos.z)
+			wg = minf(wg, terrain.height(center.x + pos.x + ex, center.y + pos.z + ez))
+			wg = minf(wg, terrain.height(center.x + pos.x - ex, center.y + pos.z - ez))
+			wall.position.y = wg - cy - 0.35
 			wall.rotation.y = yaw
 			root.add_child(wall)
 	# corner towers
@@ -285,9 +334,10 @@ func _build_castle(center: Vector2) -> void:
 			MeshKit.box(st, Transform3D(Basis(), Vector3(cos(a) * 3.6, 9.6, sin(a) * 3.6)), Vector3(1.2, 1.2, 1.2), Color(0.7, 0.68, 0.65))
 		var mi := MeshInstance3D.new()
 		mi.mesh = MeshKit.commit(st, stone)
-		mi.position = corner
+		var ty := _ground_min(center.x + corner.x, center.y + corner.z, 3.8) - cy - 0.4
+		mi.position = Vector3(corner.x, ty, corner.z)
 		root.add_child(mi)
-		MeshKit.add_static_box_collider(root, corner + Vector3(0, 4.5, 0), Vector3(8.0, 9.0, 8.0))
+		MeshKit.add_static_box_collider(root, Vector3(corner.x, ty + 4.5, corner.z), Vector3(8.0, 9.0, 8.0))
 	# central keep + banner
 	var st := MeshKit.begin()
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, 5.5, 0)), Vector3(14, 11, 14), Color(0.78, 0.76, 0.72), 0.1)
@@ -365,8 +415,10 @@ func _build_gym() -> void:
 			MeshKit.box(fst, Transform3D(Basis(Vector3.UP, rng.randf() * 0.5), Vector3(rng.randf_range(-2, 2), s / 2.0 + k * s * 0.85, rng.randf_range(-2, 2))),
 				Vector3(s, s, s), Color.WHITE, -1.0)
 		var fort := MeshInstance3D.new()
+		fort.name = "Fort"
+		fort.set_meta("cat", "prop")
 		fort.mesh = MeshKit.commit(fst, card)
-		fort.position = Vector3(x, terrain.height(x, z), z)
+		fort.position = Vector3(x, _ground_min(x, z, 2.5) - 0.06, z)
 		add_child(fort)
 		MeshKit.add_static_box_collider(self, Vector3(x, 4.0, z), Vector3(6.5, 8.0, 6.5))
 	# bouncy basketballs
@@ -430,12 +482,17 @@ func _scatter_palms(count: int) -> void:
 		var h := terrain.height(x, z)
 		if h < 0.3 or h > 6.0 or _avoid(Vector2(x, z)):
 			continue
+		if terrain.normal(x, z).y < 0.88:
+			continue
 		var s := rng.randf_range(0.8, 1.4)
-		placed.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s)), Vector3(x, h - 0.1, z)))
+		var gy := _ground_min(x, z, 0.3 * s)
+		placed.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s)), Vector3(x, gy - 0.15 * s, z)))
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])
 	var mmi := MultiMeshInstance3D.new()
+	mmi.name = "Palms"
+	mmi.set_meta("xforms", placed)
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
@@ -466,16 +523,19 @@ func _build_beach_props() -> void:
 		var x := rng.randf_range(-150.0, 150.0)
 		var z := rng.randf_range(-22.0, 8.0)   # the sand strip by the water
 		var h := terrain.height(x, z)
-		if h < 0.2:
+		if h < 0.2 or terrain.normal(x, z).y < 0.85:
 			continue
 		var st := MeshKit.begin()
 		var col: Color = brights[rng.randi() % brights.size()]
-		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.4, 0)), 0.05, 0.05, 2.8, 6, Color(0.8, 0.8, 0.78))
-		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 2.75, 0)), 2.2, 0.15, 0.8, 10, col)
-		# towel
-		MeshKit.box(st, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(1.8, 0.03, 0.5)),
+		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.35, 0)), 0.05, 0.05, 2.8, 6, Color(0.8, 0.8, 0.78))
+		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 2.7, 0)), 2.2, 0.15, 0.8, 10, col)
+		# towel — 1.8 m from the pole, so sample the sand under ITS footprint
+		var towel_y := _ground_min(x + 1.8, z + 0.5, 0.9) - h + 0.05
+		MeshKit.box(st, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(1.8, towel_y, 0.5)),
 			Vector3(1.2, 0.04, 2.2), brights[(rng.randi() + 1) % brights.size()])
 		var mi := MeshInstance3D.new()
+		mi.name = "Umbrella"
+		mi.set_meta("cat", "umbrella")
 		mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.8))
 		mi.position = Vector3(x, h, z)
 		add_child(mi)
@@ -506,7 +566,7 @@ func _build_lava() -> void:
 	glow.shadow_enabled = false
 	glow.position = Vector3(0, 2.0, 0)
 	add_child(glow)
-	var fxp: FxPool = get_tree().get_first_node_in_group("fx")
+	var fxp: FxPool = get_tree().get_first_node_in_group("fx") if is_inside_tree() else null
 	if fxp:
 		for p in [Vector3(30, -2, 20), Vector3(-35, -2, -15)]:
 			fxp.smoke_column(p, 9999.0)
@@ -539,10 +599,14 @@ func _build_babyroom() -> void:
 		MeshKit.cyl(cst, Transform3D(Basis(), Vector3(-12.0 + i * 2.2, 10.0, -9.0)), 0.3, 0.3, 12.0, 6, wood)
 	MeshKit.box(cst, Transform3D(Basis(), Vector3(0, 16.5, 0)), Vector3(30.0, 1.0, 19.5), wood * 0.95)
 	var crib := MeshInstance3D.new()
+	crib.name = "Crib"
+	crib.set_meta("cat", "prop")
 	crib.mesh = MeshKit.commit(cst, MeshKit.mat_vcol(0.8))
-	crib.position = Vector3(-80, 0, -80)
+	var crib_y := minf(minf(terrain.height(-94, -89), terrain.height(-66, -89)),
+		minf(terrain.height(-94, -71), terrain.height(-66, -71))) - 0.1
+	crib.position = Vector3(-80, crib_y, -80)
 	add_child(crib)
-	MeshKit.add_static_box_collider(self, Vector3(-80, 9, -80), Vector3(30, 18, 20))
+	MeshKit.add_static_box_collider(self, Vector3(-80, crib_y + 9, -80), Vector3(30, 18, 20))
 	# alphabet blocks + not-lego bricks + books + ball (cover!)
 	var brights := [Color(0.9, 0.3, 0.3), Color(0.3, 0.5, 0.9), Color(0.95, 0.8, 0.2), Color(0.4, 0.8, 0.4), Color(0.8, 0.4, 0.9)]
 	for i in 7:
@@ -555,8 +619,10 @@ func _build_babyroom() -> void:
 		var bst := MeshKit.begin()
 		MeshKit.box(bst, Transform3D(Basis(Vector3.UP, rng.randf() * 0.6), Vector3(0, s / 2, 0)), Vector3(s, s, s), col)
 		var bmesh := MeshInstance3D.new()
+		bmesh.name = "Block"
+		bmesh.set_meta("cat", "prop")
 		bmesh.mesh = MeshKit.commit(bst, MeshKit.mat_vcol(0.5))
-		bmesh.position = Vector3(x, terrain.height(x, z), z)
+		bmesh.position = Vector3(x, _ground_min(x, z, s * 0.5) - 0.06, z)
 		add_child(bmesh)
 		var letter := Label3D.new()
 		letter.text = char(65 + rng.randi() % 26)
@@ -578,8 +644,10 @@ func _build_babyroom() -> void:
 			for sz in 2:
 				MeshKit.cyl(lst, Transform3D(Basis(), Vector3(-3.0 + sx * 2.0, 3.7, -1.0 + sz * 2.0)), 0.8, 0.8, 1.0, 10, col * 1.1)
 		var brick := MeshInstance3D.new()
+		brick.name = "Brick"
+		brick.set_meta("cat", "prop")
 		brick.mesh = MeshKit.commit(lst, MeshKit.mat_vcol(0.35))
-		brick.position = Vector3(x, terrain.height(x, z), z)
+		brick.position = Vector3(x, _ground_min(x, z, 3.0) - 0.06, z)
 		brick.rotation.y = rng.randf() * TAU
 		add_child(brick)
 		MeshKit.add_static_box_collider(self, brick.position + Vector3(0, 1.6, 0), Vector3(8, 4.4, 4), brick.rotation.y)
@@ -617,14 +685,26 @@ func _build_wrecks(count: int) -> void:
 		var x := rng.randf_range(-150.0, 150.0)
 		var z := rng.randf_range(-150.0, 150.0)
 		if _avoid(Vector2(x, z), 6.0): continue
-		var h := terrain.height(x, z)
+		if terrain.normal(x, z).y < 0.90: continue
+		var yaw := rng.randf() * TAU
+		# hull box floor is +0.2 in mesh space — sample the 4 track corners
+		# and sink 0.35 below the lowest so tracks bed into the dirt
+		var gy := terrain.height(x, z)
+		var cw := cos(yaw)
+		var sw := sin(yaw)
+		for cx in [-1.6, 1.6]:
+			for cz in [-3.2, 3.2]:
+				gy = minf(gy, terrain.height(x + cx * cw + cz * sw, z - cx * sw + cz * cw))
+		gy -= 0.35
 		var st := MeshKit.begin()
 		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.65, 0)), Vector3(3.2, 0.9, 6.4), dark)
 		MeshKit.box(st, Transform3D(Basis(Vector3.UP, rng.randf_range(-0.8, 0.8)), Vector3(0.3, 1.35, 0.4)), Vector3(2.0, 0.7, 2.4), rust)
 		MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(75.0)), Vector3(0.3, 1.5, -2.2)), 0.09, 0.07, 3.4, 6, dark)
 		var mi := MeshInstance3D.new()
+		mi.name = "Wreck"
+		mi.set_meta("cat", "wreck")
 		mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol())
-		mi.position = Vector3(x, h, z)
-		mi.rotation = Vector3(rng.randf_range(-0.06, 0.06), rng.randf() * TAU, rng.randf_range(-0.1, 0.1))
+		mi.position = Vector3(x, gy, z)
+		mi.rotation = Vector3(rng.randf_range(-0.04, 0.04), yaw, rng.randf_range(-0.06, 0.06))
 		add_child(mi)
-		MeshKit.add_static_box_collider(self, Vector3(x, h + 0.8, z), Vector3(3.4, 1.6, 6.6), mi.rotation.y)
+		MeshKit.add_static_box_collider(self, Vector3(x, gy + 0.8, z), Vector3(3.4, 1.6, 6.6), yaw)
