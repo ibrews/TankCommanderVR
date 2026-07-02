@@ -59,7 +59,8 @@ const DEFAULTS := {
 	# --- pretty
 	"glow_enabled": 1.0,
 	"glow_intensity": 0.55,
-	"foveation_level": 3.0,   # 0-3; lower = sharper periphery, more GPU
+	"foveation_level": 2.0,   # 0-3; lower = sharper periphery, more GPU
+	                          # A/B on Quest 3S: 2 vs 3 = 9.17 vs 9.20 ms — free
 }
 
 var _values := {}
