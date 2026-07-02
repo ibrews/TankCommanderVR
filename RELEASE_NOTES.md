@@ -1,3 +1,15 @@
+# Tank Commander VR v0.6.1
+
+## VR hands update
+- **Real Touch controller model**: both hands now show the actual runtime
+  controller geometry (fetched live from the OS, animated by real button/
+  trigger/thumbstick input) instead of a placeholder box.
+- **Real hand-tracking mesh**: set the controllers down and your actual
+  hand shape appears, posed live from Quest hand tracking.
+- Fixed VR controllers/hands not being tracked at all on some sessions
+  (an OpenXR extension flag gap that could silently break every controller
+  binding, not just hand tracking).
+
 # Tank Commander VR v0.6.0
 
 ## The "solid ground" update
