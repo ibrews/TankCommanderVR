@@ -121,6 +121,12 @@ func _build_chunks() -> void:
 	mat.set_shader_parameter("tex_rock", load("res://assets/tex/rock.png"))
 	var tint: Color = cfg.get("tint", Color(1, 1, 1))
 	mat.set_shader_parameter("tint", Vector3(tint.r, tint.g, tint.b))
+	if cfg.get("coast", false) or cfg.get("island", false):
+		mat.set_shader_parameter("water_y", -0.55)
+	elif cfg.get("volcano", false):
+		mat.set_shader_parameter("water_y", float(cfg.get("lava_y", -3.2)))
+		mat.set_shader_parameter("water_col", Vector3(1.0, 0.38, 0.05))
+		mat.set_shader_parameter("water_emiss", 1.0)
 	if cfg.has("floor_tex"):
 		var ft := load("res://assets/tex/%s.png" % cfg["floor_tex"])
 		mat.set_shader_parameter("tex_floor", ft)
@@ -201,7 +207,25 @@ uniform sampler2D tex_rock : source_color, filter_linear_mipmap;
 uniform sampler2D tex_floor : source_color, filter_linear_mipmap;
 uniform float use_floor = 0.0;
 uniform vec3 tint = vec3(1.0);
+// water/lava painted INTO the terrain (world-y threshold): separate flat
+// planes depth-fight this mesh on the Mobile renderer, painting cannot
+uniform float water_y = -9999.0;
+uniform vec3 water_col : source_color = vec3(0.10, 0.33, 0.45);
+uniform float water_emiss = 0.0;
+varying vec3 wpos;
+void vertex() {
+	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
+}
 void fragment() {
+	if (wpos.y < water_y) {
+		float depth_t = clamp((water_y - wpos.y) / 5.0, 0.0, 1.0);
+		vec3 wc = mix(water_col * 1.45, water_col * 0.5, depth_t);
+		ALBEDO = wc;
+		ROUGHNESS = 0.12;
+		if (water_emiss > 0.5) {
+			EMISSION = wc * 1.5;
+		}
+	} else {
 	if (use_floor > 0.5) {
 		// one giant non-tiling texture across the whole arena (gym court)
 		vec2 fuv = UV / (0.22 * 512.0) + 0.5;
@@ -226,6 +250,7 @@ void fragment() {
 	alb *= mix(1.0, 0.60, clamp((dist - 100.0) / 180.0, 0.0, 1.0));
 	ALBEDO = alb;
 	ROUGHNESS = 0.95;
+	}
 	}
 }
 """

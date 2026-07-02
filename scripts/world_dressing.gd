@@ -502,15 +502,13 @@ func _scatter_palms(count: int) -> void:
 func _build_sea() -> void:
 	if OS.get_environment("TC_NO_SEA") != "":
 		return   # visual bisection aid
-	# The sea is a SurfaceTool quad grid over WATER CELLS ONLY. A single
-	# giant primitive CylinderMesh (r=420) rendered at the WRONG HEIGHT on
-	# the Mobile renderer — its transform was visually ignored (verified by
-	# bisection: node at y=-3 still painted the waterline at ~+2), flooding
-	# dry land map-wide. Modest ArrayMesh triangles render correctly, and
-	# skipping dry cells kills map-wide overdraw for free.
+	# Water INSIDE the map is painted into the terrain shader (world-y
+	# threshold) — any separate flat plane depth-fights the terrain on the
+	# Mobile renderer (verified by bisection; even ArrayMesh quads at y=-3
+	# occluded terrain at +1.5). Here we only add a horizon skirt of quads
+	# FULLY OUTSIDE the terrain square, where overlap is impossible.
 	const CELL := 64.0
 	const EXT := 448.0
-	var y := -0.55
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
 	var cells := 0
@@ -518,44 +516,26 @@ func _build_sea() -> void:
 		for cx in range(int(-EXT / CELL), int(EXT / CELL)):
 			var x0 := cx * CELL
 			var z0 := cz * CELL
-			# a cell gets water if it lies outside the terrain square (open
-			# ocean) or any sampled point of it dips below the waterline
-			var wet := absf(x0 + CELL * 0.5) > Terrain.HALF or absf(z0 + CELL * 0.5) > Terrain.HALF
-			if not wet:
-				for sz in 5:
-					for sx in 5:
-						if terrain.height(x0 + sx * CELL / 4.0, z0 + sz * CELL / 4.0) < y + 0.3:
-							wet = true
-							break
-					if wet:
-						break
-			if not wet:
+			if absf(x0 + CELL * 0.5) < Terrain.HALF + CELL * 0.5 					and absf(z0 + CELL * 0.5) < Terrain.HALF + CELL * 0.5:
 				continue
 			cells += 1
-			var sub := CELL / 2.0
-			for qz in 2:
-				for qx in 2:
-					var ax := x0 + qx * sub
-					var az := z0 + qz * sub
-					var quad := [
-						Vector3(ax, 0, az), Vector3(ax + sub, 0, az), Vector3(ax + sub, 0, az + sub),
-						Vector3(ax, 0, az), Vector3(ax + sub, 0, az + sub), Vector3(ax, 0, az + sub),
-					]
-					for v: Vector3 in quad:
-						st.set_normal(Vector3.UP)
-						st.add_vertex(v)
+			for v: Vector3 in [
+				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL),
+				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL), Vector3(x0, 0, z0 + CELL)]:
+				st.set_normal(Vector3.UP)
+				st.add_vertex(v)
 	var mi := MeshInstance3D.new()
 	mi.name = "Sea"
 	mi.mesh = st.commit()
 	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.10, 0.33, 0.45)
-	m.roughness = 0.04
-	m.metallic = 0.45
+	m.albedo_color = Color(0.09, 0.30, 0.42)
+	m.roughness = 0.25
+	m.metallic = 0.2
 	mi.material_override = m
-	mi.position = Vector3(0, y, 0)
+	mi.position = Vector3(0, -0.75, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mi)
-	print("[sea] %d water cells" % cells)
+	print("[sea] %d horizon-skirt cells" % cells)
 
 func _build_beach_props() -> void:
 	var rng := RandomNumberGenerator.new()
