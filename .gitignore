@@ -1,0 +1,5 @@
+.godot/
+out/
+android/build/
+*.log
+*.tmp
