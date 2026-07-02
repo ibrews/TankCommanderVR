@@ -71,6 +71,9 @@ vo_eggmisc_3
 vo_eggmisc_4
 vo_eggmisc_5
 vo_eggmisc_6
+vo_endless_2
+vo_endless_3
+vo_endless_4
 vo_fast_2
 vo_fast_3
 vo_fast_4
@@ -90,6 +93,8 @@ vo_hard
 vo_heli_2
 vo_heli_3
 vo_heli_4
+vo_help_on_2
+vo_help_on_3
 vo_hide_2
 vo_hide_3
 vo_hit
@@ -177,6 +182,11 @@ vo_title
 vo_tornado
 vo_toys_2
 vo_toys_3
+vo_travel_1
+vo_travel_2
+vo_travel_3
+vo_travel_4
+vo_travel_5
 vo_underwater
 vo_versus
 vo_volcano
