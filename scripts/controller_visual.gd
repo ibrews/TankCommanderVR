@@ -9,7 +9,7 @@ class_name ControllerVisual
 extends Node3D
 
 # Set by the owner (XRHand) before adding this to the tree.
-var hand: XRController3D
+var hand: XRRig.XRHand
 var is_left := true
 
 # response key -> {value: Node3D, min: Transform3D, max: Transform3D}
