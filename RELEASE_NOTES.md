@@ -1,3 +1,19 @@
+# v0.3.0 — Kids Edition + The Fun Pass
+
+New in v0.3.0:
+- **Weather**: random rainstorms with thunder and lightning, wind gusts,
+  dust kicked up by your tracks
+- **DAD FM** 📻: the cockpit radio channel knob now tunes real stations —
+  including a full morning-zoo talk show. All dad. All day. There is no escape.
+- **SILLY MODES** on the menu: LOW-G (bouncing tanks), UNDERWATER (glub glub),
+  BALLOON (everything is a party, explosions are confetti pops), PAINTBALL
+  (splats everywhere, Rec Room energy)
+- **GYM**: a giant school gymnasium battlefield — court floor, bleachers,
+  basketball hoops, cardboard forts, bouncy basketballs you can ram
+- **Multiplayer avatars**: your co-op crewmate's head floats in the cockpit;
+  your versus rival peeks out of their hatch
+- **???**: squeeze both grips + both triggers + hold A. You didn't hear it from me.
+
 # v0.2.0 — Kids Edition
 
 **Made for Ani** 🧡
@@ -28,6 +44,6 @@ generated. Built overnight with [Claude Code](https://claude.com/claude-code).
 ---
 To publish this release (Alex — one command from the repo root):
 
-    gh release create v0.2.0 out/TankCommanderVR.apk \
-      --title "Tank Commander VR v0.2.0 — Kids Edition" \
+    gh release create v0.3.0 out/TankCommanderVR.apk \
+      --title "Tank Commander VR v0.3.0 — Kids Edition + Fun Pass" \
       --notes-file RELEASE_NOTES.md
