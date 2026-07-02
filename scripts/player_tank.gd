@@ -294,6 +294,11 @@ func _wire_controls() -> void:
 		var m := get_tree().get_first_node_in_group("main")
 		if m:
 			m.call_deferred("to_menu"))
+	c["seat_btn"].pressed.connect(func():
+		var m := get_tree().get_first_node_in_group("main")
+		if m and m.rig is XRRig:
+			m.rig.set("_calibrated", false)
+			m.rig.set("_calib_t", 1.0))
 
 func _on_gear(v: float) -> void:
 	var g := 0
@@ -312,6 +317,9 @@ func _on_battery(on: bool) -> void:
 	cockpit["dome_bulb"].emission_energy_multiplier = 1.2 if on else 0.0
 
 func _on_lights(on: bool) -> void:
+	Game.player_lights = on and battery_on
+	if on:
+		Sfx.vo("vo_lights", 0, 40.0)
 	for l in headlights:
 		l.light_energy = 3.5 if (on and battery_on) else 0.0
 	head_lamp_mat.emission_enabled = on and battery_on
@@ -416,7 +424,7 @@ func _puppet_update(delta: float) -> void:
 	var inp := turret_input
 	if inp.length() < 0.05 and stick_turret.length() > 0.08:
 		inp = stick_turret
-	turret.rotation.y += -inp.x * TURRET_SLEW * delta
+	turret.rotation.y += -inp.x * Tune.v("turret_slew") * delta
 	turret.rotation.y = lerp_angle(turret.rotation.y, _net_turret_y, clampf(1.5 * delta, 0.0, 1.0))
 	gun_elev = clampf(gun_elev + inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
 	gun_pivot.rotation.x = gun_elev
@@ -499,8 +507,8 @@ func effective_drive() -> Vector2:
 
 func _update_drive(delta: float) -> void:
 	var cmd := effective_drive() if (engine_on and Game.alive) else Vector2.ZERO
-	var mud := Levels.mud_factor(global_position)
-	var target_fwd := (cmd.x + cmd.y) * 0.5 * MAX_TRACK * mud * Game.speed_scale()
+	var mud: float = lerpf(Tune.v("mud_slow"), 1.0, 1.0 if Levels.mud_factor(global_position) >= 1.0 else 0.0)
+	var target_fwd := (cmd.x + cmd.y) * 0.5 * Tune.v("tank_max_speed") * mud * Game.speed_scale()
 	var target_yaw_rate := (cmd.x - cmd.y) * YAW_GAIN * 2.0
 	_spd = move_toward(_spd, target_fwd, ACCEL * delta)
 	_yaw_rate = move_toward(_yaw_rate, target_yaw_rate, 2.5 * delta)
@@ -508,6 +516,11 @@ func _update_drive(delta: float) -> void:
 
 	var fwd_dir := Vector3(-sin(yaw), 0, -cos(yaw))
 	# NOTE: Basis yaw convention checked below in _align; forward = -Z rotated by yaw
+	# tanks do not swim: refuse to drive into deep water (beach/island)
+	if Game.mutator != "underwater":
+		var ahead := global_position + fwd_dir * signf(_spd) * 4.0
+		if terrain.height(ahead.x, ahead.z) < -1.1 and terrain.height(global_position.x, global_position.z) > -1.1:
+			_spd = move_toward(_spd, 0.0, 20.0 * delta)
 	var hvel := fwd_dir * _spd
 	# storm/tornado wind shove
 	var weather: Weather = get_tree().get_first_node_in_group("weather")
@@ -585,7 +598,7 @@ func _update_turret(delta: float) -> void:
 		grip.pivot.rotation = Vector3(inp.y * 0.28, 0, -inp.x * 0.28)
 	if not battery_on or not Game.alive:
 		inp = Vector2.ZERO
-	turret.rotation.y += -inp.x * TURRET_SLEW * delta
+	turret.rotation.y += -inp.x * Tune.v("turret_slew") * delta
 	gun_elev = clampf(gun_elev + inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
 	gun_pivot.rotation.x = gun_elev
 	turret_p.volume_db = -14.0 if inp.length() > 0.1 else -80.0
@@ -594,7 +607,8 @@ func _update_turret(delta: float) -> void:
 func _update_weapons(delta: float) -> void:
 	rocket_cool -= delta
 	mg_timer -= delta
-	if mg_held and mg_timer <= 0.0 and Game.alive:
+	var mg_btn_down: bool = cockpit["controls"]["mg_btn"].is_down
+	if (mg_held or mg_btn_down) and mg_timer <= 0.0 and Game.alive:
 		mg_timer = MG_PERIOD
 		_fire_mg()
 	if auto_reload and not loaded:
@@ -624,6 +638,7 @@ func fire_cannon(from_stick := false) -> void:
 	else:
 		auto_reload = false
 	var dir := -muzzle.global_transform.basis.z
+	Game.make_noise()
 	projectiles.fire(Projectiles.Kind.SHELL, muzzle.global_position, dir * SHELL_SPEED + velocity, [get_rid()], true)
 	NetManager.broadcast_shot(Projectiles.Kind.SHELL, muzzle.global_position, dir * SHELL_SPEED + velocity)
 	NetManager.versus_shot(Projectiles.Kind.SHELL, muzzle.global_position, dir * SHELL_SPEED + velocity)

@@ -18,8 +18,17 @@ modes (low-g / underwater / balloon / paintball), the cardboard gymnasium,
 Rec Room-style multiplayer avatars, and a natural-disaster easter egg
 (squeeze everything + A — you didn't hear it from me).
 
+## v0.4 — the wild pass (night 2, even later)
+Four more battlefields (beach resort with calypso, island, volcano bridge
+network over live lava, and the baby room — you're toy-sized, there is a
+giant baby, the floor shakes). Three more vehicles (biplane, helicopter,
+and The Runner with arm-swing sprinting). Night Ops with a real stealth
+loop (headlights trade visibility for detection). 201 lines of dialogue.
+A cabbage merchant in every level who deeply regrets his location choices.
+And a `tuning.cfg` so playtest feedback turns into numbers, not rewrites.
+
 See `screenshots/` — files are prefixed by the run that took them
-(`gym_`, `balloon_`, `paint_`, `disaster_`).
+(`gym_`, `balloon_`, `paint_`, `disaster_`, `beach_`, `volcano_`, `babyroom_`).
 
 | Shot | What you're looking at |
 |---|---|

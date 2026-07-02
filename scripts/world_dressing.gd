@@ -14,8 +14,19 @@ func _init(t: Terrain) -> void:
 func _ready() -> void:
 	Levels.mud_pools = cfg.get("mud", [])
 	Levels.cardboard = cfg.get("cardboard", false)
+	Levels.army_green = cfg.get("army_green", false)
 	if cfg.get("gym", false):
 		_build_gym()
+	if cfg.get("palms", 0) > 0:
+		_scatter_palms(cfg["palms"])
+	if cfg.get("coast", false) or cfg.get("island", false):
+		_build_sea()
+	if cfg.get("coast", false):
+		_build_beach_props()
+	if cfg.get("volcano", false):
+		_build_lava()
+	if cfg.get("babyroom", false):
+		_build_babyroom()
 	if cfg.get("trees", 0) > 0:
 		_scatter_trees(cfg["trees"])
 	if cfg.get("rocks", 0) > 0:
@@ -387,6 +398,215 @@ func _build_gym() -> void:
 		ball.add_child(mi)
 		ball.position = Vector3(-20.0 + i * 20.0, 6.0, 20.0)
 		add_child(ball)
+
+func _palm_mesh() -> ArrayMesh:
+	var st := MeshKit.begin()
+	var trunk := Color(0.45, 0.33, 0.2)
+	# gently bent trunk: three tilted segments
+	for i in 3:
+		MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, 0.1 + i * 0.09),
+			Vector3(0, 1.0 + i * 1.9, -0.15 - i * 0.45)), 0.2 - i * 0.04, 0.16 - i * 0.04, 2.0, 6, trunk)
+	# fronds
+	for k in 6:
+		var a := TAU * k / 6.0
+		var b := Basis(Vector3.UP, a).rotated(Vector3(cos(a), 0, sin(a)).cross(Vector3.UP).normalized(), -0.5)
+		MeshKit.box(st, Transform3D(b, Vector3(cos(a) * 1.1, 6.1, sin(a) * 1.1 - 1.2)),
+			Vector3(0.5, 0.05, 2.6), Color(0.15, 0.42, 0.18))
+	MeshKit.cyl(st, Transform3D(Basis(), Vector3(0.2, 5.8, -1.2)), 0.14, 0.14, 0.25, 6, Color(0.55, 0.4, 0.15))
+	return MeshKit.commit(st, MeshKit.mat_vcol())
+
+func _scatter_palms(count: int) -> void:
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = _palm_mesh()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 404
+	var placed: Array[Transform3D] = []
+	var tries := 0
+	while placed.size() < count and tries < count * 30:
+		tries += 1
+		var x := rng.randf_range(-terrain.arena_radius, terrain.arena_radius)
+		var z := rng.randf_range(-terrain.arena_radius, terrain.arena_radius)
+		var h := terrain.height(x, z)
+		if h < 0.3 or h > 6.0 or _avoid(Vector2(x, z)):
+			continue
+		var s := rng.randf_range(0.8, 1.4)
+		placed.append(Transform3D(Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s, s)), Vector3(x, h - 0.1, z)))
+	mm.instance_count = placed.size()
+	for i in placed.size():
+		mm.set_instance_transform(i, placed[i])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mmi)
+
+func _build_sea() -> void:
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 420.0
+	cm.bottom_radius = 420.0
+	cm.height = 0.1
+	cm.radial_segments = 32
+	mi.mesh = cm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.10, 0.35, 0.48, 0.86)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.roughness = 0.04
+	m.metallic = 0.35
+	mi.material_override = m
+	mi.position = Vector3(0, -0.55, 0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+
+func _build_beach_props() -> void:
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 88
+	var brights := [Color(0.95, 0.35, 0.3), Color(0.3, 0.6, 0.95), Color(0.98, 0.8, 0.2), Color(0.4, 0.85, 0.5)]
+	for i in 10:
+		var x := rng.randf_range(-150.0, 150.0)
+		var z := rng.randf_range(-22.0, 8.0)   # the sand strip by the water
+		var h := terrain.height(x, z)
+		if h < 0.2:
+			continue
+		var st := MeshKit.begin()
+		var col: Color = brights[rng.randi() % brights.size()]
+		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.4, 0)), 0.05, 0.05, 2.8, 6, Color(0.8, 0.8, 0.78))
+		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 2.75, 0)), 2.2, 0.15, 0.8, 10, col)
+		# towel
+		MeshKit.box(st, Transform3D(Basis(Vector3.UP, rng.randf() * TAU), Vector3(1.8, 0.03, 0.5)),
+			Vector3(1.2, 0.04, 2.2), brights[(rng.randi() + 1) % brights.size()])
+		var mi := MeshInstance3D.new()
+		mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.8))
+		mi.position = Vector3(x, h, z)
+		add_child(mi)
+
+func _build_lava() -> void:
+	var mi := MeshInstance3D.new()
+	var cm := CylinderMesh.new()
+	cm.top_radius = 100.0
+	cm.bottom_radius = 100.0
+	cm.height = 0.2
+	cm.radial_segments = 28
+	mi.mesh = cm
+	var m := StandardMaterial3D.new()
+	m.albedo_color = Color(0.9, 0.25, 0.05)
+	m.emission_enabled = true
+	m.emission = Color(1.0, 0.35, 0.05)
+	m.emission_energy_multiplier = 1.6
+	m.albedo_texture = load("res://assets/tex/rock.png")
+	m.uv1_scale = Vector3(14, 14, 1)
+	mi.material_override = m
+	mi.position = Vector3(0, cfg.get("lava_y", -3.2) - 0.3, 0)
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	add_child(mi)
+	var glow := OmniLight3D.new()
+	glow.light_color = Color(1.0, 0.4, 0.1)
+	glow.omni_range = 130.0
+	glow.light_energy = 0.8
+	glow.shadow_enabled = false
+	glow.position = Vector3(0, 2.0, 0)
+	add_child(glow)
+	var fxp: FxPool = get_tree().get_first_node_in_group("fx")
+	if fxp:
+		for p in [Vector3(30, -2, 20), Vector3(-35, -2, -15)]:
+			fxp.smoke_column(p, 9999.0)
+
+func _build_babyroom() -> void:
+	var W := 118.0
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 12
+	# wallpapered walls + skirting
+	var st := MeshKit.begin()
+	for side in 4:
+		var yaw := side * PI / 2.0
+		var b := Basis(Vector3.UP, yaw)
+		MeshKit.box(st, Transform3D(b, b * Vector3(0, 20.0, -W)), Vector3(2 * W + 8, 40.0, 1.5), Color.WHITE, -1.0)
+		MeshKit.box(st, Transform3D(b, b * Vector3(0, 1.5, -W + 0.9)), Vector3(2 * W + 6, 3.0, 0.4), Color(0.9, 0.88, 0.85))
+	var walls := MeshInstance3D.new()
+	walls.mesh = MeshKit.commit(st, MeshKit.mat_tex("res://assets/tex/wallpaper.png"))
+	add_child(walls)
+	for side in 4:
+		var yaw := side * PI / 2.0
+		var n := Vector3(0, 0, -1).rotated(Vector3.UP, yaw)
+		MeshKit.add_static_box_collider(self, n * W + Vector3(0, 20, 0), Vector3(2 * W + 8, 40, 1.5), yaw)
+	# giant crib in a corner
+	var cst := MeshKit.begin()
+	var wood := Color(0.85, 0.82, 0.78)
+	for px in [-14.0, 14.0]:
+		for pz in [-9.0, 9.0]:
+			MeshKit.cyl(cst, Transform3D(Basis(), Vector3(px, 9.0, pz)), 0.8, 0.8, 18.0, 8, wood)
+	for i in 12:
+		MeshKit.cyl(cst, Transform3D(Basis(), Vector3(-12.0 + i * 2.2, 10.0, -9.0)), 0.3, 0.3, 12.0, 6, wood)
+	MeshKit.box(cst, Transform3D(Basis(), Vector3(0, 16.5, 0)), Vector3(30.0, 1.0, 19.5), wood * 0.95)
+	var crib := MeshInstance3D.new()
+	crib.mesh = MeshKit.commit(cst, MeshKit.mat_vcol(0.8))
+	crib.position = Vector3(-80, 0, -80)
+	add_child(crib)
+	MeshKit.add_static_box_collider(self, Vector3(-80, 9, -80), Vector3(30, 18, 20))
+	# alphabet blocks + not-lego bricks + books + ball (cover!)
+	var brights := [Color(0.9, 0.3, 0.3), Color(0.3, 0.5, 0.9), Color(0.95, 0.8, 0.2), Color(0.4, 0.8, 0.4), Color(0.8, 0.4, 0.9)]
+	for i in 7:
+		var x := rng.randf_range(-85.0, 85.0)
+		var z := rng.randf_range(-85.0, 85.0)
+		if Vector2(x, z).distance_to(terrain.spawn) < 25.0:
+			continue
+		var s := rng.randf_range(4.0, 7.0)
+		var col: Color = brights[rng.randi() % brights.size()]
+		var bst := MeshKit.begin()
+		MeshKit.box(bst, Transform3D(Basis(Vector3.UP, rng.randf() * 0.6), Vector3(0, s / 2, 0)), Vector3(s, s, s), col)
+		var bmesh := MeshInstance3D.new()
+		bmesh.mesh = MeshKit.commit(bst, MeshKit.mat_vcol(0.5))
+		bmesh.position = Vector3(x, terrain.height(x, z), z)
+		add_child(bmesh)
+		var letter := Label3D.new()
+		letter.text = char(65 + rng.randi() % 26)
+		letter.font_size = 620
+		letter.pixel_size = 0.01
+		letter.modulate = Color(1, 1, 1, 0.92)
+		letter.position = bmesh.position + Vector3(0, s / 2, -s / 2 - 0.05)
+		add_child(letter)
+		MeshKit.add_static_box_collider(self, bmesh.position + Vector3(0, s / 2, 0), Vector3(s, s, s))
+	for i in 5:
+		var x := rng.randf_range(-85.0, 85.0)
+		var z := rng.randf_range(-85.0, 85.0)
+		if Vector2(x, z).distance_to(terrain.spawn) < 25.0:
+			continue
+		var col: Color = brights[rng.randi() % brights.size()]
+		var lst := MeshKit.begin()
+		MeshKit.box(lst, Transform3D(Basis(), Vector3(0, 1.6, 0)), Vector3(8.0, 3.2, 4.0), col)
+		for sx in 4:
+			for sz in 2:
+				MeshKit.cyl(lst, Transform3D(Basis(), Vector3(-3.0 + sx * 2.0, 3.7, -1.0 + sz * 2.0)), 0.8, 0.8, 1.0, 10, col * 1.1)
+		var brick := MeshInstance3D.new()
+		brick.mesh = MeshKit.commit(lst, MeshKit.mat_vcol(0.35))
+		brick.position = Vector3(x, terrain.height(x, z), z)
+		brick.rotation.y = rng.randf() * TAU
+		add_child(brick)
+		MeshKit.add_static_box_collider(self, brick.position + Vector3(0, 1.6, 0), Vector3(8, 4.4, 4), brick.rotation.y)
+	# rubber ball
+	var ball := RigidBody3D.new()
+	ball.mass = 30.0
+	var pmat := PhysicsMaterial.new()
+	pmat.bounce = 0.8
+	ball.physics_material_override = pmat
+	ball.collision_layer = 1
+	ball.collision_mask = 1 | 2 | 4
+	var cs := CollisionShape3D.new()
+	var sph := SphereShape3D.new()
+	sph.radius = 4.0
+	cs.shape = sph
+	ball.add_child(cs)
+	var bmi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = 4.0
+	sm.height = 8.0
+	bmi.mesh = sm
+	var ballmat := StandardMaterial3D.new()
+	ballmat.albedo_color = Color(0.9, 0.25, 0.35)
+	bmi.material_override = ballmat
+	ball.add_child(bmi)
+	ball.position = Vector3(30, 8, 30)
+	add_child(ball)
 
 func _build_wrecks(count: int) -> void:
 	var rng := RandomNumberGenerator.new()

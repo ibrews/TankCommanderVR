@@ -40,6 +40,15 @@ in `export_presets.cfg`.
 **Physical (the fun way):** grip-grab levers and grips, poke buttons and
 switches. Follow the yellow hints on the front wall.
 
+**Hand tracking:** put the controllers down — pinch = trigger, whole-hand
+squeeze = grab, poking works the way poking works. Every control in the
+game is reachable without buttons. (Runner mode: pump your arms to sprint.)
+
+**Playtest tuning:** every gameplay number lives in `tuning.cfg`
+(auto-created in the app's files dir; on Quest:
+`/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg`).
+Edit, restart, report back.
+
 **Thumbsticks (the easy way):**
 | Input | Action |
 |---|---|

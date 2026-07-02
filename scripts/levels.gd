@@ -76,6 +76,71 @@ const CONFIGS := {
 		"tint": Color(1, 1, 1),
 		"sun_energy": 1.1,
 	},
+	"beach": {
+		"title": "BEACH",
+		"rolling": 4.5, "dunes": true, "pond": false, "coast": true,
+		"flatten": [],
+		"trees": 0, "palms": 70, "rocks": 40,
+		"village": {"center": Vector2(60, 60), "count": 8, "spread": 34.0},
+		"city": {}, "castle": {}, "mud": [],
+		"wrecks": 1,
+		"spawn": Vector2(0, 120),
+		"mortars": [Vector2(-120, 60)],
+		"tint": Color(1.05, 1.0, 0.92),
+		"sun_energy": 1.4,
+		"calm_track": "music_beach",
+		"ambient_loop": "waves_loop",
+	},
+	"island": {
+		"title": "ISLAND",
+		"rolling": 8.0, "dunes": false, "pond": false, "island": true,
+		"flatten": [],
+		"trees": 120, "palms": 50, "rocks": 50,
+		"village": {"center": Vector2(0, -40), "count": 7, "spread": 30.0},
+		"city": {}, "castle": {}, "mud": [],
+		"wrecks": 2,
+		"arena_radius": 128.0,
+		"spawn": Vector2(0, 90),
+		"spawn_ring": [50.0, 100.0],
+		"mortars": [Vector2(-70, -70)],
+		"tint": Color(1.0, 1.02, 0.95),
+		"sun_energy": 1.35,
+		"calm_track": "music_beach",
+		"ambient_loop": "waves_loop",
+	},
+	"volcano": {
+		"title": "VOLCANO",
+		"rolling": 2.0, "dunes": false, "pond": false, "volcano": true,
+		"flatten": [],
+		"trees": 0, "rocks": 60,
+		"village": {}, "city": {}, "castle": {}, "mud": [],
+		"wrecks": 0,
+		"arena_radius": 108.0,
+		"lava_y": -3.2,
+		"spawn": Vector2(0, 55),
+		"spawn_ring": [40.0, 62.0],
+		"mortars": [],
+		"tint": Color(0.85, 0.72, 0.68),
+		"sun_energy": 0.85,
+		"ambient_loop": "lava_loop",
+	},
+	"babyroom": {
+		"title": "BABY ROOM",
+		"rolling": 0.1, "dunes": false, "pond": false, "rim": false,
+		"flatten": [],
+		"trees": 0, "rocks": 0,
+		"village": {}, "city": {}, "castle": {}, "mud": [],
+		"wrecks": 0,
+		"gym": false, "babyroom": true, "baby": true, "army_green": true,
+		"floor_tex": "carpet",
+		"arena_radius": 112.0,
+		"spawn": Vector2(0, 85),
+		"spawn_ring": [50.0, 90.0],
+		"mortars": [],
+		"tint": Color(1, 1, 1),
+		"sun_energy": 1.05,
+		"calm_track": "music_toy",
+	},
 	"castle": {
 		"title": "CASTLE",
 		"rolling": 6.0, "dunes": false, "pond": false,
@@ -92,8 +157,9 @@ const CONFIGS := {
 	},
 }
 
-const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym"]
-static var cardboard := false  # set at level build; enemies check it
+const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "volcano", "babyroom"]
+static var cardboard := false   # set at level build; enemies check it
+static var army_green := false  # baby room: little green army men
 
 static func get_config(id: String) -> Dictionary:
 	return CONFIGS.get(id, CONFIGS["outdoor"])

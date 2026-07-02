@@ -13,6 +13,7 @@ var hangar: Node3D
 var menu: MainMenu
 var sun: DirectionalLight3D
 var env: Environment
+var _sky_mat: ProceduralSkyMaterial
 
 var _perf_t := 0.0
 var _smoke_frames := -1
@@ -56,7 +57,8 @@ func _ready() -> void:
 # ---------------------------------------------------------------- environment
 func _setup_environment() -> void:
 	env = Environment.new()
-	var sky_mat := ProceduralSkyMaterial.new()
+	_sky_mat = ProceduralSkyMaterial.new()
+	var sky_mat := _sky_mat
 	sky_mat.sky_top_color = Color(0.28, 0.42, 0.66)
 	sky_mat.sky_horizon_color = Color(0.66, 0.60, 0.50)
 	sky_mat.ground_bottom_color = Color(0.32, 0.28, 0.22)
@@ -97,8 +99,19 @@ func _apply_ambience(menu_mode: bool) -> void:
 		env.fog_enabled = true
 		env.background_mode = Environment.BG_SKY
 		sun.light_energy = Levels.current.get("sun_energy", 1.25)
+		sun.light_color = Color(1.0, 0.93, 0.80)
 		env.fog_light_color = Color(0.78, 0.72, 0.62)
 		env.fog_density = 0.0005
+		_sky_mat.sky_top_color = Color(0.28, 0.42, 0.66)
+		_sky_mat.sky_horizon_color = Color(0.66, 0.60, 0.50)
+		if Game.time_night:
+			# moonlight: dark enough that headlights matter
+			sun.light_energy = 0.09
+			sun.light_color = Color(0.65, 0.72, 1.0)
+			env.ambient_light_energy = 0.10
+			env.fog_light_color = Color(0.05, 0.06, 0.10)
+			_sky_mat.sky_top_color = Color(0.01, 0.015, 0.05)
+			_sky_mat.sky_horizon_color = Color(0.04, 0.05, 0.10)
 		if Game.mutator == "underwater":
 			env.fog_light_color = Color(0.15, 0.4, 0.45)
 			env.fog_density = 0.012
@@ -227,27 +240,49 @@ func start_game() -> void:
 	world.add_child(projectiles)
 	NetManager.projectiles = projectiles
 	NetManager.fx = fx
+	var veh := Game.vehicle
+	if Game.mode == Game.Mode.COOP or Game.mode == Game.Mode.VERSUS:
+		veh = "tank"   # multiplayer is tank business
 	if Game.mode == Game.Mode.PLANE:
-		plane = PlayerPlane.new(terrain, projectiles, fx)
-		world.add_child(plane)
-		projectiles.cam = rig.get("camera")
-		world.add_child(EnemyManager.new(terrain, projectiles, fx, plane))
-		rig.call("attach_to_vehicle", plane)
+		veh = "plane"  # legacy path
+	var vehicle: CharacterBody3D
+	match veh:
+		"plane", "biplane":
+			plane = PlayerPlane.new(terrain, projectiles, fx)
+			plane.biplane = veh == "biplane"
+			vehicle = plane
+		"heli":
+			vehicle = PlayerAlt.Heli.new(terrain, projectiles, fx)
+		"runner":
+			vehicle = PlayerAlt.Runner.new(terrain, projectiles, fx)
+			vehicle.set("_rig", rig)
+		_:
+			player = PlayerTank.new(terrain, projectiles, fx)
+			vehicle = player
+	world.add_child(vehicle)
+	projectiles.cam = rig.get("camera")
+	if Game.mode == Game.Mode.COOP and NetManager.is_client():
+		world.add_child(NetManager.make_replica_pool(terrain))
 	else:
-		player = PlayerTank.new(terrain, projectiles, fx)
-		world.add_child(player)
-		projectiles.cam = rig.get("camera")
-		if Game.mode == Game.Mode.COOP and NetManager.is_client():
-			world.add_child(NetManager.make_replica_pool(terrain))
-		else:
-			world.add_child(EnemyManager.new(terrain, projectiles, fx, player))
-		if Game.mode == Game.Mode.VERSUS:
-			NetManager.setup_versus(world, terrain, projectiles, fx, player)
-		elif Game.mode == Game.Mode.COOP:
-			NetManager.setup_coop(player)
-		rig.call("attach_to_vehicle", player)
+		world.add_child(EnemyManager.new(terrain, projectiles, fx, vehicle))
+	if Game.mode == Game.Mode.VERSUS:
+		NetManager.setup_versus(world, terrain, projectiles, fx, player)
+	elif Game.mode == Game.Mode.COOP:
+		NetManager.setup_coop(player)
+	rig.call("attach_to_vehicle", vehicle)
+	# the supporting cast
+	Npc.CabbageMan.spawn(world, terrain, vehicle)
+	if Levels.current.get("trees", 0) >= 100:
+		Npc.Creeper.maybe_spawn(world, terrain, vehicle)
+	if Levels.current.get("baby", false):
+		Npc.GiantBaby.spawn(world, terrain, vehicle)
+	if Levels.current.has("ambient_loop"):
+		var amb := AudioStreamPlayer.new()
+		amb.stream = Sfx.streams.get(Levels.current["ambient_loop"])
+		amb.volume_db = -14.0
+		amb.autoplay = true
+		world.add_child(amb)
 	# weather + sky events follow whichever vehicle we're in
-	var vehicle: Node3D = plane if plane else player
 	world.add_child(Weather.new(terrain, fx, vehicle, env, sun))
 	if Game.mutator == "underwater":
 		var bub := AudioStreamPlayer.new()
@@ -261,8 +296,12 @@ func start_game() -> void:
 func _start_vo() -> void:
 	if Game.state != Game.GState.PLAYING:
 		return
-	if Game.level_id == "gym":
-		Sfx.vo("vo_gym", 2, 60.0)
+	var lv := {"gym": "vo_gym", "beach": "vo_beach", "island": "vo_island",
+		"volcano": "vo_volcano", "babyroom": "vo_babyroom"}
+	if lv.has(Game.level_id):
+		Sfx.vo(lv[Game.level_id], 2, 60.0)
+	if Game.time_night:
+		Sfx.vo("vo_night", 2, 60.0)
 	var mv := {"lowg": "vo_lowg", "underwater": "vo_underwater",
 		"balloon": "vo_balloon", "paintball": "vo_paintball"}
 	if mv.has(Game.mutator):
@@ -277,6 +316,18 @@ func _clear_world() -> void:
 
 # ---------------------------------------------------------------- perf + test modes
 func _process(delta: float) -> void:
+	# lava is not a swimming pool
+	if Game.state == Game.GState.PLAYING and Levels.current.has("lava_y"):
+		var veh: Node3D = plane if plane else (player if player else null)
+		if veh == null:
+			for n in get_tree().get_nodes_in_group("player"):
+				veh = n
+				break
+		if veh and veh.global_position.y < float(Levels.current["lava_y"]) and Game.alive:
+			if veh.has_method("take_damage"):
+				veh.take_damage(30.0 * delta, veh.global_position)
+			if Game.rng.randf() < delta * 3.0 and fx:
+				fx.muzzle_flash(veh.global_position + Vector3(0, 1, 0), 1.2)
 	_perf_t += delta
 	if _perf_t > 2.0:
 		_perf_t = 0.0

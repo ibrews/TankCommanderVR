@@ -18,9 +18,12 @@ var sel_mode: int = Game.Mode.SOLO
 var sel_level := "outdoor"
 var sel_diff := 1
 var sel_mut := ""
+var sel_vehicle := 0
+var sel_night := false
 var page := 0   # 0 main, 1..4 how-to
 
 const MUTATORS := [["", "NORMAL"], ["lowg", "LOW-G"], ["underwater", "WATER"], ["balloon", "BALLOON"], ["paintball", "PAINT"]]
+const VEHICLES := [["tank", "TANK"], ["plane", "PLANE"], ["biplane", "BIPLANE"], ["heli", "HELI"], ["runner", "RUNNER"]]
 
 var _buttons: Array[Dictionary] = []
 var _labels_to_clear: Array[Node] = []
@@ -110,23 +113,29 @@ func _show_main() -> void:
 	page = 0
 	_text("TANK COMMANDER VR", Vector2(0, 0.74), 44, ACCENT)
 	_text("Made for Ani", Vector2(0, 0.63), 22, Color(1.0, 0.75, 0.75))
-	_text("MODE", Vector2(-1.0, 0.50), 16, Color(0.7, 0.75, 0.7))
-	var modes := [["solo", "SOLO"], ["coop", "CO-OP HOST"], ["versus", "VERSUS HOST"], ["join", "JOIN GAME"], ["plane", "PLANE"]]
+	_text("MODE", Vector2(-1.0, 0.52), 15, Color(0.7, 0.75, 0.7))
+	var modes := [["solo", "SOLO"], ["coop", "CO-OP HOST"], ["versus", "VERSUS HOST"], ["join", "JOIN GAME"]]
 	for i in modes.size():
-		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.86 + i * 0.44, 0.42), Vector2(0.41, 0.13), 15)
-	_text("BATTLEFIELD", Vector2(-0.93, 0.28), 16, Color(0.7, 0.75, 0.7))
+		_button("mode:" + modes[i][0], modes[i][1], Vector2(-0.79 + i * 0.53, 0.45), Vector2(0.50, 0.12), 15)
+	_text("BATTLEFIELD", Vector2(-0.93, 0.33), 15, Color(0.7, 0.75, 0.7))
 	for i in Levels.ORDER.size():
 		var id: String = Levels.ORDER[i]
-		_button("level:" + id, Levels.CONFIGS[id]["title"], Vector2(-0.94 + i * 0.376, 0.20), Vector2(0.35, 0.13), 14)
-	_text("DIFFICULTY", Vector2(-0.94, 0.06), 16, Color(0.7, 0.75, 0.7))
+		var row := i / 5
+		var col := i % 5
+		_button("level:" + id, Levels.CONFIGS[id]["title"],
+			Vector2(-0.86 + col * 0.44, 0.26 - row * 0.135), Vector2(0.41, 0.12), 13)
+	_text("DIFFICULTY", Vector2(-0.94, 0.02), 15, Color(0.7, 0.75, 0.7))
 	for i in 3:
-		_button("diff:%d" % i, ["EASY", "MEDIUM", "HARD"][i], Vector2(-0.75 + i * 0.5, -0.02), Vector2(0.46, 0.13), 16)
-	_text("SILLY MODE", Vector2(-0.94, -0.16), 16, Color(0.7, 0.75, 0.7))
+		_button("diff:%d" % i, ["EASY", "MEDIUM", "HARD"][i], Vector2(-0.80 + i * 0.42, -0.05), Vector2(0.38, 0.12), 14)
+	_button("timecycle", "NIGHT OPS: ON" if sel_night else "NIGHT OPS: OFF", Vector2(0.72, -0.05), Vector2(0.62, 0.12), 13)
+	_text("SILLY MODE", Vector2(-0.94, -0.17), 15, Color(0.7, 0.75, 0.7))
 	for i in MUTATORS.size():
-		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.13), 15)
-	_button("howto", "HOW TO PLAY", Vector2(-0.62, -0.52), Vector2(0.75, 0.19), 20)
-	_button("start", "START!", Vector2(0.55, -0.52), Vector2(0.9, 0.22), 30)
-	_text("point + trigger to choose  ·  secret: squeeze EVERYTHING + A...", Vector2(0, -0.76), 12, Color(0.55, 0.6, 0.55))
+		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.12), 14)
+	_button("vehcycle", "VEHICLE: " + VEHICLES[sel_vehicle][1], Vector2(-0.72, -0.42), Vector2(0.85, 0.14), 15)
+	_button("howto", "HOW TO PLAY", Vector2(0.22, -0.42), Vector2(0.62, 0.14), 16)
+	_button("start", "START!", Vector2(0.55, -0.62), Vector2(0.9, 0.20), 28)
+	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.62), 11, Color(0.55, 0.6, 0.55))
+	_text("secret: squeeze EVERYTHING + A...", Vector2(0, -0.78), 11, Color(0.45, 0.5, 0.45))
 	_refresh_selection()
 
 func _show_howto(p: int) -> void:
@@ -207,7 +216,22 @@ func _press(id: String) -> void:
 		"howto_close":
 			_show_main()
 		"start":
+			Game.vehicle = VEHICLES[sel_vehicle][0]
+			Game.time_night = sel_night
 			start_requested.emit(sel_mode, sel_level, sel_diff, sel_mut)
+		"vehcycle":
+			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()
+			match VEHICLES[sel_vehicle][0]:
+				"heli": Sfx.vo("vo_heli", 2, 30.0)
+				"runner": Sfx.vo("vo_runner", 2, 30.0)
+				"biplane": Sfx.vo("vo_biplane", 2, 30.0)
+				"plane": Sfx.vo("vo_plane", 2, 30.0)
+			_show_main()
+		"timecycle":
+			sel_night = not sel_night
+			if sel_night:
+				Sfx.vo("vo_night", 2, 30.0)
+			_show_main()
 		_:
 			if id.begins_with("mode:"):
 				match id.trim_prefix("mode:"):

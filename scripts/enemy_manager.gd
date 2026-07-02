@@ -88,7 +88,7 @@ func _spawn_wave() -> void:
 	if Levels.current.get("gym", false):
 		Sfx.play_ui("whistle", -4.0)
 		Sfx.vo("vo_gym_wave", 2, 25.0)
-	var dm := Game.diff(0.6, 1.0, 1.5)
+	var dm := Game.diff(0.6, 1.0, 1.5) * Tune.v("wave_size_scale")
 	var tanks := mini(int((1 + wave * 0.8) * dm), 6)
 	var jeeps := mini(int((wave - 1) * 0.8 * dm) + (1 if wave >= 2 else 0), 4)
 	var squads := 1 if wave >= 2 else 0
@@ -103,8 +103,9 @@ func _spawn_wave() -> void:
 
 	for i in maxi(tanks, 1):
 		var e := EnemyTank.new(terrain, projectiles, fx, player)
-		e.accuracy = maxf(0.10 - wave * 0.012, 0.03) / Game.diff(0.75, 1.0, 1.4)
-		e.cadence = maxf(6.5 - wave * 0.4, 3.5) / Game.diff(0.8, 1.0, 1.3)
+		e.hp = Tune.v("enemy_tank_hp")
+		e.accuracy = maxf(0.10 - wave * 0.012, 0.03) / (Game.diff(0.75, 1.0, 1.4) * Tune.v("enemy_accuracy_scale"))
+		e.cadence = maxf(6.5 - wave * 0.4, 3.5) * Tune.v("enemy_cadence_scale") / Game.diff(0.8, 1.0, 1.3)
 		add_child(e)
 		e.global_position = _ring_pos(150.0, 200.0)
 	for i in jeeps:

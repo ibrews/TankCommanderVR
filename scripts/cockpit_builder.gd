@@ -431,6 +431,20 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	var tl := _label(root, "THERMAL", Vector3(X1 - 0.045, 0.285, -0.12), 0, 13)
 	tl.rotation.y = deg_to_rad(-90)
 
+	# MG trigger button beside the turret grip (hands have no A button)
+	var mg := VRControl.PushButton.create(Color(0.85, 0.55, 0.1), 0.028)
+	mg.position = Vector3(-0.03, -0.07, -0.13)
+	root.add_child(mg)
+	c["mg_btn"] = mg
+	_label(root, "MG", Vector3(-0.03, -0.06, -0.185), -90, 13, 90)
+
+	# seat recalibrate (hands have no Y button)
+	var seat_btn := VRControl.PushButton.create(Color(0.4, 0.6, 0.9), 0.026)
+	seat_btn.position = Vector3(X0 + 0.13, -0.145, 0.40)
+	root.add_child(seat_btn)
+	c["seat_btn"] = seat_btn
+	_label(root, "SEAT", Vector3(X0 + 0.13, -0.135, 0.455), -90, 12, 90)
+
 	# horn — big button on the left tiller mount (mandatory fun)
 	var horn := VRControl.PushButton.create(Color(0.9, 0.75, 0.2), 0.03)
 	horn.position = Vector3(EYE.x - 0.20, -0.66, -0.245)

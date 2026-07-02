@@ -110,10 +110,14 @@ func _physics_process(delta: float) -> void:
 	var to_player := player.global_position - gp
 	var dist := to_player.length()
 
-	# state transitions
-	if state == State.PATROL and dist < 150.0 and _has_los():
+	# state transitions (night/stealth aware: darkness shrinks their eyes,
+	# your headlights and gunfire give you away)
+	var see := Tune.v("detect_range_day") * Game.detect_scale()
+	if state == State.PATROL and dist < see and _has_los():
 		state = State.ENGAGE
-	elif state == State.ENGAGE and (dist > 190.0 or not _has_los()):
+		if Game.time_night:
+			Sfx.vo("vo_spotted", 2, 20.0)
+	elif state == State.ENGAGE and (dist > see * 1.35 + 20.0 or not _has_los()):
 		state = State.PATROL
 
 	var target_speed := 0.0

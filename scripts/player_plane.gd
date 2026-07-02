@@ -9,6 +9,7 @@ var projectiles: Projectiles
 var fx: FxPool
 var cockpit: Dictionary = {}
 
+var biplane := false
 var speed := 35.0
 var throttle := 0.6
 var stick := Vector2.ZERO       # x=roll, y=pitch (from grip or right thumbstick)
@@ -58,6 +59,12 @@ func _build() -> void:
 	MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2)), 0.5, 0.35, 7.4, 8, col)
 	MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0, -4.0)), 0.45, 0.18, 0.9, 8, Color(0.9, 0.5, 0.15))
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, -0.15, -0.3)), Vector3(9.6, 0.14, 1.8), col)
+	if biplane:
+		# second wing + struts = 100% more aviation
+		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 1.15, -0.3)), Vector3(9.6, 0.14, 1.8), col)
+		for sx in [-3.4, 3.4]:
+			for sz in [-0.9, 0.3]:
+				MeshKit.box(st, Transform3D(Basis(), Vector3(sx, 0.5, sz)), Vector3(0.09, 1.3, 0.09), col * 0.8)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.1, 3.4)), Vector3(3.4, 0.12, 1.0), col)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.75, 3.5)), Vector3(0.09, 1.4, 1.0), Color(0.9, 0.5, 0.15))
 	var mi := MeshInstance3D.new()
@@ -165,8 +172,9 @@ func _physics_process(delta: float) -> void:
 	if stick.length() < 0.05 and stick_fallback.length() > 0.08:
 		stick = stick_fallback
 	throttle = clampf(throttle + stick_throttle * delta * 0.5, 0.0, 1.0)
-	# flight model
-	var target_speed := 16.0 + throttle * 46.0
+	# flight model (biplane: slower, nimbler)
+	var vmax := Tune.v("plane_speed_max") * (0.72 if biplane else 1.0)
+	var target_speed := 16.0 + throttle * (vmax - 16.0)
 	speed = move_toward(speed, target_speed, 8.0 * delta)
 	var pitch_rate := -stick.y * 1.1
 	var roll_rate := -stick.x * 1.9

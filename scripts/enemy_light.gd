@@ -93,7 +93,7 @@ class Jeep:
 		engine_p.pitch_scale = 0.9 + spd / 22.0
 		# MG bursts
 		shot_t -= delta
-		if shot_t <= 0.0 and Game.alive and flat_d < 110.0:
+		if shot_t <= 0.0 and Game.alive and flat_d < 110.0 * Game.detect_scale():
 			if burst <= 0:
 				burst = Game.rng.randi_range(3, 6)
 			burst -= 1
@@ -167,6 +167,26 @@ class Gunner:
 		var mi := MeshInstance3D.new()
 		mi.mesh = _mesh
 		add_child(mi)
+		if Game.mutator == "balloon":
+			Game.balloonize(self)
+		elif Levels.army_green:
+			# little green army man: monochrome + the iconic base
+			var gm := StandardMaterial3D.new()
+			gm.albedo_color = Color(0.25, 0.5, 0.22)
+			gm.roughness = 0.4
+			mi.material_override = gm
+			var base := MeshInstance3D.new()
+			var bm := CylinderMesh.new()
+			bm.top_radius = 0.55
+			bm.bottom_radius = 0.6
+			bm.height = 0.1
+			bm.radial_segments = 10
+			base.mesh = bm
+			base.material_override = gm
+			base.position = Vector3(0, 0.05, 0)
+			add_child(base)
+		elif Levels.cardboard:
+			mi.material_override = MeshKit.mat_tex("res://assets/tex/cardboard.png", false, 0.95)
 		var shape := CollisionShape3D.new()
 		var cap := BoxShape3D.new()
 		cap.size = Vector3(0.6, 1.7, 0.6)
@@ -193,7 +213,7 @@ class Gunner:
 		velocity = mv + Vector3(0, clampf((target_y - gp.y) / delta, -10.0, 10.0), 0)
 		move_and_slide()
 		shot_t -= delta
-		if shot_t <= 0.0 and Game.alive and flat_d < 90.0:
+		if shot_t <= 0.0 and Game.alive and flat_d < 90.0 * Game.detect_scale():
 			shot_t = Game.rng.randf_range(1.6, 3.2) / Game.diff(0.7, 1.0, 1.4)
 			var mpos := to_global(Vector3(0.18, 1.1, -0.6))
 			var dir := (player.global_position + Vector3(0, 1.7, 0) - mpos).normalized()
@@ -271,7 +291,7 @@ class Mortar:
 		fire_t -= delta
 		var to_p := player.global_position - global_position
 		var flat_d := Vector2(to_p.x, to_p.z).length()
-		if fire_t <= 0.0 and Game.alive and flat_d < 220.0 and flat_d > 25.0:
+		if fire_t <= 0.0 and Game.alive and flat_d < 220.0 * maxf(Game.detect_scale(), 0.5) and flat_d > 25.0:
 			fire_t = Game.rng.randf_range(7.0, 11.0) / Game.diff(0.7, 1.0, 1.35)
 			_lob()
 

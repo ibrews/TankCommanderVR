@@ -147,9 +147,10 @@ func _gusts(delta: float) -> void:
 func _apply_gloom(k: float) -> void:
 	if env == null or sun == null:
 		return
-	var base: float = Levels.current.get("sun_energy", 1.25)
+	var base: float = 0.09 if Game.time_night else Levels.current.get("sun_energy", 1.25)
+	var base_amb := 0.10 if Game.time_night else 0.85
 	sun.light_energy = base * (1.0 - 0.72 * clampf(k, 0.0, 1.0))
-	env.ambient_light_energy = 0.85 * (1.0 - 0.45 * clampf(k, 0.0, 1.0))
+	env.ambient_light_energy = base_amb * (1.0 - 0.45 * clampf(k, 0.0, 1.0))
 	env.fog_density = 0.0005 + 0.0022 * clampf(k, 0.0, 1.0)
 
 func _lightning() -> void:

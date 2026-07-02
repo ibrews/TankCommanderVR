@@ -216,6 +216,8 @@ func _impact(p: Dictionary, at: Vector3, collider: Object) -> void:
 	var can_damage: bool = damage_enabled and not p.get("visual", false)
 	if can_damage and collider and collider.has_method("take_damage"):
 		collider.take_damage(DIRECT[kind], at)
+	elif can_damage and collider and collider.has_meta("cabbage_owner"):
+		collider.get_meta("cabbage_owner").tragedy()
 	if kind == Kind.MG or kind == Kind.ENEMY_MG:
 		if collider == null:
 			Sfx.play_at("ricochet", at, -10.0)

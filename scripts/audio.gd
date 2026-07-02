@@ -43,6 +43,9 @@ var music_gain := 1.0  # radio volume knob
 var _vo_player: AudioStreamPlayer
 var _vo_cooldowns := {}
 var _vo_prio := -1
+var _vo_pools := {}       # prefix -> [variant names]
+var _vo_last := {}        # pool -> last variant played (no repeats)
+var _idle_t := 30.0
 
 # radio (the channel knob in the cockpit)
 const STATIONS := ["AUTO", "DAD FM", "CALM FM", "BATTLE FM", "OFF"]
@@ -60,10 +63,31 @@ func _ready() -> void:
 		if n.ends_with("_loop") or n == "alarm" or n.begins_with("music_"):
 			_make_looping(s)
 		streams[n] = s
-	for n in VO_NAMES:
+	# VO: load everything in the manifest (variant pools), fall back to the
+	# hardcoded list for pre-manifest builds.
+	var vo_names: Array = VO_NAMES.duplicate()
+	var mf := FileAccess.open("res://assets/audio/vo/manifest.txt", FileAccess.READ)
+	if mf:
+		vo_names = []
+		while not mf.eof_reached():
+			var line := mf.get_line().strip_edges()
+			if line != "":
+				vo_names.append(line)
+	for n in vo_names:
 		var s: AudioStream = load("res://assets/audio/vo/%s.wav" % n)
 		if s:
 			streams[n] = s
+			# pool by prefix: "vo_kill_3" joins pool "vo_kill"
+			var parts: PackedStringArray = String(n).rsplit("_", true, 1)
+			if parts.size() == 2 and parts[1].is_valid_int():
+				var pool: String = parts[0]
+				if not _vo_pools.has(pool):
+					_vo_pools[pool] = []
+				_vo_pools[pool].append(n)
+	# exact-named singles join their pool too (vo_kill.wav joins "vo_kill")
+	for pool in _vo_pools.keys():
+		if streams.has(pool) and not _vo_pools[pool].has(pool):
+			_vo_pools[pool].append(pool)
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer3D.new()
 		p.max_distance = 260.0
@@ -131,6 +155,9 @@ func music_menu() -> void:
 func music_game() -> void:
 	_music_mode = "game"
 	_threat = 0.0
+	# per-level calm track (beach calypso, toybox music-box...)
+	var calm_name: String = Levels.current.get("calm_track", "music_calm")
+	_m_calm.stream = streams.get(calm_name, streams.get("music_calm"))
 	# start both layers together so they stay phase-locked for crossfades
 	_m_calm.play()
 	_m_combat.play()
@@ -164,6 +191,7 @@ func _process(delta: float) -> void:
 			4:  # OFF
 				pass
 	_radio_tick(delta)
+	_vo_idle_tick(delta)
 	_m_menu.volume_db = move_toward(_m_menu.volume_db, menu_target, delta * 30.0)
 	_m_calm.volume_db = move_toward(_m_calm.volume_db, calm_target, delta * 20.0)
 	_m_combat.volume_db = move_toward(_m_combat.volume_db, combat_target, delta * 20.0)
@@ -218,6 +246,8 @@ func _radio_tick(delta: float) -> void:
 	if _radio_queue.is_empty():
 		for i in range(1, 13):
 			_radio_queue.append("radio_%d" % i)
+		for n in _vo_pools.get("radio_x", []):
+			_radio_queue.append(n)
 		_radio_queue.shuffle()
 	var line: String = _radio_queue.pop_back()
 	if streams.has(line):
@@ -225,8 +255,21 @@ func _radio_tick(delta: float) -> void:
 		_radio_talk.play()
 
 # ---------------- VO (the tank computer is Dad)
+# `name` can be a pool prefix ("vo_kill") — a random non-repeating variant
+# plays. Cooldowns apply to the whole pool so dad doesn't get chatty.
 func vo(name: String, prio := 1, cooldown := 6.0) -> void:
-	if not streams.has(name):
+	cooldown *= Tune.v("vo_cooldown_scale")
+	var pick := name
+	if _vo_pools.has(name):
+		var pool: Array = _vo_pools[name]
+		if pool.size() > 1:
+			var last: String = _vo_last.get(name, "")
+			pick = pool[Game.rng.randi() % pool.size()]
+			while pick == last and pool.size() > 1:
+				pick = pool[Game.rng.randi() % pool.size()]
+		else:
+			pick = pool[0]
+	if not streams.has(pick):
 		return
 	var now := Time.get_ticks_msec() / 1000.0
 	if _vo_cooldowns.has(name) and now - _vo_cooldowns[name] < cooldown:
@@ -234,6 +277,16 @@ func vo(name: String, prio := 1, cooldown := 6.0) -> void:
 	if _vo_player.playing and prio <= _vo_prio:
 		return
 	_vo_cooldowns[name] = now
+	_vo_last[name] = pick
 	_vo_prio = prio
-	_vo_player.stream = streams[name]
+	_vo_player.stream = streams[pick]
 	_vo_player.play()
+
+# idle chatter while things are calm
+func _vo_idle_tick(delta: float) -> void:
+	if Game.state != Game.GState.PLAYING or not Game.alive or _threat > 0.3:
+		return
+	_idle_t -= delta
+	if _idle_t <= 0.0:
+		_idle_t = Tune.v("vo_idle_period") * Game.rng.randf_range(0.7, 1.5)
+		vo("vo_idle", 0, 10.0)

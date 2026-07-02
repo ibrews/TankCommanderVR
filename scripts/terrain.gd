@@ -56,6 +56,27 @@ func height(x: float, z: float) -> float:
 		var rim: float = smoothstep(0.62, 0.98, r)
 		h += rim * rim * 85.0
 		h += _noise.get_noise_2d(x * 3.0, z * 3.0) * 14.0 * rim
+	# level shapes
+	if cfg.get("coast", false):
+		# ocean along the north: seafloor drops past z = -30
+		var coast_t: float = smoothstep(-30.0, -85.0, z)
+		h = lerpf(h, -6.0, coast_t)
+	if cfg.get("island", false):
+		var r_i: float = Vector2(x, z).length()
+		h = lerpf(h, -7.0, smoothstep(125.0, 165.0, r_i))
+	if cfg.get("volcano", false):
+		# caldera bowl with a ring ridge + three spoke bridges over the lava
+		var rv: float = Vector2(x, z).length()
+		var bowl: float = -8.0 + smoothstep(95.0, 130.0, rv) * 16.0
+		var ring: float = 1.2 - absf(rv - 58.0) * 0.55
+		var spoke := -99.0
+		for a in [0.0, TAU / 3.0, 2.0 * TAU / 3.0]:
+			var dirv := Vector2(cos(a), sin(a))
+			var d_line: float = absf(Vector2(x, z).dot(Vector2(-dirv.y, dirv.x)))
+			if Vector2(x, z).dot(dirv) > -6.0:
+				spoke = maxf(spoke, 1.0 - d_line * 0.45)
+		var hub: float = 1.5 - rv * 0.14
+		h = maxf(maxf(bowl, ring), maxf(spoke, hub))
 	# config flatten zones
 	for f in cfg.get("flatten", []):
 		h = _flatten(h, Vector2(x, z), f[0], f[1], f[2])

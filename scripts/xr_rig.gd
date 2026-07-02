@@ -205,23 +205,25 @@ func _physics_process(delta: float) -> void:
 		tank.call("quick_start")
 	set_meta("lsc_was", hand_l.is_button_pressed("primary_click"))
 	_check_easter_egg(delta)
+	_feed_arm_swing(delta)
 
-# squeeze EVERYTHING (both grips + both triggers) + A for 1.5 s → chaos
+# squeeze EVERYTHING (both grips + both triggers) + A for 1.5 s → chaos.
+# Bare hands have no A: squeezing everything alone works after 3.5 s.
 var _egg_t := 0.0
 var _egg_cool := 0.0
 func _check_easter_egg(delta: float) -> void:
 	_egg_cool = maxf(0.0, _egg_cool - delta)
-	var all_in := hand_l.get_float("grip") > 0.8 and hand_r.get_float("grip") > 0.8 \
-		and hand_l.get_float("trigger") > 0.8 and hand_r.get_float("trigger") > 0.8 \
-		and hand_r.is_button_pressed("ax_button")
-	if all_in and _egg_cool <= 0.0:
+	var squeeze := hand_l.get_float("grip") > 0.8 and hand_r.get_float("grip") > 0.8 \
+		and hand_l.get_float("trigger") > 0.8 and hand_r.get_float("trigger") > 0.8
+	var with_a := squeeze and hand_r.is_button_pressed("ax_button")
+	if squeeze and _egg_cool <= 0.0:
 		_egg_t += delta
 		if fmod(_egg_t, 0.25) < delta:
 			hand_l.pulse(0.3, 0.05)
 			hand_r.pulse(0.3, 0.05)
-		if _egg_t > 1.5:
+		if _egg_t > (1.5 if with_a else 3.5):
 			_egg_t = 0.0
-			_egg_cool = 180.0
+			_egg_cool = Tune.v("disaster_cooldown")
 			var w: Weather = get_tree().get_first_node_in_group("weather")
 			if w:
 				w.start_disaster(["tornado", "volcano", "hurricane"][Game.rng.randi() % 3])
@@ -229,6 +231,20 @@ func _check_easter_egg(delta: float) -> void:
 				hand_r.pulse(1.0, 0.3)
 	else:
 		_egg_t = 0.0
+
+# arm-swing speed for the runner (works with controllers AND bare hands)
+var _prev_hl := Vector3.ZERO
+var _prev_hr := Vector3.ZERO
+var _swing := 0.0
+func _feed_arm_swing(delta: float) -> void:
+	if tank == null or not tank.has_method("set_arm_swing"):
+		return
+	var vl := (hand_l.position - _prev_hl).length() / maxf(delta, 0.001)
+	var vr := (hand_r.position - _prev_hr).length() / maxf(delta, 0.001)
+	_prev_hl = hand_l.position
+	_prev_hr = hand_r.position
+	_swing = lerpf(_swing, (vl + vr) * 0.5, 6.0 * delta)
+	tank.call("set_arm_swing", _swing)
 
 func _dz(v: float) -> float:
 	return v if absf(v) > 0.12 else 0.0
