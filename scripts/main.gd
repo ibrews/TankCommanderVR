@@ -22,11 +22,31 @@ func _ready() -> void:
 	_setup_environment()
 	_setup_rig()
 	to_menu()
-	if "--smoke" in OS.get_cmdline_user_args():
+	var args := OS.get_cmdline_user_args()
+	if "--smoke" in args:
 		_smoke_frames = 200
 		print("[smoke] starting smoke test")
-	if "--shots" in OS.get_cmdline_user_args():
+	if "--shots" in args:
 		_run_shot_sequence()
+	if "--mp-host" in args:
+		Game.mode = Game.Mode.COOP
+		Game.level_id = "outdoor"
+		NetManager.host()
+		start_game()
+		get_tree().create_timer(18.0).timeout.connect(func():
+			print("[mp-test] host peers=", multiplayer.get_peers().size())
+			get_tree().quit(0))
+	if "--mp-join" in args:
+		NetManager.join_found.connect(func(cfg):
+			Game.mode = cfg.mode
+			Game.level_id = cfg.level
+			Game.difficulty = cfg.diff
+			start_game()
+			print("[mp-test] client joined, level=", cfg.level), CONNECT_ONE_SHOT)
+		NetManager.search()
+		get_tree().create_timer(22.0).timeout.connect(func():
+			print("[mp-test] client done, connected=", multiplayer.multiplayer_peer != null and multiplayer.get_peers().size() > 0)
+			get_tree().quit(0))
 
 # ---------------------------------------------------------------- environment
 func _setup_environment() -> void:
@@ -221,16 +241,21 @@ func _process(delta: float) -> void:
 		_smoke_frames -= 1
 		if _smoke_frames == 180:
 			# drive the menu programmatically
+			var m := Game.Mode.PLANE if "--plane" in OS.get_cmdline_user_args() else Game.Mode.SOLO
 			if menu:
-				menu.start_requested.emit(Game.Mode.SOLO, "castle", 1)
-		if _smoke_frames == 120 and player:
-			player.quick_start()
-		if _smoke_frames == 80 and player:
-			player.set_stick_drive(Vector2(0.2, 1.0))
-			player.set_stick_turret(Vector2(0.5, 0.2))
-		if _smoke_frames == 40 and player:
-			player.stick_fire()
-			player.stick_rockets()
+				menu.start_requested.emit(m, "castle", 1)
+		var v: Node3D = player if player else plane
+		if _smoke_frames == 120 and v:
+			v.call("quick_start")
+		if _smoke_frames == 80 and v:
+			v.call("set_stick_drive", Vector2(0.2, 1.0))
+			v.call("set_stick_turret", Vector2(0.5, 0.2))
+		if _smoke_frames == 40 and v:
+			v.call("stick_fire")
+			v.call("stick_rockets")
+			v.call("set_mg", true)
+		if _smoke_frames == 30 and v:
+			v.call("set_mg", false)
 		if _smoke_frames == 0:
 			print("[smoke] OK — frames ran clean")
 			get_tree().quit(0)

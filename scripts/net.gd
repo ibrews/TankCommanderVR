@@ -184,9 +184,14 @@ func c_event(kind: String) -> void:
 			tank.rockets_armed = true
 			tank.fire_rockets()
 
+var _snap_seen := false
+
 @rpc("authority", "unreliable_ordered")
 func s_coop_snap(tank_t: Transform3D, turret_y: float, gun_e: float, hp: float,
 		ammo: int, rkts: int, loaded: bool, engine: bool, wave: int, score: int, enemies: Array) -> void:
+	if not _snap_seen:
+		_snap_seen = true
+		print("[net] first coop snapshot applied (%d enemies)" % enemies.size())
 	if tank == null:
 		return
 	tank.net_apply(tank_t, turret_y, gun_e, ammo, rkts, loaded, engine)
