@@ -21,6 +21,7 @@ class XRHand:
 	var _grip_was := false
 	var poke_tip: Node3D
 	var laser: MeshInstance3D
+	var controller_model: OpenXRFbRenderModel
 	# Separate node tracking the AIM pose (the natural pointing ray). The hand
 	# itself tracks the GRIP pose, which is right for grabbing but points up and
 	# back — using it as a laser ray made the menu impossible to point at. The
@@ -36,13 +37,16 @@ class XRHand:
 		poke_tip = Node3D.new()
 		poke_tip.position = Vector3(0, -0.01, -0.06)
 		add_child(poke_tip)
-		var st := MeshKit.begin()
-		MeshKit.box(st, Transform3D(Basis(), Vector3(0, -0.01, 0.02)), Vector3(0.07, 0.05, 0.11), Color(0.35, 0.32, 0.25))
-		MeshKit.box(st, Transform3D(Basis(), Vector3(0, -0.015, -0.045)), Vector3(0.062, 0.038, 0.05), Color(0.42, 0.38, 0.30))
-		var mi := MeshInstance3D.new()
-		mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.9))
-		mi.layers = 2
-		add_child(mi)
+		# Real Touch controller model, fetched live from the OS at runtime via
+		# XR_FB_render_model (Meta-specific — the Khronos-generic render_model
+		# extension is confirmed NOT implemented on Quest). Hidden whenever this
+		# hand's controller isn't tracked (see _physics_process).
+		controller_model = OpenXRFbRenderModel.new()
+		controller_model.render_model_type = OpenXRFbRenderModel.MODEL_CONTROLLER_LEFT \
+			if tracker == "left_hand" else OpenXRFbRenderModel.MODEL_CONTROLLER_RIGHT
+		controller_model.visible = false
+		controller_model.openxr_fb_render_model_loaded.connect(_on_controller_model_loaded)
+		add_child(controller_model)
 		# menu laser
 		laser = MeshInstance3D.new()
 		var lb := BoxMesh.new()
@@ -62,9 +66,27 @@ class XRHand:
 	func hand_pos() -> Vector3:
 		return global_position
 
+	# The runtime-supplied model loads asynchronously, sometime after the OpenXR
+	# session starts — layer it into the cockpit-interior lighting group (layer 2,
+	# excluded from the sun/fill cull masks) same as everything else in the cabin.
+	func _on_controller_model_loaded() -> void:
+		var node := controller_model.get_render_model_node()
+		if node:
+			_set_layer_recursive(node, 2)
+
+	static func _set_layer_recursive(node: Node, layer_mask: int) -> void:
+		if node is VisualInstance3D:
+			node.layers = layer_mask
+		for c in node.get_children():
+			_set_layer_recursive(c, layer_mask)
+
 	func _physics_process(delta: float) -> void:
 		if rig == null:
 			return
+		# Controller model only shows while this hand's physical controller is
+		# actually tracked — bare-hand play (hand_l_mesh/hand_r_mesh in XRRig)
+		# takes over via its own show_when_tracked when this goes false.
+		controller_model.visible = get_has_tracking_data()
 		if Game.state == Game.GState.MENU:
 			_menu_pointer()
 			return

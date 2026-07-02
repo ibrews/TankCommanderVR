@@ -61,3 +61,4 @@ openxr/extensions/hand_tracking=true
 ; the board, despite the physical controllers working fine in every other app.
 openxr/extensions/hand_interaction_profile=true
 openxr/extensions/meta/application_space_warp=false
+openxr/extensions/meta/render_model=true
