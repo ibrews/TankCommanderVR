@@ -41,10 +41,16 @@ def colored_noise(size, c0, c1, octaves=4, base=8):
     c0, c1 = np.array(c0, dtype=np.float64), np.array(c1, dtype=np.float64)
     return c0 + (c1 - c0) * n
 
-# terrain splat layers
-save_rgb(colored_noise(256, (194, 168, 118), (226, 204, 156), 5), "sand.png")
-save_rgb(colored_noise(256, (74, 102, 48), (118, 142, 70), 5), "grass.png")
-save_rgb(colored_noise(256, (98, 94, 88), (156, 150, 140), 5), "rock.png")
+# terrain splat layers — high contrast + speckle so ground reads at VR scale
+def speckled(size, c0, c1, octaves=5, base=8):
+    img = colored_noise(size, c0, c1, octaves, base)
+    spec = tileable_noise(size, 6, 32)[..., None]
+    img = img * (0.82 + spec * 0.36)
+    return img
+
+save_rgb(speckled(256, (196, 164, 104), (240, 216, 158)), "sand.png")
+save_rgb(speckled(256, (56, 88, 38), (112, 140, 62)), "grass.png")
+save_rgb(speckled(256, (52, 50, 47), (118, 112, 102)), "rock.png")
 
 # tank camo (olive blotches)
 n1 = tileable_noise(256, 3, 4)

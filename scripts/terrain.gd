@@ -43,9 +43,9 @@ func height(x: float, z: float) -> float:
 	# southern dunes
 	var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
 	h += _dune.get_noise_2d(x, z) * 2.2 * dune_mask
-	# rim mountains fence the arena
+	# rim mountains fence the arena (start close enough to read as connected walls)
 	var r: float = Vector2(x, z).length() / HALF
-	var rim: float = smoothstep(0.72, 1.05, r)
+	var rim: float = smoothstep(0.62, 0.98, r)
 	h += rim * rim * 85.0
 	h += _noise.get_noise_2d(x * 3.0, z * 3.0) * 14.0 * rim
 	# flatten gameplay areas
@@ -108,7 +108,7 @@ func _chunk_mesh(x0: float, z0: float, size: float) -> ArrayMesh:
 		for ix in n:
 			var i := iz * n + ix
 			st.set_color(cols[i])
-			st.set_uv(Vector2(verts[i].x, verts[i].z) * 0.11)
+			st.set_uv(Vector2(verts[i].x, verts[i].z) * 0.22)
 			st.set_normal(normal(verts[i].x, verts[i].z))
 			st.add_vertex(verts[i])
 	for iz in QUADS:
@@ -144,9 +144,18 @@ void fragment() {
 	vec3 s = texture(tex_sand, UV).rgb;
 	vec3 g = texture(tex_grass, UV).rgb;
 	vec3 r = texture(tex_rock, UV).rgb;
+	// low-frequency noise breaks the smooth sand<->grass transition into patches
+	float n = texture(tex_rock, UV * 0.037).g;
 	vec3 w = COLOR.rgb;
+	float shift = (n - 0.5) * 0.9;
+	w.r = clamp(w.r + shift * min(w.r, w.g) * 2.0, 0.0, 1.0);
+	w.g = clamp(w.g - shift * min(w.r, w.g) * 2.0, 0.0, 1.0);
 	float tot = max(w.r + w.g + w.b, 0.001);
-	ALBEDO = (s * w.r + g * w.g + r * w.b) / tot;
+	vec3 alb = (s * w.r + g * w.g + r * w.b) / tot;
+	// darken with distance so far slopes separate from the pale horizon sky
+	float dist = length(VERTEX);
+	alb *= mix(1.0, 0.72, clamp((dist - 120.0) / 160.0, 0.0, 1.0));
+	ALBEDO = alb;
 	ROUGHNESS = 0.95;
 }
 """

@@ -17,10 +17,10 @@ func _ready() -> void:
 
 func _tree_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()
-	var trunk := Color(0.38, 0.27, 0.17)
+	var trunk := Color(0.28, 0.19, 0.11)
 	MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.1, 0)), 0.22, 0.16, 2.2, 6, trunk, false, false)
-	var g1 := Color(0.20, 0.34, 0.16)
-	var g2 := Color(0.26, 0.42, 0.20)
+	var g1 := Color(0.10, 0.22, 0.09)
+	var g2 := Color(0.14, 0.28, 0.12)
 	MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 3.0, 0)), 1.7, 0.0, 2.8, 7, g1, true, false)
 	MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 4.8, 0)), 1.15, 0.0, 2.2, 7, g2, true, false)
 	return MeshKit.commit(st, MeshKit.mat_vcol())
@@ -49,7 +49,7 @@ func _scatter_trees() -> void:
 		var s := rng.randf_range(0.8, 1.6)
 		var basis := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3(s, s * rng.randf_range(0.9, 1.25), s))
 		placed.append(Transform3D(basis, Vector3(x, h - 0.1, z)))
-		cols.append(Color(1, 1, 1).lerp(Color(0.8, 1.0, 0.7), rng.randf()))
+		cols.append(Color(0.75, 0.8, 0.7).lerp(Color(1.05, 1.1, 0.95), rng.randf()))
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])

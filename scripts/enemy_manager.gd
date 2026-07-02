@@ -68,7 +68,7 @@ func _spawn_wave() -> void:
 		var a := Game.rng.randf() * TAU
 		var r := Game.rng.randf_range(150.0, 200.0)
 		var pos := Vector3(cos(a) * r, 0, sin(a) * r)
-		pos.y = terrain.height(pos.x, pos.z) + 0.4
+		pos.y = terrain.height(pos.x, pos.z) + 0.1
 		e.global_position = pos
 	for i in planes:
 		var p := EnemyPlane.new(terrain, projectiles, fx, player)

@@ -7,11 +7,11 @@
 class_name CockpitBuilder
 extends Object
 
-const EYE := Vector3(-0.28, 0.30, 0.30)
-const STEEL := Color(0.62, 0.66, 0.58)      # pale military interior green
-const STEEL_DARK := Color(0.42, 0.45, 0.40)
-const FLOOR_COL := Color(0.25, 0.25, 0.26)
-const SEAT_COL := Color(0.30, 0.26, 0.20)
+const EYE := Vector3(-0.28, 0.33, 0.30)
+const STEEL := Color(0.36, 0.40, 0.33)      # military interior green, kept dark (no AO on Mobile)
+const STEEL_DARK := Color(0.22, 0.24, 0.21)
+const FLOOR_COL := Color(0.13, 0.13, 0.14)
+const SEAT_COL := Color(0.24, 0.20, 0.15)
 const BRASS := Color(0.72, 0.58, 0.28)
 
 # Wall extents
@@ -33,6 +33,7 @@ static func build(parent: Node3D) -> Dictionary:
 	_build_controls(root, out)
 	_build_panel(root, out)
 	_build_lighting(root, out)
+	set_interior_layer(root)
 
 	var seat_anchor := Node3D.new()
 	seat_anchor.name = "SeatAnchor"
@@ -43,6 +44,14 @@ static func build(parent: Node3D) -> Dictionary:
 	return out
 
 # ------------------------------------------------------------------ static shell
+# The whole interior renders on layer 2, which the sun's cull mask excludes —
+# a closed steel room must not be lit by a shadowless directional light.
+static func set_interior_layer(node: Node) -> void:
+	if node is VisualInstance3D:
+		node.layers = 2
+	for c in node.get_children():
+		set_interior_layer(c)
+
 static func _build_static(root: Node3D) -> void:
 	var st := MeshKit.begin()
 	var w := 0.035  # wall thickness
@@ -54,9 +63,10 @@ static func _build_static(root: Node3D) -> void:
 	MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-8)), Vector3(EYE.x, -0.28, EYE.z + 0.30)), Vector3(0.46, 0.55, 0.08), SEAT_COL)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(EYE.x, -0.86, EYE.z + 0.02)), Vector3(0.36, 0.5, 0.3), STEEL_DARK)
 
-	# ---- front wall with 3 vision-slit gaps at y 0.255..0.385
-	var slit_y0 := 0.255
-	var slit_y1 := 0.385
+	# ---- front wall with 3 vision-slit gaps (eye sits just above slit center
+	# so the natural sightline through the periscopes is slightly downward)
+	var slit_y0 := 0.24
+	var slit_y1 := 0.39
 	# below band
 	MeshKit.box(st, Transform3D(Basis(), Vector3((X0 + X1) / 2, (YF + slit_y0) / 2, Z0)), Vector3(X1 - X0, slit_y0 - YF, w), STEEL)
 	# above band
@@ -73,7 +83,7 @@ static func _build_static(root: Node3D) -> void:
 	for slit in [[-0.71, -0.51], [-0.46, -0.13], [0.00, 0.20]]:
 		var cx: float = (slit[0] + slit[1]) / 2.0
 		var cw: float = slit[1] - slit[0]
-		var tunnel_len := 0.40
+		var tunnel_len := 0.28
 		var zc: float = Z0 - tunnel_len / 2.0
 		MeshKit.box(st, Transform3D(Basis(), Vector3(cx, slit_y1 + 0.012, zc)), Vector3(cw + 0.05, 0.025, tunnel_len), STEEL_DARK)
 		MeshKit.box(st, Transform3D(Basis(), Vector3(cx, slit_y0 - 0.012, zc)), Vector3(cw + 0.05, 0.025, tunnel_len), STEEL_DARK)
@@ -103,7 +113,7 @@ static func _build_static(root: Node3D) -> void:
 
 	# ---- consoles
 	# front panel slab (gauges mount here), tilted toward player
-	MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(18)), Vector3(EYE.x, 0.02, Z0 + 0.10)), Vector3(0.62, 0.34, 0.05), STEEL_DARK)
+	MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-18)), Vector3(EYE.x, 0.02, Z0 + 0.10)), Vector3(0.62, 0.34, 0.05), STEEL_DARK)
 	# left console (rockets)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(X0 + 0.17, -0.18, -0.05)), Vector3(0.30, 0.06, 0.55), STEEL_DARK)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(X0 + 0.17, -0.50, -0.05)), Vector3(0.26, 0.58, 0.50), STEEL)
@@ -125,7 +135,9 @@ static func _build_static(root: Node3D) -> void:
 
 	var mesh := MeshInstance3D.new()
 	var mat := MeshKit.mat_tex("res://assets/tex/metal.png", true, 0.85)
+	mat = mat.duplicate()
 	mat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	mat.uv1_scale = Vector3(3.0, 3.0, 1.0)
 	mesh.mesh = MeshKit.commit(st, mat)
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mesh)
@@ -137,9 +149,10 @@ static func _build_static(root: Node3D) -> void:
 		var cw: float = slit[1] - slit[0]
 		MeshKit.box(gst, Transform3D(Basis(), Vector3(cx, band_y, Z0 - 0.18)), Vector3(cw, band_h, 0.006), Color.WHITE)
 	var gmat := StandardMaterial3D.new()
-	gmat.albedo_color = Color(0.55, 0.75, 0.70, 0.13)
+	gmat.albedo_color = Color(0.55, 0.75, 0.70, 0.10)
 	gmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	gmat.roughness = 0.05
+	gmat.roughness = 0.9
+	gmat.metallic_specular = 0.0   # no sky sheen washing out the view
 	gmat.cull_mode = BaseMaterial3D.CULL_DISABLED
 	var glass := MeshInstance3D.new()
 	glass.mesh = MeshKit.commit(gst, gmat)
@@ -202,15 +215,15 @@ static func _build_controls(root: Node3D, out: Dictionary) -> void:
 	root.add_child(restart)
 	c["restart"] = restart
 
-	# console labels
-	_label(root, "BATTERY", Vector3(X0 + 0.22, -0.135, 0.115), -90)
-	_label(root, "STARTER", Vector3(X0 + 0.13, -0.135, 0.115), -90)
-	_label(root, "LIGHTS", Vector3(X0 + 0.22, -0.135, 0.235), -90)
-	_label(root, "ROCKETS ARM", Vector3(X0 + 0.11, -0.135, -0.255), -90)
-	_label(root, "ROCKET FIRE", Vector3(X0 + 0.11, -0.135, -0.05), -90)
-	_label(root, "TURRET", Vector3(0.10, -0.135, 0.145), -90)
+	# console labels — flat on the console, rotated to read naturally from the seat
+	_label(root, "BATTERY", Vector3(X0 + 0.22, -0.135, 0.115), -90, 20, 90)
+	_label(root, "STARTER", Vector3(X0 + 0.13, -0.135, 0.115), -90, 20, 90)
+	_label(root, "LIGHTS", Vector3(X0 + 0.22, -0.135, 0.235), -90, 20, 90)
+	_label(root, "ROCKETS ARM", Vector3(X0 + 0.11, -0.135, -0.255), -90, 20, 90)
+	_label(root, "ROCKET FIRE", Vector3(X0 + 0.11, -0.135, -0.05), -90, 20, 90)
+	_label(root, "TURRET", Vector3(0.10, -0.135, 0.145), -90, 20, 90)
 
-static func _label(root: Node3D, text: String, pos: Vector3, pitch_deg := 0.0, size := 20) -> Label3D:
+static func _label(root: Node3D, text: String, pos: Vector3, pitch_deg := 0.0, size := 20, yaw_deg := 0.0) -> Label3D:
 	var l := Label3D.new()
 	l.text = text
 	l.font_size = size * 4
@@ -218,7 +231,7 @@ static func _label(root: Node3D, text: String, pos: Vector3, pitch_deg := 0.0, s
 	l.modulate = Color(0.92, 0.94, 0.90)
 	l.outline_size = 0
 	l.position = pos
-	l.rotation.x = deg_to_rad(pitch_deg)
+	l.rotation_degrees = Vector3(pitch_deg, yaw_deg, 0)
 	root.add_child(l)
 	return l
 
@@ -226,8 +239,9 @@ static func _label(root: Node3D, text: String, pos: Vector3, pitch_deg := 0.0, s
 static func _build_panel(root: Node3D, out: Dictionary) -> void:
 	# gauges sit on the tilted front slab: local frame tilted 18 deg
 	var slab := Node3D.new()
-	slab.position = Vector3(EYE.x, 0.02, Z0 + 0.072)
-	slab.rotation.x = deg_to_rad(18)
+	# sits just proud of the static slab face (static slab center Z0+0.10, half-depth 0.025)
+	slab.position = Vector3(EYE.x, 0.02, Z0 + 0.13)
+	slab.rotation.x = deg_to_rad(-18)
 	root.add_child(slab)
 
 	var gauges := [
@@ -244,10 +258,7 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 		var m := StandardMaterial3D.new()
 		m.albedo_texture = load("res://assets/tex/%s.png" % g[0])
 		m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-		m.emission_enabled = true
-		m.emission = Color(0.25, 0.25, 0.22)
-		m.emission_energy_multiplier = 0.0
-		m.roughness = 0.4
+		m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		face.material_override = m
 		face.position = Vector3(g[1].x, g[1].y, 0.002)
 		slab.add_child(face)
@@ -262,13 +273,10 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 		nd.position = Vector3(0, 0.017, 0)
 		var nm := StandardMaterial3D.new()
 		nm.albedo_color = Color(0.95, 0.4, 0.2)
-		nm.emission_enabled = true
-		nm.emission = Color(0.95, 0.4, 0.2)
-		nm.emission_energy_multiplier = 0.3
+		nm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		nd.material_override = nm
 		pivot.add_child(nd)
 		out["needles"][g[2]] = pivot
-		out["lamps"]["gauge_face_" + str(g[2])] = m
 
 	# hull azimuth dial (shows hull heading relative to turret)
 	var az_pivot := Node3D.new()
@@ -281,9 +289,7 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 	az.position = Vector3(0, 0.012, 0)
 	var azm := StandardMaterial3D.new()
 	azm.albedo_color = Color(0.3, 0.9, 0.4)
-	azm.emission_enabled = true
-	azm.emission = Color(0.3, 0.9, 0.4)
-	azm.emission_energy_multiplier = 0.3
+	azm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 	az.material_override = azm
 	az_pivot.add_child(az)
 	var az_face := MeshInstance3D.new()
@@ -315,7 +321,8 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 		lm.rotation.x = deg_to_rad(90)
 		lm.position = Vector3(-0.14 + i * 0.055, -0.065, 0.004)
 		var mm := StandardMaterial3D.new()
-		mm.albedo_color = lamp_defs[i][1] * 0.25
+		mm.albedo_color = lamp_defs[i][1] * 0.22
+		mm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		lm.material_override = mm
 		slab.add_child(lm)
 		out["lamps"][lamp_defs[i][0]] = {"mat": mm, "color": lamp_defs[i][1]}
@@ -325,11 +332,11 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 	var ammo := _label(root, "AP 40", Vector3(0.30, 0.18, 0.35), 0, 26)
 	ammo.rotation.y = deg_to_rad(-90)
 	out["labels"]["ammo"] = ammo
-	var rockets := _label(root, "RKT 12", Vector3(X0 + 0.11, -0.135, -0.34), -90, 18)
+	var rockets := _label(root, "RKT 12", Vector3(X0 + 0.11, -0.135, -0.34), -90, 18, 90)
 	out["labels"]["rockets"] = rockets
-	var plaque := _label(root, "WAVE 1    SCORE 0", Vector3(EYE.x, 0.47, Z0 + 0.02), 0, 30)
+	var plaque := _label(root, "WAVE 1    SCORE 0", Vector3(EYE.x, 0.50, Z0 + 0.02), 0, 30)
 	out["labels"]["plaque"] = plaque
-	var hint := _label(root, "", Vector3(EYE.x, 0.42, Z0 + 0.02), 0, 16)
+	var hint := _label(root, "", Vector3(EYE.x, 0.445, Z0 + 0.02), 0, 16)
 	hint.modulate = Color(1.0, 0.8, 0.35)
 	out["labels"]["hint"] = hint
 
@@ -337,8 +344,9 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 static func _build_lighting(root: Node3D, out: Dictionary) -> void:
 	var dome := OmniLight3D.new()
 	dome.position = Vector3(EYE.x + 0.3, YR - 0.12, 0.1)
-	dome.light_color = Color(1.0, 0.9, 0.75)
-	dome.omni_range = 2.2
+	dome.light_color = Color(1.0, 0.82, 0.58)
+	dome.omni_range = 1.7
+	dome.omni_attenuation = 1.4
 	dome.light_energy = 0.0   # off until battery on
 	dome.shadow_enabled = false
 	root.add_child(dome)

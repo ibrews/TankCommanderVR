@@ -18,7 +18,6 @@ func _ready() -> void:
 	camera.near = 0.03
 	camera.fov = 80
 	add_child(camera)
-	tank.cockpit["seat_anchor"].add_child(self)
 	position = tank.cockpit["eye_local"]
 	if DisplayServer.get_name() != "headless":
 		Input.mouse_mode = Input.MOUSE_MODE_CAPTURED
@@ -51,20 +50,32 @@ func _unhandled_input(event: InputEvent) -> void:
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
 
+var _prev_drive := Vector2.ZERO
+var _prev_tur := Vector2.ZERO
+var _prev_mg := false
+
 func _physics_process(_delta: float) -> void:
+	# only write on changes so scripted test input isn't stomped by idle keys
 	var drive := Vector2.ZERO
 	if Input.is_physical_key_pressed(KEY_W): drive.y += 1
 	if Input.is_physical_key_pressed(KEY_S): drive.y -= 1
 	if Input.is_physical_key_pressed(KEY_A): drive.x -= 1
 	if Input.is_physical_key_pressed(KEY_D): drive.x += 1
-	tank.set_stick_drive(drive)
+	if drive != _prev_drive:
+		tank.set_stick_drive(drive)
+		_prev_drive = drive
 	var tur := Vector2.ZERO
 	if Input.is_physical_key_pressed(KEY_J): tur.x -= 1
 	if Input.is_physical_key_pressed(KEY_L): tur.x += 1
 	if Input.is_physical_key_pressed(KEY_I): tur.y += 1
 	if Input.is_physical_key_pressed(KEY_K): tur.y -= 1
-	tank.set_stick_turret(tur)
-	tank.set_mg(Input.is_physical_key_pressed(KEY_M))
+	if tur != _prev_tur:
+		tank.set_stick_turret(tur)
+		_prev_tur = tur
+	var mg := Input.is_physical_key_pressed(KEY_M)
+	if mg != _prev_mg:
+		tank.set_mg(mg)
+		_prev_mg = mg
 
 func _screenshot() -> void:
 	var img := get_viewport().get_texture().get_image()

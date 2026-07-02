@@ -32,9 +32,9 @@ func _setup_environment() -> void:
 	var env := Environment.new()
 	var sky_mat := ProceduralSkyMaterial.new()
 	sky_mat.sky_top_color = Color(0.28, 0.42, 0.66)
-	sky_mat.sky_horizon_color = Color(0.78, 0.72, 0.62)
+	sky_mat.sky_horizon_color = Color(0.66, 0.60, 0.50)
 	sky_mat.ground_bottom_color = Color(0.32, 0.28, 0.22)
-	sky_mat.ground_horizon_color = Color(0.72, 0.66, 0.56)
+	sky_mat.ground_horizon_color = Color(0.60, 0.54, 0.46)
 	sky_mat.sun_angle_max = 22.0
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
@@ -42,13 +42,15 @@ func _setup_environment() -> void:
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
-	env.ambient_light_energy = 1.15
+	env.ambient_light_energy = 0.85
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
 	env.tonemap_exposure = 1.0
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.75, 0.72, 0.66)
-	env.fog_density = 0.0016
-	env.fog_sky_affect = 0.25
+	# light haze only — heavier fog made mountain bases vanish into the horizon
+	# and distant objects read as floating
+	env.fog_light_color = Color(0.78, 0.72, 0.62)
+	env.fog_density = 0.0005
+	env.fog_sky_affect = 0.0
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -58,6 +60,7 @@ func _setup_environment() -> void:
 	sun.light_color = Color(1.0, 0.93, 0.80)
 	sun.light_energy = 1.25
 	sun.shadow_enabled = false
+	sun.light_cull_mask = 0xFFFFF & ~2  # layer 2 = tank interior, sun excluded
 	add_child(sun)
 
 func _setup_rig() -> void:
@@ -66,10 +69,12 @@ func _setup_rig() -> void:
 		get_viewport().use_xr = true
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		var rig := XRRig.new(player)
+		player.cockpit["seat_anchor"].add_child(rig)
 		projectiles.cam = rig.camera
 		print("[main] XR active")
 	else:
 		var rig := DesktopRig.new(player)
+		player.cockpit["seat_anchor"].add_child(rig)
 		projectiles.cam = rig.camera
 		print("[main] desktop fallback rig")
 
@@ -114,6 +119,10 @@ func _run_shot_sequence() -> void:
 		cam.rotation = Vector3(-0.35, 0.9, 0)
 		await get_tree().create_timer(0.4).timeout
 		_shot(cam, "03_cockpit_console")
+		# down at the instrument panel
+		cam.rotation = Vector3(-0.5, 0.0, 0)
+		await get_tree().create_timer(0.4).timeout
+		_shot(cam, "03b_panel")
 		cam.rotation = Vector3.ZERO
 		player.set_stick_drive(Vector2(0.15, 1.0))
 		await get_tree().create_timer(3.0).timeout
@@ -124,18 +133,31 @@ func _run_shot_sequence() -> void:
 		player.stick_fire()
 		await get_tree().create_timer(0.35).timeout
 		_shot(cam, "05_firing")
-		# exterior beauty shot
-		player.set_stick_drive(Vector2.ZERO)
+		# exterior beauty shots — keep driving so motion is verifiable in the log
 		cam.top_level = true
 		var p := player.global_position
+		print("[shots] tank pos A: ", p)
 		cam.global_position = p + Vector3(-7.0, 4.5, -9.0)
 		cam.look_at(p + Vector3(0, 1.5, 0))
 		await get_tree().create_timer(0.4).timeout
 		_shot(cam, "06_exterior")
-		cam.global_position = p + Vector3(10.0, 2.5, 6.0)
-		cam.look_at(p + Vector3(0, 1.8, 0))
+		cam.global_position = player.global_position + Vector3(10.0, 2.5, 6.0)
+		cam.look_at(player.global_position + Vector3(0, 1.8, 0))
 		await get_tree().create_timer(0.4).timeout
 		_shot(cam, "07_exterior_front")
+		await get_tree().create_timer(1.5).timeout
+		print("[shots] tank pos B: ", player.global_position)
+		player.set_stick_drive(Vector2.ZERO)
+		# diagnostic views: full-arena top-down + rim profile
+		cam.far = 4000.0
+		cam.global_position = Vector3(0, 420, 1)
+		cam.look_at(Vector3(0, 0, 0))
+		await get_tree().create_timer(0.4).timeout
+		_shot(cam, "08_map_topdown")
+		cam.global_position = Vector3(0, 25, 40)
+		cam.look_at(Vector3(0, 45, -240))
+		await get_tree().create_timer(0.4).timeout
+		_shot(cam, "09_rim_profile")
 		print("[shots] done")
 		get_tree().quit(0)
 	seq.call()

@@ -35,6 +35,7 @@ class XRHand:
 		MeshKit.box(st, Transform3D(Basis(), Vector3(0, -0.015, -0.045)), Vector3(0.062, 0.038, 0.05), Color(0.42, 0.38, 0.30))
 		var mi := MeshInstance3D.new()
 		mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.9))
+		mi.layers = 2  # interior lighting (no direct sun inside the turret)
 		add_child(mi)
 
 	func pulse(amp: float, dur: float) -> void:
@@ -108,7 +109,6 @@ func _ready() -> void:
 	hand_r = XRHand.new("right_hand")
 	hand_r.rig = self
 	add_child(hand_r)
-	tank.cockpit["seat_anchor"].add_child(self)
 	tank._rumble_cb = func(amp, dur):
 		hand_l.pulse(amp, dur)
 		hand_r.pulse(amp, dur)

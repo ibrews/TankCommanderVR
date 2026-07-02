@@ -100,7 +100,7 @@ func _ready() -> void:
 	Game.wave_changed.connect(func(_w): _update_plaque())
 	# spawn placement
 	global_position = Vector3(Terrain.SPAWN_CENTER.x, 0, Terrain.SPAWN_CENTER.y)
-	global_position.y = terrain.height(global_position.x, global_position.z) + 0.35
+	global_position.y = terrain.height(global_position.x, global_position.z) + 0.04
 	_update_plaque()
 
 # ------------------------------------------------------------------ exterior
@@ -143,7 +143,7 @@ func _build_exterior() -> void:
 	MeshKit.cyl(ust, Transform3D(Basis(), Vector3(-0.1, 0.38, 0.0)), 1.05, 0.85, 0.78, 12, hull_c)
 	MeshKit.box(ust, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(12)), Vector3(0, 0.35, -0.72)), Vector3(1.5, 0.62, 0.5), hull_c, 0.18)
 	# mantlet
-	MeshKit.box(ust, Transform3D(Basis(), Vector3(0, 0.35, -0.98)), Vector3(0.55, 0.5, 0.3), Color(0.9, 0.9, 0.9), 0.18)
+	MeshKit.box(ust, Transform3D(Basis(), Vector3(0, 0.35, -0.98)), Vector3(0.55, 0.5, 0.3), Color(0.55, 0.57, 0.50), 0.18)
 	# commander cupola
 	MeshKit.cyl(ust, Transform3D(Basis(), Vector3(-0.28, 0.82, 0.25)), 0.34, 0.30, 0.14, 10, hull_c)
 	var tur_mi := MeshInstance3D.new()
@@ -169,15 +169,21 @@ func _build_exterior() -> void:
 	turret.add_child(gun_pivot)
 	recoil = Node3D.new()
 	gun_pivot.add_child(recoil)
+	# barrel (exterior, sun-lit)
 	var gst := MeshKit.begin()
 	MeshKit.cyl(gst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0, -2.3)), 0.10, 0.085, 3.9, 10, Color(0.30, 0.32, 0.28))
 	MeshKit.cyl(gst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0, -4.15)), 0.13, 0.13, 0.45, 10, Color(0.24, 0.26, 0.23))
-	# breech block (lives inside the cockpit)
-	MeshKit.box(gst, Transform3D(Basis(), Vector3(0, 0, 0.55)), Vector3(0.34, 0.4, 0.75), Color(0.45, 0.48, 0.44))
-	MeshKit.box(gst, Transform3D(Basis(), Vector3(0, 0, 0.95)), Vector3(0.28, 0.32, 0.10), Color(0.3, 0.32, 0.3))
 	var gmi := MeshInstance3D.new()
 	gmi.mesh = MeshKit.commit(gst, MeshKit.mat_vcol(0.6, 0.35))
 	recoil.add_child(gmi)
+	# breech block (interior render layer — no direct sun inside the turret)
+	var bst := MeshKit.begin()
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.55)), Vector3(0.34, 0.4, 0.75), Color(0.35, 0.38, 0.34))
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.95)), Vector3(0.28, 0.32, 0.10), Color(0.24, 0.26, 0.24))
+	var bmi := MeshInstance3D.new()
+	bmi.mesh = MeshKit.commit(bst, MeshKit.mat_vcol(0.6, 0.35))
+	bmi.layers = 2
+	recoil.add_child(bmi)
 	muzzle = Node3D.new()
 	muzzle.position = Vector3(0, 0, -4.4)
 	recoil.add_child(muzzle)
@@ -192,6 +198,7 @@ func _build_exterior() -> void:
 	breech_lever.rotation.z = deg_to_rad(90)  # sticks out toward player
 	gun_pivot.add_child(breech_lever)
 	breech_lever.value_changed.connect(_on_breech_lever)
+	CockpitBuilder.set_interior_layer(breech_lever)
 
 	# blob shadow
 	blob = MeshInstance3D.new()
@@ -218,13 +225,14 @@ func _build_exterior() -> void:
 		spot.light_energy = 0.0
 		spot.shadow_enabled = false
 		spot.light_color = Color(1.0, 0.95, 0.8)
+		spot.light_cull_mask = 0xFFFFF & ~2  # don't leak into the cockpit
 		add_child(spot)
 		headlights.append(spot)
 	var lst := MeshKit.begin()
 	for sx in [-0.9, 0.9]:
 		MeshKit.cyl(lst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(sx, 1.25, -3.15)), 0.09, 0.09, 0.08, 8, Color.WHITE)
 	head_lamp_mat = StandardMaterial3D.new()
-	head_lamp_mat.albedo_color = Color(0.7, 0.7, 0.6)
+	head_lamp_mat.albedo_color = Color(0.38, 0.38, 0.34)
 	var lmi := MeshInstance3D.new()
 	lmi.mesh = MeshKit.commit(lst, head_lamp_mat)
 	add_child(lmi)
@@ -262,12 +270,8 @@ func _wire_controls() -> void:
 
 func _on_battery(on: bool) -> void:
 	battery_on = on
-	cockpit["dome_light"].light_energy = 0.55 if on else 0.0
+	cockpit["dome_light"].light_energy = 0.6 if on else 0.0
 	cockpit["dome_bulb"].emission_energy_multiplier = 1.2 if on else 0.0
-	for k in ["speed", "rpm", "fuel", "temp"]:
-		cockpit["lamps"]["gauge_face_" + k].emission_energy_multiplier = 0.9 if on else 0.0
-	if not on and engine_on:
-		pass  # engine keeps running; battery only needed for start + turret
 
 func _on_lights(on: bool) -> void:
 	for l in headlights:
@@ -310,7 +314,7 @@ func _on_game_over() -> void:
 
 func _on_restart() -> void:
 	global_position = Vector3(Terrain.SPAWN_CENTER.x, 0, Terrain.SPAWN_CENTER.y)
-	global_position.y = terrain.height(global_position.x, global_position.z) + 0.35
+	global_position.y = terrain.height(global_position.x, global_position.z) + 0.04
 	yaw = PI
 	_spd = 0.0
 	ammo = 40
@@ -407,7 +411,7 @@ func _update_drive(delta: float) -> void:
 	# NOTE: Basis yaw convention checked below in _align; forward = -Z rotated by yaw
 	var hvel := fwd_dir * _spd
 	var gp := global_position
-	var target_y := terrain.height(gp.x, gp.z) + 0.35
+	var target_y := terrain.height(gp.x, gp.z) + 0.04
 	velocity = hvel + Vector3(0, clampf((target_y - gp.y) / delta, -14.0, 14.0), 0)
 	move_and_slide()
 	# arena clamp
