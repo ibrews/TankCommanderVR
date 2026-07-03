@@ -350,6 +350,12 @@ func start_game() -> void:
 		veh = "tank"   # multiplayer is tank business
 	if Game.mode == Game.Mode.PLANE:
 		veh = "plane"  # legacy path
+	# Sphere-world bonus level: the whole point is walking around the
+	# floating planet, so solo XR players go on-foot regardless of vehicle
+	# selection (multiplayer/desktop keep their vehicle — the moon hangs
+	# overhead as scenery for them; DesktopRig has no on-foot equivalent).
+	if Levels.current.has("sphere_world") and Game.mode == Game.Mode.SOLO and rig is XRRig:
+		veh = "runner"
 	var vehicle: CharacterBody3D
 	var on_foot := false
 	match veh:
@@ -380,6 +386,10 @@ func start_game() -> void:
 		var dismount := Transform3D()
 		dismount.origin = Vector3(Terrain.SPAWN_CENTER.x, 0, Terrain.SPAWN_CENTER.y)
 		dismount.origin.y = terrain.height(dismount.origin.x, dismount.origin.z) + 0.1
+		if Levels.current.has("sphere_world"):
+			# start standing on top of the planet, not on the plain below
+			var sw: Dictionary = Levels.current["sphere_world"]
+			dismount.origin = Vector3(Terrain.SPAWN_CENTER.x, float(sw["height"]) + float(sw["radius"]) + 0.3, Terrain.SPAWN_CENTER.y)
 		rig.call("enter_on_foot", world, dismount)
 	else:
 		world.add_child(vehicle)
@@ -388,7 +398,7 @@ func start_game() -> void:
 	var enemy_manager: EnemyManager = null
 	if Game.mode == Game.Mode.COOP and NetManager.is_client():
 		world.add_child(NetManager.make_replica_pool(terrain))
-	else:
+	elif not Levels.current.get("no_waves", false):
 		enemy_manager = EnemyManager.new(terrain, projectiles, fx, vehicle)
 		world.add_child(enemy_manager)
 	if Game.mode == Game.Mode.VERSUS:
@@ -398,6 +408,8 @@ func start_game() -> void:
 	if not on_foot:
 		rig.call("attach_to_vehicle", vehicle)
 	_spawn_on_foot_pickables()
+	if Levels.current.has("sphere_world"):
+		_build_sphere_world(Levels.current["sphere_world"])
 	if Levels.current.get("debug_kitchen_sink", false) and enemy_manager:
 		_spawn_debug_kitchen_sink(enemy_manager, vehicle)
 	# the supporting cast
@@ -472,6 +484,73 @@ func _spawn_on_foot_pickables() -> void:
 # they engage right away, for smoke-testing that every 3D model/AI/vehicle
 # type still works after a change without waiting through wave escalation
 # or traveling far. NPCs and the three on-foot pickables are already spawned
+# Sphere-gravity bonus level ("moon"). Same mechanic as godot-xr-tools'
+# sphere-world demo, confirmed working on Quest 3S in the 2026-07-03
+# isolation test: a point-gravity Area3D with SPACE_OVERRIDE_REPLACE makes
+# PhysicsServer report gravity toward the planet center, and
+# XRToolsPlayerBody natively re-derives its up vector from total_gravity
+# every frame — no custom character code needed. Walk all the way around
+# the planet; step off the gravity well and you fall to the plain below
+# (re-enter by grappling/climbing back up the rocks, or just enjoy the
+# drop — it's a bonus level).
+func _build_sphere_world(sw: Dictionary) -> void:
+	var r := float(sw["radius"])
+	var center := Vector3(Terrain.SPAWN_CENTER.x, float(sw["height"]), Terrain.SPAWN_CENTER.y)
+	# planet body: built-in SphereMesh (Godot's own primitive — winding
+	# guaranteed) + matching collider
+	var body := StaticBody3D.new()
+	body.collision_layer = 1
+	body.collision_mask = 0
+	var shape := CollisionShape3D.new()
+	var ss := SphereShape3D.new()
+	ss.radius = r
+	shape.shape = ss
+	body.add_child(shape)
+	var mi := MeshInstance3D.new()
+	var sm := SphereMesh.new()
+	sm.radius = r
+	sm.height = r * 2.0
+	sm.radial_segments = 32
+	sm.rings = 16
+	mi.mesh = sm
+	var mat := StandardMaterial3D.new()
+	mat.albedo_color = Color(0.62, 0.62, 0.66)
+	mat.roughness = 0.95
+	mi.set_surface_override_material(0, mat)
+	body.add_child(mi)
+	body.position = center
+	world.add_child(body)
+	# surface crates — landmarks so walking "around the world" reads clearly
+	# (MeshKit boxes, oriented so local up = radial out from the center)
+	var st := MeshKit.begin()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 7
+	for i in 10:
+		var dir := Vector3(rng.randf_range(-1, 1), rng.randf_range(-1, 1), rng.randf_range(-1, 1)).normalized()
+		var up := dir
+		var tangent := up.cross(Vector3.RIGHT if absf(up.dot(Vector3.RIGHT)) < 0.9 else Vector3.FORWARD).normalized()
+		var basis := Basis(up.cross(tangent), up, tangent).orthonormalized()
+		var s := rng.randf_range(0.5, 1.1)
+		MeshKit.box(st, Transform3D(basis, dir * (r + s * 0.5)), Vector3(s, s, s), Color(0.45, 0.42, 0.38))
+	var crates := MeshInstance3D.new()
+	crates.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.9))
+	crates.position = center
+	world.add_child(crates)
+	# the gravity well — REPLACE so the planet's pull owns this volume
+	var grav := Area3D.new()
+	grav.gravity_space_override = Area3D.SPACE_OVERRIDE_REPLACE
+	grav.gravity_point = true
+	grav.gravity_point_center = Vector3.ZERO   # local to the area = planet center
+	grav.gravity = 9.8
+	var gshape := CollisionShape3D.new()
+	var gs := SphereShape3D.new()
+	gs.radius = r * 2.2
+	gshape.shape = gs
+	grav.add_child(gshape)
+	grav.position = center
+	world.add_child(grav)
+	print("[moon] sphere world built: r=%.1f center=%s" % [r, center])
+
 # unconditionally by start_game() regardless of level, so nothing extra is
 # needed for those here.
 func _spawn_debug_kitchen_sink(enemy_manager: EnemyManager, vehicle: Node3D) -> void:

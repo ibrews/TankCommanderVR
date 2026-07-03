@@ -187,6 +187,28 @@ const CONFIGS := {
 		"sun_energy": 1.25,
 		"debug_kitchen_sink": true,  # main.gd spawns one-of-everything at close range
 	},
+	"moon": {
+		# Sphere-gravity bonus level (Alex's ask from the godot-xr-tools
+		# isolation-test session — the gravity-circle demo mechanic, confirmed
+		# working on Quest 3S there). A small planet floats above a dark
+		# lunar plain; XR players spawn on-foot ON the planet and walk all
+		# the way around it (point-gravity Area3D + XRToolsPlayerBody's
+		# native gravity-up handling — see main._build_sphere_world()).
+		# No enemy waves: a playground, like the demo it came from.
+		"title": "THE MOON (BONUS)",
+		"rolling": 2.0, "dunes": false, "pond": false,
+		"flatten": [[Vector2(0, 0), 70.0, 0.0]],
+		"trees": 0, "rocks": 30,
+		"village": {}, "city": {}, "castle": {}, "mud": [],
+		"wrecks": 2,
+		"arena_radius": 110.0,
+		"spawn": Vector2(0, 20),
+		"mortars": [],
+		"tint": Color(0.72, 0.74, 0.85),
+		"sun_energy": 0.55,
+		"sphere_world": {"height": 26.0, "radius": 14.0},
+		"no_waves": true,
+	},
 	"castle": {
 		"title": "CASTLE",
 		"rolling": 6.0, "dunes": false, "pond": false,
@@ -204,7 +226,7 @@ const CONFIGS := {
 	},
 }
 
-const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "archipelago", "volcano", "babyroom", "debug"]
+const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "archipelago", "volcano", "babyroom", "moon", "debug"]
 static var cardboard := false   # set at level build; enemies check it
 static var army_green := false  # baby room: little green army men
 
