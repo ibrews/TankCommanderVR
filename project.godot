@@ -18,7 +18,6 @@ Tune="*res://scripts/tune.gd"
 Game="*res://scripts/game.gd"
 Sfx="*res://scripts/audio.gd"
 NetManager="*res://scripts/net.gd"
-RenderFixups="*res://scripts/render_fixups.gd"
 
 [display]
 
