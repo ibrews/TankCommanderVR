@@ -1,3 +1,20 @@
+# Tank Commander VR v0.6.3
+
+## More VR hands fixes (round 3)
+- **Reverted the "every material two-sided" fix from v0.6.2** — it made the
+  cockpit interior worse (the tank's outer hull, previously correctly hidden
+  from inside, started showing through as a big flat panel). The actual
+  flipped-normal bugs still need individual fixes, not a blanket change.
+- **Controller model relit** — it was on the same dim lighting group as the
+  cockpit walls, which likely made it read as nearly invisible even when
+  correctly positioned. Now lit normally.
+- **Hands now show a small colored dot at the fingertip**: white/neutral by
+  default, yellow when near something grabbable, green while holding it —
+  so you can see whether the game even detects your hand near something.
+- Added an on-device debug readout (small text, always in view) showing
+  live tracking/grip/trigger numbers per hand — temporary, to figure out
+  exactly what's still not working with hand-tracking interaction.
+
 # Tank Commander VR v0.6.2
 
 ## VR hands fixes
