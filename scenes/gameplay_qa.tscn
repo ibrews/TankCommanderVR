@@ -1,0 +1,6 @@
+[gd_scene format=3]
+
+[ext_resource type="Script" path="res://scripts/gameplay_qa.gd" id="1"]
+
+[node name="GameplayQA" type="Node3D"]
+script = ExtResource("1")
