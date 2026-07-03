@@ -345,6 +345,7 @@ func start_game() -> void:
 		NetManager.setup_coop(player)
 	if not on_foot:
 		rig.call("attach_to_vehicle", vehicle)
+	_spawn_on_foot_pickables()
 	# the supporting cast
 	Npc.CabbageMan.spawn(world, terrain, vehicle)
 	if Levels.current.get("trees", 0) >= 100:
@@ -388,6 +389,30 @@ func _start_vo() -> void:
 # attachment) — enemies can still shoot it, no AI-driver feature, explicitly
 # out of scope. Only meaningful under a real XRRig (on-foot mode needs an
 # XROrigin3D ancestor for XRToolsPlayerBody); DesktopRig has no equivalent.
+# Scatter the three item-gated on-foot abilities near spawn so they're
+# discoverable whether the player starts as "runner" or exits a vehicle
+# mid-mission. Placement is deliberately simple (fixed offsets from spawn,
+# not a per-level design pass) — the plan doesn't specify level integration
+# beyond "pick up each of the three pickables and confirm the gated ability".
+func _spawn_on_foot_pickables() -> void:
+	var offsets := [
+		["grapple_hook", Vector2(6.0, 4.0)],
+		["climbing_gloves", Vector2(-6.0, 4.0)],
+		["energy_drink", Vector2(0.0, 8.0)],
+	]
+	for entry in offsets:
+		var pos := Vector2(Terrain.SPAWN_CENTER.x, Terrain.SPAWN_CENTER.y) + entry[1]
+		var prop: RigidBody3D
+		match entry[0]:
+			"grapple_hook":
+				prop = GrappleHookPickable.new()
+			"climbing_gloves":
+				prop = ClimbingGlovesPickable.new()
+			_:
+				prop = EnergyDrinkPickable.new()
+		world.add_child(prop)
+		prop.global_position = Vector3(pos.x, terrain.height(pos.x, pos.y) + 0.15, pos.y)
+
 func exit_vehicle() -> void:
 	if not (rig is XRRig) or current_vehicle == null or not is_instance_valid(current_vehicle):
 		return
