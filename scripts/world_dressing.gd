@@ -519,9 +519,16 @@ func _build_sea() -> void:
 			if absf(x0 + CELL * 0.5) < Terrain.HALF + CELL * 0.5 					and absf(z0 + CELL * 0.5) < Terrain.HALF + CELL * 0.5:
 				continue
 			cells += 1
+			# Winding was inverted (verified 2026-07-03 by the same
+			# geometric-winding-vs-stored-normal audit that caught the
+			# MeshKit.cyl() bug — cross product of the original vertex order
+			# pointed DOWN, opposite the Vector3.UP stored below; with the
+			# engine's default CULL_BACK material, this made the entire sea
+			# horizon skirt back-face-culled/invisible from above). Fix:
+			# swap the last two vertices of each triangle.
 			for v: Vector3 in [
-				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL),
-				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL), Vector3(x0, 0, z0 + CELL)]:
+				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL), Vector3(x0 + CELL, 0, z0),
+				Vector3(x0, 0, z0), Vector3(x0, 0, z0 + CELL), Vector3(x0 + CELL, 0, z0 + CELL)]:
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v)
 	var mi := MeshInstance3D.new()
@@ -584,9 +591,11 @@ func _build_lava() -> void:
 					break
 			if not wet:
 				continue
+			# Same inverted-winding bug as _build_sea() (identical copy-pasted
+			# quad-triangulation pattern) — same fix, verified the same way.
 			for v: Vector3 in [
-				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0), Vector3(x0 + 32, 0, z0 + 32),
-				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0 + 32), Vector3(x0, 0, z0 + 32)]:
+				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0 + 32), Vector3(x0 + 32, 0, z0),
+				Vector3(x0, 0, z0), Vector3(x0, 0, z0 + 32), Vector3(x0 + 32, 0, z0 + 32)]:
 				st.set_normal(Vector3.UP)
 				st.set_uv(Vector2(v.x, v.z) * 0.07)
 				st.add_vertex(v)
