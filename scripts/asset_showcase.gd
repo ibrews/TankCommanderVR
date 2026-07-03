@@ -81,6 +81,17 @@ const _DEBUG_WAYPOINTS := [
 	{"name": "giant_baby", "pos": Vector3(20, 55, 20), "look": Vector3(0, 8, 65)},
 	{"name": "mountains_groundlevel", "pos": Vector3(0, 8, 100), "look": Vector3(0, 40, 220)},
 	{"name": "mountains_heli_vantage", "pos": Vector3(0, 30, 0), "look": Vector3(140, 70, 140)},
+	# Close-ups on the prism-roof / cylinder-cap primitives that historically
+	# had winding-order bugs (MeshKit.prism + cyl caps, fixed 2026-07-02
+	# "checkpoint ~14:40" per the KB daily log) — re-checking they hold.
+	{"name": "closeup_village_house_roof", "pos": Vector3(-38, 8, 4), "look": Vector3(-28, 4, 10)},
+	{"name": "closeup_castle_keep_roof", "pos": Vector3(28, 22, -4), "look": Vector3(28, 12, 10)},
+	{"name": "closeup_castle_tower", "pos": Vector3(24, 10, 0), "look": Vector3(14, 8, 10)},
+	{"name": "closeup_enemy_ship_bow", "pos": Vector3(28, 4, -38), "look": Vector3(35, 2, -30)},
+	{"name": "closeup_player_boat_bow", "pos": Vector3(28, 4, -58), "look": Vector3(35, 1, -50)},
+	{"name": "closeup_city_building", "pos": Vector3(-22, 10, 4), "look": Vector3(-14, 8, 10)},
+	{"name": "ship_broadside_clean", "pos": Vector3(35, 6, -18), "look": Vector3(35, 2, -30)},
+	{"name": "city_building_exterior_clean", "pos": Vector3(-14, 9, -14), "look": Vector3(-14, 7, 10)},
 ]
 var _debug_step := 0
 
