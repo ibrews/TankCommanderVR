@@ -66,9 +66,19 @@ static func cyl(st: SurfaceTool, tf: Transform3D, bottom_r: float, top_r: float,
 		var n1 := (tf.basis * Vector3(d1.x, slope, d1.z)).normalized()
 		var u0 := float(i) / sides
 		var u1 := float(i + 1) / sides
-		var quad_v := [b0, b1, t1, b0, t1, t0]
-		var quad_n := [n0, n1, n1, n0, n1, n0]
-		var quad_uv := [Vector2(u0, 1), Vector2(u1, 1), Vector2(u1, 0), Vector2(u0, 1), Vector2(u1, 0), Vector2(u0, 0)]
+		# Side-wall winding: (b0,b1,t1)+(b0,t1,t0) computes INWARD-facing
+		# triangles (verified analytically — cross product of the actual
+		# vertex order points toward the Y axis, opposite the correct
+		# outward per-vertex normal below) — swapping each triangle's last
+		# two vertices flips it outward. Confirmed 2026-07-03 via a headless
+		# winding-vs-stored-normal audit across every cylinder-based mesh in
+		# the game (tank turret, planes, wheels, tree/palm trunks, ship
+		# funnel/mast/barrels, mortar tube...) — this was the actual cause
+		# of the "flipped normals" Alex saw, not the mountain terrain or a
+		# camera-angle illusion.
+		var quad_v := [b0, t1, b1, b0, t0, t1]
+		var quad_n := [n0, n1, n1, n0, n0, n1]
+		var quad_uv := [Vector2(u0, 1), Vector2(u1, 0), Vector2(u1, 1), Vector2(u0, 1), Vector2(u0, 0), Vector2(u1, 0)]
 		for k in 6:
 			st.set_color(col)
 			st.set_normal(quad_n[k])
