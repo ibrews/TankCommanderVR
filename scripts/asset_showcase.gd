@@ -28,6 +28,8 @@ var fx: FxPool
 var projectiles: Projectiles
 var wd: WorldDressing         # never added to the tree — see _building_at()/_tree_at() etc.
 var _dummy_player: Node3D     # any live vehicle works as the "player" ref enemies/NPCs need
+var _ctrl_l: Node3D
+var _ctrl_r: Node3D
 
 
 func _ready() -> void:
@@ -68,6 +70,33 @@ func _ready() -> void:
 	# (and no cost) for the normal editor-interactive use case.
 	if OS.get_environment("TC_SHOWCASE_SHOT") != "":
 		get_tree().create_timer(0.6).timeout.connect(_debug_shot_sequence)
+
+	# TC_FACING_TOUR=1 -- whole-project version of the single-object
+	# DEBUG_FACING check below. Applies the same front/back-face debug
+	# material to EVERY specimen in the showcase at once, then reuses the
+	# existing 17-waypoint tour (already covers nearly every model in the
+	# game) instead of writing bespoke close-ups per object. This is the
+	# scaled-up, cheap-to-rerun-forever version: no vision tokens spent by
+	# anyone, human or model, to inspect the output -- pair with
+	# tools/analyze_facing_debug.py (plain ImageMagick pixel-color
+	# threshold, zero AI/model involvement) to flag which shots have real
+	# red before a human or a frontier session looks at any of them.
+	if OS.get_environment("TC_FACING_TOUR") != "":
+		get_tree().create_timer(0.6).timeout.connect(func():
+			_apply_debug_facing(self)
+			_debug_shot_sequence())
+
+	# DEBUG_FACING=1 -- objective, viewpoint-relative front/back-face check.
+	# mesh_audit.gd only tests whether stored mesh DATA is self-consistent
+	# (winding vs. normal); it can't tell you what a specific vantage point
+	# actually sees, and it can't catch "camera/eye is inside a thin
+	# double-sided mesh's silhouette" (very plausible in a tight VR cockpit
+	# at close range) or a material with cull_disabled showing an interior
+	# surface on purpose. This colors every real GPU-computed backface
+	# bright red and every front face green, from the exact eye position a
+	# seated player uses -- removes all interpretation.
+	if OS.get_environment("DEBUG_FACING") != "":
+		get_tree().create_timer(0.6).timeout.connect(_debug_facing_shot)
 
 
 var _cam: Camera3D
@@ -111,6 +140,109 @@ func _debug_shot_sequence() -> void:
 	print("[showcase] shot ", wp["name"])
 	_debug_step += 1
 	get_tree().create_timer(0.15).timeout.connect(_debug_shot_sequence)
+
+
+# Front/back-face debug material: unshaded, double-sided, colors purely by
+# the GPU's own real-time FRONT_FACING determination for the current camera
+# — green means this triangle is genuinely front-facing from wherever the
+# camera is right now, red means it's genuinely back-facing. No lighting,
+# no interpretation, no "maybe it's just dim in here."
+func _debug_facing_mat() -> ShaderMaterial:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode cull_disabled, unshaded;
+
+void fragment() {
+	if (FRONT_FACING) {
+		ALBEDO = vec3(0.15, 0.95, 0.15);
+	} else {
+		ALBEDO = vec3(1.0, 0.05, 0.05);
+	}
+}
+"""
+	var mat := ShaderMaterial.new()
+	mat.shader = sh
+	return mat
+
+
+func _apply_debug_facing(root: Node) -> void:
+	if root is MeshInstance3D:
+		root.material_override = _debug_facing_mat()
+	for c in root.get_children():
+		_apply_debug_facing(c)
+
+
+# DEBUG_FACING=1 companion to _debug_shot_sequence() — targets specifically
+# the cockpit interior (restart lever + roof stiffener ribs, the two things
+# flagged as looking wrong in a live screenshot) from the real seated-eye
+# position, using the actual resolved node transforms rather than guessed
+# world coordinates.
+func _debug_facing_shot() -> void:
+	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://out"))
+	var tank: PlayerTank = _dummy_player
+	_apply_debug_facing(tank.cockpit["root"])
+	var seat: Node3D = tank.cockpit["seat_anchor"]
+	var eye_local: Vector3 = tank.cockpit["eye_local"]
+	var eye_pos: Vector3 = seat.to_global(eye_local)
+	var restart: Node3D = tank.cockpit["controls"]["restart"]
+	var rib_pos: Vector3 = tank.cockpit["root"].to_global(
+		Vector3((CockpitBuilder.X0 + CockpitBuilder.X1) / 2.0, CockpitBuilder.YR - 0.035, -0.02))
+
+	_cam.global_position = eye_pos
+	_cam.look_at(restart.global_position, Vector3.UP)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(
+		ProjectSettings.globalize_path("res://out/debug_facing_restart_lever.png"))
+	print("[showcase] debug_facing shot: restart_lever")
+
+	# First attempt at this shot looked from the seat, which sent the ray
+	# through the front periscope glass and picked up the tank's exterior
+	# hull instead (a framing mistake, not a finding). Shoot from close
+	# beneath the rib instead, short enough that the ray can't leave the
+	# cockpit through any wall opening.
+	_cam.global_position = rib_pos + Vector3(0, -0.5, 0.15)
+	_cam.look_at(rib_pos, Vector3.UP)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(
+		ProjectSettings.globalize_path("res://out/debug_facing_roof_rib.png"))
+	print("[showcase] debug_facing shot: roof_rib")
+
+	# Pull back for a wider reference shot of the whole cockpit in facing-debug mode
+	_cam.global_position = eye_pos + Vector3(0.6, 0.3, 0.6)
+	_cam.look_at(seat.global_position, Vector3.UP)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(
+		ProjectSettings.globalize_path("res://out/debug_facing_cockpit_wide.png"))
+	print("[showcase] debug_facing shot: cockpit_wide")
+
+	# Controller model — mesh_audit.gd reported 100% inverted winding across
+	# every submesh (y_button/trigger/thumbstick/squeeze/x_button/
+	# controller_mesh, all cull_mode=2/CULL_BACK), an unusually total result
+	# for an imported, previously-visually-confirmed-working asset. Close,
+	# well-framed shot first (normal materials, is it actually invisible or
+	# just badly framed in the wide row shot?), then the same vantage with
+	# the debug facing material applied (ground truth either way).
+	_cam.global_position = _ctrl_l.global_position + Vector3(0, 0.3, 1.2)
+	_cam.look_at(_ctrl_l.global_position, Vector3.UP)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(
+		ProjectSettings.globalize_path("res://out/debug_controller_normal.png"))
+	print("[showcase] debug_facing shot: controller_normal")
+
+	_apply_debug_facing(_ctrl_l)
+	await get_tree().process_frame
+	await get_tree().process_frame
+	get_viewport().get_texture().get_image().save_png(
+		ProjectSettings.globalize_path("res://out/debug_controller_facing.png"))
+	print("[showcase] debug_facing shot: controller_facing")
+
+	print("[showcase] debug_facing sequence done")
+	get_tree().quit(0)
 
 
 # ------------------------------------------------------------- environment
@@ -470,6 +602,7 @@ func _place_npc_row() -> void:
 	ctrl_l.global_position = Vector3(xs[2], terrain.height(xs[2], ROW_NPC) + 1.0, ROW_NPC)
 	ctrl_l.scale = Vector3.ONE * 6.0   # controllers are hand-sized — scaled up so the grid label reads clearly
 	_label("TOUCH CONTROLLER (L)\n(MIT-licensed glb asset)", ctrl_l.global_position + Vector3(0, 1.4, 0), 36)
+	_ctrl_l = ctrl_l
 
 	var ctrl_r := ControllerVisual.new()
 	ctrl_r.is_left = false
@@ -477,6 +610,7 @@ func _place_npc_row() -> void:
 	_freeze(ctrl_r)
 	ctrl_r.global_position = Vector3(xs[3], terrain.height(xs[3], ROW_NPC) + 1.0, ROW_NPC)
 	ctrl_r.scale = Vector3.ONE * 6.0
+	_ctrl_r = ctrl_r
 	_label("TOUCH CONTROLLER (R)\n(MIT-licensed glb asset)", ctrl_r.global_position + Vector3(0, 1.4, 0), 36)
 
 

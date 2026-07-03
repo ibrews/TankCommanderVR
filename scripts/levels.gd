@@ -204,7 +204,7 @@ const CONFIGS := {
 	},
 }
 
-const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "archipelago", "volcano", "babyroom"]
+const ORDER := ["outdoor", "city", "town", "mudpit", "castle", "gym", "beach", "island", "archipelago", "volcano", "babyroom", "debug"]
 static var cardboard := false   # set at level build; enemies check it
 static var army_green := false  # baby room: little green army men
 

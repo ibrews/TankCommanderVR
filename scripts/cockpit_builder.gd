@@ -111,6 +111,13 @@ static func _build_static(root: Node3D) -> void:
 	MeshKit.box(st, Transform3D(Basis(), Vector3((X0 + X1) / 2, YR, (Z0 + Z1) / 2)), Vector3(X1 - X0, w, Z1 - Z0), STEEL)
 	# hatch ring detail on roof above seat
 	MeshKit.cyl(st, Transform3D(Basis(), Vector3(EYE.x, YR - 0.03, EYE.z)), 0.30, 0.30, 0.03, 12, STEEL_DARK, false, false)
+	# restart-lever mounting bracket — the lever itself hangs from this exact
+	# roof point (see `restart` in _build_controls()) with no visible anchor
+	# otherwise, reading as a bare handle floating in space. Small hinge
+	# plate + eyebolt ring, same idea as the hatch ring above but sized for
+	# a hand lever rather than a hatch.
+	MeshKit.box(st, Transform3D(Basis(), Vector3(EYE.x - 0.33, YR - 0.015, 0.12)), Vector3(0.08, 0.03, 0.08), STEEL_DARK)
+	MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(EYE.x - 0.33, YR - 0.045, 0.12)), 0.018, 0.018, 0.03, 8, STEEL_DARK)
 
 	# ---- wall dressing: a fighting compartment is BUSY — bare walls read as
 	# unfinished geometry in-headset. Same merged mesh, zero extra draw calls.

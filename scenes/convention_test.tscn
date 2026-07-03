@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://convention_t1"]
+
+[ext_resource type="Script" path="res://tools/convention_test.gd" id="1"]
+
+[node name="ConventionTest" type="Node3D"]
+script = ExtResource("1")

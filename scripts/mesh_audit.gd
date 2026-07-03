@@ -159,13 +159,24 @@ func _ready() -> void:
 	wd._build_lava()
 	_reparent_new(wd, before, "WorldDressing._build_lava() (quad grid)")
 
+	# CockpitBuilder.build() — previously explicitly excluded (see prior
+	# version of this comment) as belonging to a sibling session's contested
+	# in-progress on-foot-feature file; that work merged to master the same
+	# night and cockpit_builder.gd has been directly edited since (restart-
+	# lever mounting bracket, 2026-07-03), so there's no reason left to skip
+	# it. This is the real tank interior a player actually sees, including
+	# the restart lever and roof stiffener ribs specifically flagged as
+	# looking wrong in a live screenshot — first real analytical check either
+	# has ever had.
+	var cockpit_out: Dictionary = CockpitBuilder.build(self)
+	_check_node_tree("CockpitBuilder.build() (tank interior — restart lever, roof ribs, all controls; FIRST TIME AUDITED)", cockpit_out["root"])
+
 	print("\n========== DONE ==========\n")
 	print("Still NOT covered by anything above: runtime-only geometry (VR hand")
 	print("poses, cockpit control state-dependent visuals, net.gd/xr_rig.gd/")
-	print("cockpit_builder.gd/player_alt.gd/main.gd content — deliberately")
-	print("untouched, belongs to a sibling session's in-progress on-foot feature)")
-	print("and any bug class other than winding-vs-normal-mismatch or negative-")
-	print("determinant-transform — e.g. a wrong-but-SELF-CONSISTENT normal")
+	print("player_alt.gd/main.gd content) and any bug class other than winding-")
+	print("vs-normal-mismatch or negative-determinant-transform — e.g. a wrong-")
+	print("but-SELF-CONSISTENT normal")
 	print("(shades wrong, no mismatch — this test structurally cannot see that)")
 	print("or a material/lighting issue that only LOOKS like flipped geometry.")
 	print("If Alex reports something specific after this, get the exact object +")
@@ -204,7 +215,21 @@ func _check(label: String, mesh: ArrayMesh) -> void:
 				continue  # degenerate (zero-area) triangle — e.g. a cone apex where two verts coincide; winding is undefined/meaningless, not a real visual bug
 			var winding_normal := cross.normalized()
 			var stored_normal: Vector3 = norms[i0]
-			if winding_normal.dot(stored_normal) > 0.0:
+			# CONVENTION FIX 2026-07-03 (second, opposite correction): Godot
+			# front faces are CLOCKWISE — verified empirically via
+			# tools/convention_test.gd (a single RHR/CCW-wound triangle with
+			# CULL_BACK renders ONLY from behind its RHR cross-product
+			# normal). Correct geometry therefore has the RHR cross product
+			# pointing OPPOSITE the stored outward normal: dot < 0 is
+			# correct, dot > 0 is the inside-out bug. The original version
+			# of this check had it backwards (dot > 0 counted as "agree"),
+			# which validated the globally-flipped MeshKit output, drove the
+			# 8ccd1fc cylinder "fix" that actually flipped cylinders from
+			# correct to wrong, and flagged the correctly-imported .glb
+			# controller model as "100% REAL BUG". Alex's in-headset report
+			# ("~70% of normals are inverted — I have depth perception") was
+			# what finally exposed it.
+			if winding_normal.dot(stored_normal) < 0.0:
 				agree += 1
 			else:
 				mismatch += 1
@@ -212,7 +237,7 @@ func _check(label: String, mesh: ArrayMesh) -> void:
 					first_bad = i
 		print("  surface %d: cull_mode=%d tris=%d agree=%d mismatch=%d%s" % [
 			s, cull_mode, tri_count, agree, mismatch,
-			("  <<< MISMATCH (first bad tri #%d, centroid %s) — REAL BUG" % [
+			("  <<< MISMATCH (first bad tri #%d, centroid %s) — wound counter-clockwise = Godot BACKFACE, renders inside-out" % [
 				first_bad, (verts[idx[first_bad*3]] if idx != null else verts[first_bad*3])]
 			) if mismatch > 0 else ""])
 

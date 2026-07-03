@@ -39,6 +39,37 @@ func _ready() -> void:
 			var w: Weather = get_tree().get_first_node_in_group("weather")
 			if w:
 				w.start_disaster(["tornado", "volcano", "hurricane"][Game.rng.randi() % 3]))
+	if "--rain" in args:
+		# Deterministic real-weather screenshot capture — the rain/lightning
+		# system (weather.gd's SkyState machine) otherwise only fires on a
+		# random ~22% timer check, so docs/screenshots/ never actually got a
+		# real rain shot (the existing "disaster_" prefix is the separate
+		# tornado/volcano/hurricane easter egg, not this). Self-contained:
+		# starts a level directly (same fields autostart.cfg sets), drives,
+		# forces the storm, waits out its ~12s BUILDING phase, screenshots.
+		get_tree().create_timer(1.0).timeout.connect(func():
+			Game.mode = Game.Mode.SOLO
+			Game.level_id = "beach"
+			Game.difficulty = 1
+			Game.mutator = ""
+			Game.vehicle = "tank"
+			Game.time_of_day = 0
+			start_game()
+			get_tree().create_timer(2.0).timeout.connect(func():
+				if player:
+					player.quick_start()
+					player.set_stick_drive(Vector2(0.2, 1.0))
+				var w: Weather = get_tree().get_first_node_in_group("weather")
+				if w:
+					w.force_storm(1.0, 60.0)
+				get_tree().create_timer(13.0).timeout.connect(func():
+					var cam: Camera3D = rig.get("camera")
+					cam.top_level = true
+					var p: Vector3 = player.global_position
+					cam.global_position = p + Vector3(-7.0, 4.5, -9.0)
+					cam.look_at(p + Vector3(0, 1.5, 0))
+					_shot(cam, "rain_storm")
+					get_tree().quit(0))))
 	if "--mp-host" in args:
 		Game.mode = Game.Mode.COOP
 		Game.level_id = "outdoor"
@@ -175,6 +206,17 @@ func _set_underwater_audio(on: bool) -> void:
 
 # ---------------------------------------------------------------- rig
 func _setup_rig() -> void:
+	# --rain (screenshot verification, see the --rain block in _ready())
+	# always wants the plain desktop camera, matching every other SHOT_*/
+	# --shots capture — a Meta XR Simulator or Quest Link runtime merely
+	# being *installed and running* on the dev machine is enough for
+	# is_initialized() to report true even with no headset attached, which
+	# would otherwise silently switch this capture to XRRig's stereo camera.
+	if "--rain" in OS.get_cmdline_user_args():
+		rig = DesktopRig.new()
+		print("[main] desktop fallback rig (forced by --rain)")
+		add_child(rig)
+		return
 	var xr := XRServer.find_interface("OpenXR")
 	if xr and xr.is_initialized():
 		get_viewport().use_xr = true

@@ -88,6 +88,14 @@ func _unhandled_input(event: InputEvent) -> void:
 				_apply_camera_mode()
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
+			KEY_BACKSPACE:
+				# Return to menu — same gap as XRRig's menu_button fallback:
+				# the physical "menu_switch" cockpit toggle depends on the
+				# currently-broken vrcontrols discovery, so there was
+				# otherwise no keyboard path back to the menu mid-level.
+				var m := get_tree().get_first_node_in_group("main")
+				if m:
+					m.call_deferred("to_menu")
 
 func _physics_process(_delta: float) -> void:
 	if tank == null:

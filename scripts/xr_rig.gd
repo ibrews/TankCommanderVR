@@ -288,11 +288,13 @@ func _ready() -> void:
 	# OnFootBody crashes every physics frame.
 	camera.name = "Camera"
 	add_child(camera)
-	# Temporary on-device diagnostic readout (2026-07-02) — pinned to the
-	# camera so it's always in view. Two rounds of "still doesn't work"
-	# reports with no way to tell WHY from here; this gives real numbers
-	# instead of another guess. Remove once hand-tracking interaction is
-	# confirmed solid on-device.
+	# On-device diagnostic readout (2026-07-02) — pinned to the camera so
+	# it's always in view. Confirmed hand-tracking/controller input is
+	# reading correctly on-device (2026-07-03), so hidden by default now —
+	# left in place (and still updated each frame in _update_debug_label())
+	# rather than ripped out, in case a future input regression needs the
+	# same quick on-device readout again. Flip `visible = true` to bring it
+	# back.
 	_debug_label = Label3D.new()
 	_debug_label.font_size = 24
 	_debug_label.pixel_size = 0.0012
@@ -300,6 +302,7 @@ func _ready() -> void:
 	_debug_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
 	_debug_label.no_depth_test = true
 	_debug_label.modulate = Color(1, 1, 0.6)
+	_debug_label.visible = false
 	camera.add_child(_debug_label)
 	hand_l = XRHand.new("left_hand")
 	hand_l.rig = self
@@ -612,6 +615,20 @@ func _physics_process(delta: float) -> void:
 	if hand_l.is_button_pressed("primary_click") and not get_meta("lsc_was", false):
 		tank.call("quick_start")
 	set_meta("lsc_was", hand_l.is_button_pressed("primary_click"))
+	# Return-to-menu fallback: the physical "menu_switch" cockpit toggle
+	# (cockpit_builder.gd) calls main.to_menu() correctly, but it's poke-only
+	# and depends on the same vrcontrols-group discovery that's currently
+	# broken (see docs/EVOLUTION.md / KB), so there was otherwise no working
+	# way back to the menu once a level starts. The system menu button is
+	# only read here while NOT already in the menu (see _menu_pointer(),
+	# which reads it for UI clicks while Game.state == MENU) so the two
+	# never conflict.
+	var menu_pressed := hand_l.is_button_pressed("menu_button") or hand_r.is_button_pressed("menu_button")
+	if menu_pressed and not get_meta("menu_btn_was", false):
+		var m := get_tree().get_first_node_in_group("main")
+		if m:
+			m.call_deferred("to_menu")
+	set_meta("menu_btn_was", menu_pressed)
 	_check_easter_egg(delta)
 	_feed_arm_swing(delta)
 

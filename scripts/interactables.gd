@@ -16,6 +16,18 @@ var enabled := true
 var handle: MeshInstance3D = null
 var _handle_mat: StandardMaterial3D = null
 
+func _ready() -> void:
+	# THE missing line, found 2026-07-03: xr_rig.gd's grab loop
+	# (_nearest_control()) and poke loop both discover controls exclusively
+	# via get_tree().get_nodes_in_group("vrcontrols") — and nothing in the
+	# repo's entire history ever joined that group, so physically grabbing/
+	# poking any cockpit control (including the hatch lever that gates the
+	# whole on-foot mode mid-mission) never worked on a real rig. Every
+	# in-game/QA path that DID work reached controls directly through the
+	# cockpit["controls"] dict instead. See
+	# kb: godot-xr-controls-group-never-populated.
+	add_to_group("vrcontrols")
+
 func grab_point() -> Vector3:
 	return handle.global_position if handle else global_position
 

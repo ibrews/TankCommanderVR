@@ -42,7 +42,14 @@ static func box(st: SurfaceTool, tf: Transform3D, size: Vector3, col: Color, uv_
 				Vector2(u_len * 2.0 * uv_scale, 0), Vector2(0, 0),
 			]
 		var w_nrm := (tf.basis * nrm).normalized()
-		for idx in [0, 1, 2, 0, 2, 3]:
+		# [0,2,1, 0,3,2] not [0,1,2, 0,2,3]: Godot front faces are CLOCKWISE
+		# (verified empirically 2026-07-03 — tools/convention_test.gd renders a
+		# single RHR-wound triangle visible ONLY from behind its RHR normal).
+		# The original CCW order made every box in the game show its far-side
+		# interior instead of its exterior — near-invisible on flat screenshots
+		# (same silhouette), blatant in VR stereo. Alex's "70% of normals are
+		# inverted" depth-perception report was correct.
+		for idx in [0, 2, 1, 0, 3, 2]:
 			st.set_color(col)
 			st.set_normal(w_nrm)
 			st.set_uv(uvs[idx])
@@ -66,38 +73,38 @@ static func cyl(st: SurfaceTool, tf: Transform3D, bottom_r: float, top_r: float,
 		var n1 := (tf.basis * Vector3(d1.x, slope, d1.z)).normalized()
 		var u0 := float(i) / sides
 		var u1 := float(i + 1) / sides
-		# Side-wall winding: (b0,b1,t1)+(b0,t1,t0) computes INWARD-facing
-		# triangles (verified analytically — cross product of the actual
-		# vertex order points toward the Y axis, opposite the correct
-		# outward per-vertex normal below) — swapping each triangle's last
-		# two vertices flips it outward. Confirmed 2026-07-03 via a headless
-		# winding-vs-stored-normal audit across every cylinder-based mesh in
-		# the game (tank turret, planes, wheels, tree/palm trunks, ship
-		# funnel/mast/barrels, mortar tube...) — this was the actual cause
-		# of the "flipped normals" Alex saw, not the mountain terrain or a
-		# camera-angle illusion.
-		var quad_v := [b0, t1, b1, b0, t0, t1]
-		var quad_n := [n0, n1, n1, n0, n0, n1]
-		var quad_uv := [Vector2(u0, 1), Vector2(u1, 0), Vector2(u1, 1), Vector2(u0, 1), Vector2(u0, 0), Vector2(u1, 0)]
+		# Side-wall winding (b0,b1,t1)+(b0,t1,t0): CLOCKWISE viewed from
+		# outside — Godot's front-face convention (verified empirically
+		# 2026-07-03 via tools/convention_test.gd). This RESTORES the
+		# original order: the 2026-07-03 morning "fix" (8ccd1fc) swapped it
+		# to RHR/counter-clockwise based on mesh_audit.gd, whose
+		# winding-vs-normal check was itself written with the RHR convention
+		# — i.e. the audit validated backwards geometry and flagged correct
+		# geometry, so that "fix" actually flipped every cylinder in the
+		# game from correct to inside-out. RHR cross products DISAGREE with
+		# the stored outward normals here by design: Godot culling wants CW,
+		# lighting wants the true outward normal.
+		var quad_v := [b0, b1, t1, b0, t1, t0]
+		var quad_n := [n0, n1, n1, n0, n1, n0]
+		var quad_uv := [Vector2(u0, 1), Vector2(u1, 1), Vector2(u1, 0), Vector2(u0, 1), Vector2(u1, 0), Vector2(u0, 0)]
 		for k in 6:
 			st.set_color(col)
 			st.set_normal(quad_n[k])
 			st.set_uv(quad_uv[k])
 			st.add_vertex(tf * quad_v[k])
-		# Caps: wound so the CCW-front face points OUTWARD (down for the bottom,
-		# up for the top). The earlier [center, b1, b0] / [center, t0, t1] order
-		# was reversed, so caps were back-face culled from outside — barrels and
-		# funnels read as hollow tubes. Order below matches the outward normal.
+		# Caps: wound CLOCKWISE as seen from the side they face (below for the
+		# bottom cap, above for the top) — Godot front = CW, same convention
+		# note as the side walls above. [center,b1,b0] / [center,t0,t1].
 		if cap_bottom and bottom_r > 0.0:
 			var nb := (tf.basis * Vector3.DOWN).normalized()
-			for v in [Vector3(0, -hh, 0), b0, b1]:
+			for v in [Vector3(0, -hh, 0), b1, b0]:
 				st.set_color(col)
 				st.set_normal(nb)
 				st.set_uv(Vector2(0.5 + v.x * 0.1, 0.5 + v.z * 0.1))
 				st.add_vertex(tf * v)
 		if cap_top and top_r > 0.0:
 			var nt := (tf.basis * Vector3.UP).normalized()
-			for v in [Vector3(0, hh, 0), t1, t0]:
+			for v in [Vector3(0, hh, 0), t0, t1]:
 				st.set_color(col)
 				st.set_normal(nt)
 				st.set_uv(Vector2(0.5 + v.x * 0.1, 0.5 + v.z * 0.1))
@@ -122,7 +129,13 @@ static func prism(st: SurfaceTool, tf: Transform3D, width: float, depth: float, 
 		[d, a, r0], [b, c, r1],
 	]
 	for t in tris:
-		var nrm: Vector3 = ((t[1] - t[0]).cross(t[2] - t[0])).normalized()
+		# Winding here is already clockwise-from-outside (Godot front-face
+		# convention — the ONE primitive that always was; roofs never looked
+		# inverted). But the stored lighting normal was computed as the raw
+		# RHR cross product, which for CW winding points INTO the solid —
+		# roofs were culled correctly yet lit from inside. Negate it so
+		# lighting normals point outward like box()/cyl().
+		var nrm: Vector3 = -((t[1] - t[0]).cross(t[2] - t[0])).normalized()
 		nrm = (tf.basis * nrm).normalized()
 		for v in t:
 			st.set_color(col)
