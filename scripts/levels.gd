@@ -171,6 +171,22 @@ const CONFIGS := {
 		"sun_energy": 1.05,
 		"calm_track": "music_toy",
 	},
+	"debug": {
+		"title": "DEBUG: KITCHEN SINK",
+		"rolling": 1.5, "dunes": false, "pond": false, "coast": true,
+		"flatten": [[Vector2(0, 0), 90.0, 1.0]],
+		"trees": 20, "palms": 10, "rocks": 20,
+		"village": {"center": Vector2(-90, -90), "count": 4, "spread": 18.0},
+		"city": {}, "castle": {}, "mud": [],
+		"wrecks": 1,
+		"ships": 1,
+		"arena_radius": 130.0,
+		"spawn": Vector2(0, 40),
+		"mortars": [Vector2(40, 20)],
+		"tint": Color(1, 1, 1),
+		"sun_energy": 1.25,
+		"debug_kitchen_sink": true,  # main.gd spawns one-of-everything at close range
+	},
 	"castle": {
 		"title": "CASTLE",
 		"rolling": 6.0, "dunes": false, "pond": false,

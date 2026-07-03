@@ -21,7 +21,10 @@ func _ready() -> void:
 	shape.position = Vector3(0, 0.03, 0)
 	add_child(shape)
 	super._ready()
-	picked_up.connect(func(_p): _set_climb_enabled(true))
+	picked_up.connect(func(_p):
+		_set_climb_enabled(true)
+		Sfx.play_at("click", global_position, -4.0, 0.9)
+		_pulse_holder(0.4, 0.06))
 	dropped.connect(func(_p): _set_climb_enabled(false))
 
 func _build_mesh() -> void:
@@ -37,6 +40,11 @@ func _build_mesh() -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.75, 0.05))
 	add_child(mi)
+
+func _pulse_holder(amp: float, dur: float) -> void:
+	var ctrl := get_picked_up_by_controller()
+	if ctrl and ctrl.has_method("pulse"):
+		ctrl.pulse(amp, dur)
 
 func _set_climb_enabled(on: bool) -> void:
 	var m := get_tree().get_first_node_in_group("main")

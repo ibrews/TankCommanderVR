@@ -493,6 +493,23 @@ func _build_on_foot_nodes() -> void:
 	hand_r.add_child(_grapple_r)
 	_grapple_r.owner = self
 
+	_wire_on_foot_haptics()
+
+# The addon's own movement providers have zero haptic feedback wired in —
+# grappling, climbing, and sprinting all currently feel silent/numb on a
+# real controller. Both hands pulse together for simplicity (matches the
+# existing easter-egg pattern below) rather than tracking exactly which
+# hand triggered each provider.
+func _wire_on_foot_haptics() -> void:
+	_grapple_l.grapple_started.connect(_pulse_both.bind(0.55, 0.08))
+	_grapple_r.grapple_started.connect(_pulse_both.bind(0.55, 0.08))
+	_climb.player_climb_start.connect(_pulse_both.bind(0.3, 0.05))
+	_sprint.sprinting_started.connect(_pulse_both.bind(0.2, 0.1))
+
+func _pulse_both(amp: float, dur: float) -> void:
+	hand_l.pulse(amp, dur)
+	hand_r.pulse(amp, dur)
+
 # Called once by main.gd right after constructing a fresh OnFootBody (it needs
 # terrain/projectiles/fx, so unlike the nodes above it can't be built here).
 func set_on_foot_body(body: OnFootBody) -> void:
