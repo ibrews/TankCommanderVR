@@ -40,6 +40,7 @@ class XRHand:
 	# effective_grip() below.
 	var hand_mesh: XRNode3D
 	var hand_aim: XRController3D
+	var _interact_mat: StandardMaterial3D
 
 	func _init(tracker_name: String) -> void:
 		tracker = tracker_name
@@ -49,6 +50,22 @@ class XRHand:
 		poke_tip = Node3D.new()
 		poke_tip.position = Vector3(0, -0.01, -0.06)
 		add_child(poke_tip)
+		# Interaction-state indicator: neutral/dim normally, yellow when near
+		# something grabbable or pokeable, green while actively holding it.
+		# Unshaded so it's always clearly visible regardless of cockpit
+		# lighting (unlike the controller model — see the layer/lighting note
+		# on ControllerVisual).
+		_interact_mat = StandardMaterial3D.new()
+		_interact_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+		_interact_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+		_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
+		var indicator := MeshInstance3D.new()
+		var ism := SphereMesh.new()
+		ism.radius = 0.018
+		ism.height = 0.036
+		indicator.mesh = ism
+		indicator.material_override = _interact_mat
+		poke_tip.add_child(indicator)
 		# Real Touch controller model. OpenXRFbRenderModel (XR_FB_render_model)
 		# would be the zero-asset way to do this, but it's confirmed NOT
 		# supported on Quest 3S specifically (Khronos runtime extension matrix,
@@ -114,6 +131,7 @@ class XRHand:
 		controller_model.visible = get_has_tracking_data()
 		if Game.state == Game.GState.MENU:
 			_menu_pointer()
+			_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
 			return
 		laser.visible = false
 		if rig.tank == null:
@@ -143,10 +161,18 @@ class XRHand:
 		# once the controller's untracked and this node's own transform has gone
 		# stale, so fall back to the live hand-tracking position instead.
 		var tip := poke_tip.global_position if get_has_tracking_data() else hand_pos()
+		var poke_near := false
 		for c in get_tree().get_nodes_in_group("vrcontrols"):
 			var vc := c as VRControl
 			if vc and not vc.can_grab() and vc.enabled and vc.global_position.distance_to(tip) < 0.25:
 				vc.poke_check(tip, delta)
+				poke_near = true
+		if holding != null:
+			_interact_mat.albedo_color = Color(0.3, 1.0, 0.3, 0.9)
+		elif _last_near != null or poke_near:
+			_interact_mat.albedo_color = Color(1.0, 0.85, 0.15, 0.75)
+		else:
+			_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
 		if holding is VRControl.TwoAxisGrip:
 			if effective_trigger() > 0.6 and not get_meta("trig_was", false):
 				rig.tank.call("fire_primary")
@@ -218,9 +244,24 @@ class XRHand:
 func _init() -> void:
 	name = "XRRig"
 
+var _debug_label: Label3D
+
 func _ready() -> void:
 	camera = XRCamera3D.new()
 	add_child(camera)
+	# Temporary on-device diagnostic readout (2026-07-02) — pinned to the
+	# camera so it's always in view. Two rounds of "still doesn't work"
+	# reports with no way to tell WHY from here; this gives real numbers
+	# instead of another guess. Remove once hand-tracking interaction is
+	# confirmed solid on-device.
+	_debug_label = Label3D.new()
+	_debug_label.font_size = 24
+	_debug_label.pixel_size = 0.0012
+	_debug_label.position = Vector3(0, -0.12, -0.5)
+	_debug_label.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_debug_label.no_depth_test = true
+	_debug_label.modulate = Color(1, 1, 0.6)
+	camera.add_child(_debug_label)
 	hand_l = XRHand.new("left_hand")
 	hand_l.rig = self
 	add_child(hand_l)
@@ -340,7 +381,19 @@ func _apply_camera_mode() -> void:
 func _apply_view_offset() -> void:
 	position = _fp_pos + (Vector3(0, 3.0, 8.0) if Game.third_person else Vector3.ZERO)
 
+func _update_debug_label() -> void:
+	_debug_label.text = "%s\n%s" % [_hand_debug_line("L", hand_l), _hand_debug_line("R", hand_r)]
+
+func _hand_debug_line(tag: String, h: XRHand) -> String:
+	var ctl := "Y" if h.get_has_tracking_data() else "n"
+	var hnd := "Y" if (h.hand_mesh and h.hand_mesh.get_has_tracking_data()) else "n"
+	var aim_ok := "Y" if (h.hand_aim != null) else "n"
+	return "%s ctl=%s hnd=%s aim=%s grp=%.2f trg=%.2f near=%s hold=%s" % [
+		tag, ctl, hnd, aim_ok, h.effective_grip(), h.effective_trigger(),
+		"Y" if h._last_near else "n", "Y" if h.holding else "n"]
+
 func _physics_process(delta: float) -> void:
+	_update_debug_label()
 	if Game.state == Game.GState.MENU or tank == null:
 		return
 	if not _calibrated:
