@@ -343,10 +343,12 @@ func start_game() -> void:
 		world.add_child(vehicle)
 		current_vehicle = vehicle
 	projectiles.cam = rig.get("camera")
+	var enemy_manager: EnemyManager = null
 	if Game.mode == Game.Mode.COOP and NetManager.is_client():
 		world.add_child(NetManager.make_replica_pool(terrain))
 	else:
-		world.add_child(EnemyManager.new(terrain, projectiles, fx, vehicle))
+		enemy_manager = EnemyManager.new(terrain, projectiles, fx, vehicle)
+		world.add_child(enemy_manager)
 	if Game.mode == Game.Mode.VERSUS:
 		NetManager.setup_versus(world, terrain, projectiles, fx, player)
 	elif Game.mode == Game.Mode.COOP:
@@ -354,6 +356,8 @@ func start_game() -> void:
 	if not on_foot:
 		rig.call("attach_to_vehicle", vehicle)
 	_spawn_on_foot_pickables()
+	if Levels.current.get("debug_kitchen_sink", false) and enemy_manager:
+		_spawn_debug_kitchen_sink(enemy_manager, vehicle)
 	# the supporting cast
 	Npc.CabbageMan.spawn(world, terrain, vehicle)
 	if Levels.current.get("trees", 0) >= 100:
@@ -421,6 +425,56 @@ func _spawn_on_foot_pickables() -> void:
 		world.add_child(prop)
 		prop.global_position = Vector3(pos.x, terrain.height(pos.x, pos.y) + 0.15, pos.y)
 
+# "DEBUG: KITCHEN SINK" level (Levels.CONFIGS["debug"]) — one of every enemy
+# type at close range, all immediately within detect_range_day (150m) so
+# they engage right away, for smoke-testing that every 3D model/AI/vehicle
+# type still works after a change without waiting through wave escalation
+# or traveling far. NPCs and the three on-foot pickables are already spawned
+# unconditionally by start_game() regardless of level, so nothing extra is
+# needed for those here.
+func _spawn_debug_kitchen_sink(enemy_manager: EnemyManager, vehicle: Node3D) -> void:
+	var et := EnemyTank.new(terrain, projectiles, fx, vehicle)
+	enemy_manager.add_child(et)
+	et.global_position = Vector3(28.0, terrain.height(28.0, 15.0) + 0.04, 15.0)
+
+	var jeep := EnemyLight.Jeep.new(terrain, projectiles, fx, vehicle)
+	enemy_manager.add_child(jeep)
+	jeep.global_position = Vector3(-28.0, terrain.height(-28.0, 15.0) + 0.05, 15.0)
+
+	for k in 3:
+		var g := EnemyLight.Gunner.new(terrain, projectiles, vehicle)
+		enemy_manager.add_child(g)
+		var off := Vector3(Game.rng.randf_range(-4, 4), 0, Game.rng.randf_range(-4, 4))
+		g.global_position = Vector3(0.0, 0, -30.0) + off
+		g.global_position.y = terrain.height(g.global_position.x, g.global_position.z) + 0.05
+
+	var mortar := EnemyLight.Mortar.new(terrain, projectiles, fx, vehicle)
+	enemy_manager.add_child(mortar)
+	mortar.global_position = Vector3(40.0, terrain.height(40.0, 20.0) + 0.1, 20.0)
+
+	var plane := EnemyPlane.new(terrain, projectiles, fx, vehicle)
+	enemy_manager.add_child(plane)
+	plane.global_position = Vector3(60.0, 55.0, -40.0)
+
+	if Levels.current.get("ships", 0) > 0:
+		var ship := EnemyShip.new(terrain, projectiles, fx, vehicle)
+		enemy_manager.add_child(ship)
+		ship.global_position = _ring_pos_from(terrain, 60.0, 90.0, true)
+
+# Same water-seeking search EnemyManager._ring_pos() uses, factored out so
+# the debug spawner doesn't need an EnemyManager instance just for this.
+func _ring_pos_from(t: Terrain, r_min: float, r_max: float, want_water: bool) -> Vector3:
+	var pos := Vector3.ZERO
+	for i in 40:
+		var a := Game.rng.randf() * TAU
+		var r := Game.rng.randf_range(r_min, r_max)
+		pos = Vector3(cos(a) * r, 0, sin(a) * r)
+		var h := t.height(pos.x, pos.z)
+		if want_water and h < -1.8:
+			break
+	pos.y = -0.8 if want_water else t.height(pos.x, pos.z) + 0.1
+	return pos
+
 func exit_vehicle() -> void:
 	if not (rig is XRRig) or current_vehicle == null or not is_instance_valid(current_vehicle):
 		return
@@ -433,13 +487,25 @@ func exit_vehicle() -> void:
 	if rig.on_foot_body == null or not is_instance_valid(rig.on_foot_body):
 		rig.call("set_on_foot_body", OnFootBody.new(terrain, projectiles, fx))
 	rig.call("enter_on_foot", world, dismount)
+	# climbing-out clank + boots-hit-ground thud, with a haptic pulse on both
+	# hands so the transition reads physically, not just as a scene cut
+	Sfx.play_at("switch", v.global_position, -2.0, 0.85)
+	Sfx.play_at("thud", dismount_pos, 0.0, 0.9)
+	rig.hand_l.pulse(0.35, 0.12)
+	rig.hand_r.pulse(0.35, 0.12)
 
 func enter_vehicle(v: Node3D) -> void:
 	if not (rig is XRRig) or v == null or not is_instance_valid(v):
 		return
 	if Game.player_mode != Game.PlayerMode.ON_FOOT:
 		return
+	var at := v.global_position
 	rig.call("attach_to_vehicle", v)
+	# climbing-in clank + seat click, same haptic language as exit_vehicle()
+	Sfx.play_at("switch", at, -2.0, 1.05)
+	Sfx.play_at("click", at, -4.0)
+	rig.hand_l.pulse(0.3, 0.1)
+	rig.hand_r.pulse(0.3, 0.1)
 
 func _clear_world() -> void:
 	if world:

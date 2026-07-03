@@ -24,6 +24,7 @@ func _ready() -> void:
 	shape.position = Vector3(0, 0.06, 0)
 	add_child(shape)
 	super._ready()
+	picked_up.connect(func(_p): _pulse_holder(0.3, 0.05))
 	action_pressed.connect(_on_action_pressed)
 
 func _build_mesh() -> void:
@@ -34,7 +35,15 @@ func _build_mesh() -> void:
 	mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.35, 0.35))
 	add_child(mi)
 
+func _pulse_holder(amp: float, dur: float) -> void:
+	var ctrl := get_picked_up_by_controller()
+	if ctrl and ctrl.has_method("pulse"):
+		ctrl.pulse(amp, dur)
+
 func _on_action_pressed(_p) -> void:
+	# crack it open + a jolt of haptic energy before the sprint boost lands
+	Sfx.play_at("pop", global_position, -2.0, 1.1)
+	_pulse_holder(0.6, 0.15)
 	var m := get_tree().get_first_node_in_group("main")
 	if m and m.rig is XRRig:
 		var r: XRRig = m.rig

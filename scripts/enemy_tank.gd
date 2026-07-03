@@ -98,8 +98,22 @@ func _apply_skin() -> void:
 			(turret.get_child(0) as MeshInstance3D).material_override = card
 
 func _pick_waypoint() -> void:
-	var a := Game.rng.randf() * TAU
 	var r := Game.rng.randf_range(40.0, minf(170.0, terrain.arena_radius * 0.8))
+	var a: float
+	if Game.rng.randf() < 0.5:
+		# Bias roughly half of patrol legs toward wherever the player
+		# currently is (relative to map center, ± a wide fan) — not a
+		# beeline, still just picking a random point, just angled so tanks
+		# don't spend an entire match wandering a uniformly random band
+		# around the map center and never actually closing on the fight.
+		# Confirmed via on-device diagnostic 2026-07-03: once a tank does
+		# get within detect_range_day it tracks/aims/fires correctly every
+		# ~5-6s — the AI itself was never broken, it just could wander for a
+		# very long time before ever getting there.
+		var to_player := Vector2(player.global_position.x, player.global_position.z)
+		a = to_player.angle() + Game.rng.randf_range(-0.9, 0.9)
+	else:
+		a = Game.rng.randf() * TAU
 	waypoint = Vector2(cos(a) * r, sin(a) * r)
 
 func _physics_process(delta: float) -> void:
