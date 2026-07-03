@@ -49,7 +49,28 @@ func _ready() -> void:
 	_check("WorldDressing rock", wd._rock_mesh())
 	_check("WorldDressing palm (bent trunk cylinders + fronds)", wd._palm_mesh())
 
+	# Broader box()/prism() coverage — the first pass only sampled 2 box
+	# meshes (tank hull, rock) and never isolated prism() at all. Do NOT
+	# assume those primitives are clean from that alone.
+	var stone := MeshKit.mat_tex("res://assets/tex/rock.png", true, 0.95)
+	var wall := CastleWall.new(stone, 12.0)
+	_check("CastleWall wall+crenellations (many rotated boxes)", wall._wall_mesh())
+	wall.position = Vector3(5, 0, 5)  # give _rubble_mesh() a deterministic, non-origin hash seed
+	_check("CastleWall rubble (compound-rotated boxes)", wall._rubble_mesh())
+
+	var st_prism := MeshKit.begin()
+	MeshKit.prism(st_prism, Transform3D(Basis(), Vector3(0, 3, 0)), 6.0, 5.0, 1.4, Color(0.6, 0.3, 0.2))
+	_check("MeshKit.prism() isolated (gable roof shape)", MeshKit.commit(st_prism, MeshKit.mat_vcol()))
+
 	print("========== DONE ==========\n")
+	print("NOT tested here: SphereMesh usage (cockpit_builder.gd, interactables.gd,")
+	print("net.gd, world_dressing.gd gym/babyroom balls, xr_rig.gd) — those are all")
+	print("Godot's own built-in SphereMesh primitive, a completely different code")
+	print("path from MeshKit, not custom-wound. Also not exhaustively covered: every")
+	print("individual box()/cyl()/prism() call site in world_dressing.gd (buildings,")
+	print("umbrellas, wrecks, lava/sea grids, gym, babyroom) and npc.gd (cabbage")
+	print("stand, creeper, giant baby) — this audit samples representative cases,")
+	print("it does not prove every call site in the codebase is correct.")
 	get_tree().quit()
 
 
