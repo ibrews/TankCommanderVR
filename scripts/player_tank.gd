@@ -300,6 +300,13 @@ func _wire_controls() -> void:
 		if m and m.rig is XRRig:
 			m.rig.set("_calibrated", false)
 			m.rig.set("_calib_t", 1.0))
+	c["hatch"].value_changed.connect(_on_hatch_lever)
+
+func _on_hatch_lever(v: float) -> void:
+	if absf(v) > 0.8 and Game.player_mode == Game.PlayerMode.SEATED:
+		var m := get_tree().get_first_node_in_group("main")
+		if m:
+			m.call_deferred("exit_vehicle")
 
 func _on_gear(v: float) -> void:
 	var g := 0

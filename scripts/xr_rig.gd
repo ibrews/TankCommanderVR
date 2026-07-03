@@ -318,6 +318,7 @@ func _ready() -> void:
 	# hand trackers above: no action-map bindings needed.
 	hand_l.hand_aim = _make_hand_aim("/user/fbhandaim/left")
 	hand_r.hand_aim = _make_hand_aim("/user/fbhandaim/right")
+	_build_on_foot_nodes()
 	var wind := AudioStreamPlayer.new()
 	wind.stream = Sfx.streams.get("wind_loop")
 	wind.volume_db = -22.0
@@ -378,6 +379,8 @@ func _make_hand_aim(fbhandaim_path: String) -> XRController3D:
 
 func to_menu_anchor(parent: Node3D) -> void:
 	tank = null
+	Game.player_mode = Game.PlayerMode.SEATED
+	_set_on_foot_active(false)
 	if get_parent() != parent:
 		get_parent().remove_child(self)
 		parent.add_child(self)
@@ -390,6 +393,10 @@ func to_menu_anchor(parent: Node3D) -> void:
 
 func attach_to_vehicle(v: Node3D) -> void:
 	tank = v
+	Game.player_mode = Game.PlayerMode.SEATED
+	_set_on_foot_active(false)
+	if on_foot_body and is_instance_valid(on_foot_body):
+		on_foot_body.enabled = false
 	var anchor: Node3D = v.cockpit["seat_anchor"]
 	if get_parent() != anchor:
 		get_parent().remove_child(self)
@@ -402,6 +409,108 @@ func attach_to_vehicle(v: Node3D) -> void:
 	v.set("_rumble_cb", func(amp, dur):
 		hand_l.pulse(amp, dur)
 		hand_r.pulse(amp, dur))
+
+# ---------------------------------------------------------------- on-foot mode
+# Movement-provider/pickup nodes: built ONCE here (permanent, enabled=false)
+# since XRToolsPlayerBody._ready() scans the "movement_providers" group a
+# single time — they must already exist in the tree before any OnFootBody is
+# added. Instantiated from the addon's own .tscn files (not .new()) because
+# movement_grapple.gd expects pre-built child nodes (Grapple_RayCast,
+# Grapple_Target, LineHelper/Line) that only exist via its packed scene, and
+# every provider .tscn already carries the "movement_providers" group tag.
+# Build order matters: movement_climb.gd's _ready() calls a method directly
+# on XRToolsFunctionPickup.find_left/right(self) with no null-check, and
+# movement_sprint.gd resolves XRToolsMovementDirect.find_left/right(self) via
+# @onready — so pickups and direct-movement nodes must exist under hand_l/
+# hand_r before climb/sprint are added.
+func _build_on_foot_nodes() -> void:
+	var pickup_scene: PackedScene = load("res://addons/godot-xr-tools/functions/function_pickup.tscn")
+	_pickup_l = pickup_scene.instantiate()
+	_pickup_l.enabled = false
+	hand_l.add_child(_pickup_l)
+	_pickup_r = pickup_scene.instantiate()
+	_pickup_r.enabled = false
+	hand_r.add_child(_pickup_r)
+
+	var direct_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_direct.tscn")
+	_direct_l = direct_scene.instantiate()
+	_direct_l.strafe = true
+	_direct_l.enabled = false
+	hand_l.add_child(_direct_l)
+	_direct_r = direct_scene.instantiate()
+	_direct_r.strafe = true
+	_direct_r.enabled = false
+	hand_r.add_child(_direct_r)
+
+	var sprint_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_sprint.tscn")
+	_sprint = sprint_scene.instantiate()
+	_sprint.enabled = false
+	add_child(_sprint)
+
+	var climb_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_climb.tscn")
+	_climb = climb_scene.instantiate()
+	_climb.enabled = false
+	add_child(_climb)
+
+	var grapple_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_grapple.tscn")
+	_grapple_l = grapple_scene.instantiate()
+	_grapple_l.enabled = false
+	# narrow to layer 6 "Grapple Target" (world layers 1-5 stay raycastable
+	# so the rope doesn't clip through walls; addon default would also
+	# accept a bare hit on any of layers 1-5 as a valid grapple point, which
+	# _is_raycast_valid() below filters back down via grapple_enable_mask)
+	_grapple_l.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
+	_grapple_l.grapple_enable_mask = 1 << 5
+	hand_l.add_child(_grapple_l)
+	_grapple_r = grapple_scene.instantiate()
+	_grapple_r.enabled = false
+	_grapple_r.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
+	_grapple_r.grapple_enable_mask = 1 << 5
+	hand_r.add_child(_grapple_r)
+
+# Called once by main.gd right after constructing a fresh OnFootBody (it needs
+# terrain/projectiles/fx, so unlike the nodes above it can't be built here).
+func set_on_foot_body(body: OnFootBody) -> void:
+	on_foot_body = body
+	body._rig = self
+	body.register_direct_movement(_direct_l, _direct_r)
+	body._rumble_cb = func(amp, dur):
+		hand_l.pulse(amp, dur)
+		hand_r.pulse(amp, dur)
+
+# Belt-and-suspenders: flips enabled on every on-foot pickup/movement-provider
+# node together, called from both enter_on_foot() and attach_to_vehicle() so
+# the two interaction systems (VRControl cockpit grab vs. addon pickup) never
+# run at the same time even if something else fails to gate correctly.
+func _set_on_foot_active(active: bool) -> void:
+	_pickup_l.enabled = active
+	_pickup_r.enabled = active
+	_direct_l.enabled = active
+	_direct_r.enabled = active
+	_sprint.enabled = active
+	_climb.enabled = active
+	_grapple_l.enabled = active
+	_grapple_r.enabled = active
+
+# Mid-mission vehicle exit (main.exit_vehicle()) and the menu-selectable
+# "runner" vehicle both route through here. Reparents the rig to world_parent
+# (same parent every vehicle lives under) at dismount_transform, then adds
+# on_foot_body (already registered via set_on_foot_body()) as a direct child
+# of the rig — required so XRHelpers.get_xr_origin() (walks up from the body
+# looking for an XROrigin3D) finds this rig, not `world`.
+func enter_on_foot(world_parent: Node3D, dismount_transform: Transform3D) -> void:
+	tank = null
+	if get_parent() != world_parent:
+		get_parent().remove_child(self)
+		world_parent.add_child(self)
+	transform = dismount_transform
+	camera.current = true
+	camera.make_current()
+	if on_foot_body.get_parent() != self:
+		add_child(on_foot_body)
+	on_foot_body.enabled = true
+	_set_on_foot_active(true)
+	Game.player_mode = Game.PlayerMode.ON_FOOT
 
 # Third person in VR pulls the whole rig back and up in the vehicle frame so
 # you view it like a drone — the headset still drives look, which keeps it
@@ -425,7 +534,13 @@ func _hand_debug_line(tag: String, h: XRHand) -> String:
 
 func _physics_process(delta: float) -> void:
 	_update_debug_label()
-	if Game.state == Game.GState.MENU or tank == null:
+	if Game.state == Game.GState.MENU:
+		return
+	if Game.player_mode == Game.PlayerMode.ON_FOOT:
+		_feed_arm_swing(delta)
+		_check_reentry()
+		return
+	if tank == null:
 		return
 	if not _calibrated:
 		_calib_t += delta
@@ -483,19 +598,40 @@ func _check_easter_egg(delta: float) -> void:
 	else:
 		_egg_t = 0.0
 
-# arm-swing speed for the runner (works with controllers AND bare hands)
+# arm-swing speed, feeding whichever body is currently active (works with
+# controllers AND bare hands)
 var _prev_hl := Vector3.ZERO
 var _prev_hr := Vector3.ZERO
 var _swing := 0.0
 func _feed_arm_swing(delta: float) -> void:
-	if tank == null or not tank.has_method("set_arm_swing"):
+	var target: Object = on_foot_body if Game.player_mode == Game.PlayerMode.ON_FOOT else tank
+	if target == null or not target.has_method("set_arm_swing"):
 		return
 	var vl := (hand_l.position - _prev_hl).length() / maxf(delta, 0.001)
 	var vr := (hand_r.position - _prev_hr).length() / maxf(delta, 0.001)
 	_prev_hl = hand_l.position
 	_prev_hr = hand_r.position
 	_swing = lerpf(_swing, (vl + vr) * 0.5, 6.0 * delta)
-	tank.call("set_arm_swing", _swing)
+	target.call("set_arm_swing", _swing)
+
+# Re-entry: walk within ~0.6m of the abandoned vehicle's seat anchor and
+# squeeze either grip to climb back in. main.gd tracks current_vehicle across
+# both the "runner" menu-select path and a mid-mission exit_vehicle() call.
+var _reentry_grip_was := false
+func _check_reentry() -> void:
+	if on_foot_body == null or not is_instance_valid(on_foot_body):
+		return
+	var m := get_tree().get_first_node_in_group("main")
+	if m == null:
+		return
+	var v: Node3D = m.get("current_vehicle")
+	var gripping := hand_l.effective_grip() > 0.55 or hand_r.effective_grip() > 0.55
+	if v and is_instance_valid(v):
+		var anchor: Node3D = v.cockpit["seat_anchor"]
+		if on_foot_body.global_position.distance_to(anchor.global_position) < 0.6 \
+				and gripping and not _reentry_grip_was:
+			m.call_deferred("enter_vehicle", v)
+	_reentry_grip_was = gripping
 
 func _dz(v: float) -> float:
 	return v if absf(v) > 0.12 else 0.0

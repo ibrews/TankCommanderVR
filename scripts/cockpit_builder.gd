@@ -248,6 +248,15 @@ static func _build_controls(root: Node3D, out: Dictionary) -> void:
 	root.add_child(restart)
 	c["restart"] = restart
 
+	# hatch lever — hangs from the roof ring (see the hatch-ring detail in
+	# _build_static), pull down to bail out and go on-foot mid-mission
+	var hatch := VRControl.Lever.create(0.20, Color(0.85, 0.72, 0.15), 46.0, false)
+	hatch.position = Vector3(EYE.x, YR - 0.05, EYE.z)
+	hatch.rotation.z = deg_to_rad(180)
+	root.add_child(hatch)
+	c["hatch"] = hatch
+	_label(root, "HATCH", Vector3(EYE.x + 0.20, YR - 0.14, EYE.z), 90, 12)
+
 	# console labels — flat on the console, rotated to read naturally from the seat
 	_label(root, "BATTERY", Vector3(X0 + 0.22, -0.135, 0.115), -90, 20, 90)
 	_label(root, "STARTER", Vector3(X0 + 0.13, -0.135, 0.115), -90, 20, 90)

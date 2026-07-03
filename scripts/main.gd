@@ -9,6 +9,7 @@ var player: PlayerTank
 var plane: PlayerPlane
 var rig: Node3D           # XRRig or DesktopRig
 var world: Node3D         # container for the current level
+var current_vehicle: Node3D  # the tank/plane/boat/heli for this mission, if any — null for "runner"
 var hangar: Node3D
 var menu: MainMenu
 var sun: DirectionalLight3D
@@ -308,6 +309,7 @@ func start_game() -> void:
 	if Game.mode == Game.Mode.PLANE:
 		veh = "plane"  # legacy path
 	var vehicle: CharacterBody3D
+	var on_foot := false
 	match veh:
 		"plane", "biplane":
 			plane = PlayerPlane.new(terrain, projectiles, fx)
@@ -316,14 +318,22 @@ func start_game() -> void:
 		"heli":
 			vehicle = PlayerAlt.Heli.new(terrain, projectiles, fx)
 		"runner":
-			vehicle = PlayerAlt.Runner.new(terrain, projectiles, fx)
-			vehicle.set("_rig", rig)
+			on_foot = true
+			vehicle = OnFootBody.new(terrain, projectiles, fx)
+			rig.call("set_on_foot_body", vehicle)
 		"boat":
 			vehicle = PlayerBoat.new(terrain, projectiles, fx)
 		_:
 			player = PlayerTank.new(terrain, projectiles, fx)
 			vehicle = player
-	world.add_child(vehicle)
+	if on_foot:
+		var dismount := Transform3D()
+		dismount.origin = Vector3(Terrain.SPAWN_CENTER.x, 0, Terrain.SPAWN_CENTER.y)
+		dismount.origin.y = terrain.height(dismount.origin.x, dismount.origin.z) + 0.1
+		rig.call("enter_on_foot", world, dismount)
+	else:
+		world.add_child(vehicle)
+		current_vehicle = vehicle
 	projectiles.cam = rig.get("camera")
 	if Game.mode == Game.Mode.COOP and NetManager.is_client():
 		world.add_child(NetManager.make_replica_pool(terrain))
@@ -333,7 +343,8 @@ func start_game() -> void:
 		NetManager.setup_versus(world, terrain, projectiles, fx, player)
 	elif Game.mode == Game.Mode.COOP:
 		NetManager.setup_coop(player)
-	rig.call("attach_to_vehicle", vehicle)
+	if not on_foot:
+		rig.call("attach_to_vehicle", vehicle)
 	# the supporting cast
 	Npc.CabbageMan.spawn(world, terrain, vehicle)
 	if Levels.current.get("trees", 0) >= 100:
@@ -371,12 +382,44 @@ func _start_vo() -> void:
 	if mv.has(Game.mutator):
 		Sfx.vo(mv[Game.mutator], 1, 60.0)
 
+# ---------------------------------------------------------------- on-foot exit/re-entry
+# Mid-mission hatch-lever flow: the vehicle keeps running (nothing in
+# PlayerTank/Heli/Boat/OnFootBody's own _physics_process gates on rig
+# attachment) — enemies can still shoot it, no AI-driver feature, explicitly
+# out of scope. Only meaningful under a real XRRig (on-foot mode needs an
+# XROrigin3D ancestor for XRToolsPlayerBody); DesktopRig has no equivalent.
+func exit_vehicle() -> void:
+	if not (rig is XRRig) or current_vehicle == null or not is_instance_valid(current_vehicle):
+		return
+	if Game.player_mode != Game.PlayerMode.SEATED:
+		return
+	var v := current_vehicle
+	var dismount_pos: Vector3 = v.global_position - v.global_transform.basis.z * 2.2
+	dismount_pos.y = terrain.height(dismount_pos.x, dismount_pos.z) + 0.1
+	var dismount := Transform3D(v.global_transform.basis.orthonormalized(), dismount_pos)
+	if rig.on_foot_body == null or not is_instance_valid(rig.on_foot_body):
+		rig.call("set_on_foot_body", OnFootBody.new(terrain, projectiles, fx))
+	rig.call("enter_on_foot", world, dismount)
+
+func enter_vehicle(v: Node3D) -> void:
+	if not (rig is XRRig) or v == null or not is_instance_valid(v):
+		return
+	if Game.player_mode != Game.PlayerMode.ON_FOOT:
+		return
+	rig.call("attach_to_vehicle", v)
+
 func _clear_world() -> void:
 	if world:
 		world.queue_free()
 		world = null
+	# on_foot_body lives under the rig (XROrigin3D), not world — see
+	# xr_rig.gd's enter_on_foot() — so world.queue_free() never reaches it.
+	if rig is XRRig and rig.on_foot_body and is_instance_valid(rig.on_foot_body):
+		rig.on_foot_body.queue_free()
+		rig.on_foot_body = null
 	player = null
 	plane = null
+	current_vehicle = null
 
 # ---------------------------------------------------------------- autostart (device profiling)
 # adb push a config to the app's files dir and the game boots straight into
