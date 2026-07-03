@@ -13,6 +13,7 @@ const MAX_HP := 100.0
 
 enum Mode { SOLO, COOP, VERSUS, PLANE }
 enum GState { MENU, PLAYING }
+enum PlayerMode { SEATED, ON_FOOT }
 
 var mode: int = Mode.SOLO
 var level_id := "outdoor"
@@ -32,6 +33,7 @@ var endless := false       # cycle to a random new level every few waves
 var travel_carry := {}     # score/hp/wave preserved across an endless travel
 var help_on := true        # coaching VO + written hints (menu-toggleable)
 var third_person := false  # false = in-cockpit first person (default), true = chase cam
+var player_mode: int = PlayerMode.SEATED  # SEATED = in a vehicle cockpit, ON_FOOT = walking around
 
 signal camera_mode_changed(third: bool)
 
@@ -150,6 +152,7 @@ func restart() -> void:
 	wave = 0
 	alive = true
 	time_since_damage = 999.0
+	player_mode = PlayerMode.SEATED
 	if not travel_carry.is_empty():
 		# endless travel: the fight continues on a new battlefield
 		score = travel_carry.score

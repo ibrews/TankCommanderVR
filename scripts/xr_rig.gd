@@ -14,6 +14,24 @@ var _calibrated := true
 var _calib_t := 0.0
 var _fp_pos := Vector3.ZERO   # calibrated first-person eye position
 
+# On-foot mode (godot-xr-tools): built once here, enabled/disabled as the
+# player enters/leaves a vehicle. See enter_on_foot()/_set_on_foot_active().
+# on_foot_body itself is NOT built here — it's freshly instantiated per
+# game session (needs terrain/projectiles/fx, like every other vehicle) and
+# handed in by main.gd via enter_on_foot(). These provider/pickup nodes ARE
+# permanent — they don't need level state, and XRToolsPlayerBody._ready()
+# scans the "movement_providers" group once, so they must already exist in
+# the tree before any on_foot_body is added.
+var on_foot_body: OnFootBody = null
+var _pickup_l: XRToolsFunctionPickup
+var _pickup_r: XRToolsFunctionPickup
+var _direct_l: XRToolsMovementDirect
+var _direct_r: XRToolsMovementDirect
+var _sprint: XRToolsMovementSprint
+var _climb: XRToolsMovementClimb
+var _grapple_l: XRToolsMovementGrapple
+var _grapple_r: XRToolsMovementGrapple
+
 class XRHand:
 	extends XRController3D
 
