@@ -1,3 +1,15 @@
+# Tank Commander VR v0.6.4
+
+## Hand position fix (round 4)
+- Real lead from v0.6.3's debug numbers: pinch/grip values were changing
+  correctly, but hands still couldn't hover/grab anything — meaning the
+  game didn't know WHERE your hand actually was. Found it: the OpenXR
+  extension that makes bare-hand pinch/grasp map to trigger/grip also
+  synthesizes a controller-style position that isn't your real tracked
+  hand position, and the game was preferring that stale synthesized
+  position over the real one. Now prefers the real hand-tracking position
+  whenever it's available.
+
 # Tank Commander VR v0.6.3
 
 ## More VR hands fixes (round 3)
