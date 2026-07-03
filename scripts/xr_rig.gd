@@ -58,6 +58,16 @@ class XRHand:
 	# effective_grip() below.
 	var hand_mesh: XRNode3D
 	var hand_aim: XRController3D
+	# Curl-driven first-person hand (godot-xr-tools XRToolsHand, lowpoly
+	# scene) shown while the physical controller is tracked — grip/trigger
+	# curl the fingers automatically (the addon reads them from this node,
+	# its ancestor XRController3D). Exists because the bundled controller
+	# MODEL confirmed doesn't render on Quest 3S, leaving controller players
+	# with literally invisible hands (Alex: "I can't really play the game
+	# with controllers if I can't see where the controllers are"). Hidden
+	# whenever bare-hand tracking takes over — hand_mesh (Meta's skinned
+	# runtime hand) owns that case, so the two never double-render.
+	var glove: Node3D
 	var _interact_mat: StandardMaterial3D
 
 	func _init(tracker_name: String) -> void:
@@ -152,10 +162,18 @@ class XRHand:
 	func _physics_process(delta: float) -> void:
 		if rig == null:
 			return
-		# Controller model only shows while this hand's physical controller is
-		# actually tracked — bare-hand play (hand_l_mesh/hand_r_mesh in XRRig)
-		# takes over via its own show_when_tracked when this goes false.
-		controller_model.visible = get_has_tracking_data()
+		# Controller model + curl-driven glove show while this hand's physical
+		# controller is tracked AND bare-hand tracking isn't active — the
+		# bare-hand mesh (hand_l_mesh/hand_r_mesh, Meta's runtime skinned
+		# hand) owns the bare-hand case via its own show_when_tracked. The
+		# extra bare-hand check matters: XR_EXT_hand_interaction synthesizes
+		# a pose on this SAME tracker during bare-hand play (see hand_pos()),
+		# so get_has_tracking_data() alone can read true with no controller
+		# in hand.
+		var bare := hand_mesh != null and hand_mesh.get_has_tracking_data()
+		controller_model.visible = get_has_tracking_data() and not bare
+		if glove:
+			glove.visible = get_has_tracking_data() and not bare
 		if Game.state == Game.GState.MENU:
 			_menu_pointer()
 			_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
@@ -329,6 +347,12 @@ func _ready() -> void:
 	# hand trackers above: no action-map bindings needed.
 	hand_l.hand_aim = _make_hand_aim("/user/fbhandaim/left")
 	hand_r.hand_aim = _make_hand_aim("/user/fbhandaim/right")
+	# Curl-driven first-person hands for controller play (see XRHand.glove).
+	# The addon's XRToolsHand._physics_process finds this ancestor
+	# XRController3D and reads grip/trigger from it — no wiring needed.
+	# .owner set per the addon convention documented at _build_on_foot_nodes.
+	hand_l.glove = _make_glove(hand_l, "res://addons/godot-xr-tools/hands/scenes/lowpoly/left_hand_low.tscn")
+	hand_r.glove = _make_glove(hand_r, "res://addons/godot-xr-tools/hands/scenes/lowpoly/right_hand_low.tscn")
 	_build_on_foot_nodes()
 	var wind := AudioStreamPlayer.new()
 	wind.stream = Sfx.streams.get("wind_loop")
@@ -387,6 +411,17 @@ func _make_hand_aim(fbhandaim_path: String) -> XRController3D:
 	c.tracker = fbhandaim_path
 	add_child(c)
 	return c
+
+func _make_glove(hand: XRHand, scene_path: String) -> Node3D:
+	var glove: Node3D = load(scene_path).instantiate()
+	glove.visible = false   # visibility driven per-frame in XRHand._physics_process
+	hand.add_child(glove)
+	glove.owner = self
+	# Layer 2 = cockpit interior (sun-excluded, dome-lit) — same as the
+	# bare-hand meshes get in _make_hand_mesh(), so hands are lit like the
+	# cockpit they're inside rather than by the shadowless exterior sun.
+	MeshKit.set_layer_recursive(glove, 2)
+	return glove
 
 func to_menu_anchor(parent: Node3D) -> void:
 	tank = null
