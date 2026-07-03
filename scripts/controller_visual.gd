@@ -30,10 +30,12 @@ func _ready() -> void:
 		_bind("menu_pressed", root)
 	else:
 		_bind("thumbrest_pressed", root)
-	# cockpit-interior lighting group (layer 2, excluded from the sun/fill
-	# cull masks) — same as everything else in the cabin. Two-sidedness is
-	# handled automatically and separately by RenderFixups (SceneTree.node_added).
-	MeshKit.set_layer_recursive(root, 2)
+	# Deliberately left on the default layer (1), NOT the cockpit-interior
+	# group (layer 2, excluded from the sun/fill cull masks) — a small
+	# handheld PBR-textured model reads as nearly black under the interior's
+	# deliberately-restricted lighting (confirmed in an isolated render test,
+	# 2026-07-02). Everything else in the cabin wants that dim/controlled
+	# lighting; a controller you're actively looking at doesn't.
 
 func _bind(base_name: String, root: Node) -> void:
 	var value_node := root.find_child(base_name + "_value", true, false) as Node3D
