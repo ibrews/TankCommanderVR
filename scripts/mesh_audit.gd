@@ -37,8 +37,11 @@ func _ready() -> void:
 
 	EnemyLight.Jeep._build()
 	_check("EnemyLight.Jeep", EnemyLight.Jeep._mesh)
-	EnemyLight.Gunner._build()
-	_check("EnemyLight.Gunner", EnemyLight.Gunner._mesh)
+	# EnemyLight.Gunner no longer has a static merged mesh (2026-07-03: its
+	# visual body became an AvatarRig instance, scripts/avatar_rig.gd, built
+	# from Godot's own CylinderMesh/SphereMesh/BoxMesh primitives — not
+	# MeshKit-authored triangle soup, so it isn't in this audit's risk
+	# category). Nothing to check here anymore.
 	EnemyLight.Mortar._build()
 	_check("EnemyLight.Mortar", EnemyLight.Mortar._mesh)
 
