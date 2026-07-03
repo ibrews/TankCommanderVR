@@ -1,5 +1,7 @@
 # Tank Commander VR
 
+![Tank Commander VR](docs/store-art/banner_1280x400.png)
+
 *Made for Ani* 🧡
 
 A VR tank game for Meta Quest 3, built with [Godot 4](https://godotengine.org/)
@@ -27,14 +29,21 @@ More in [docs/EVOLUTION.md](docs/EVOLUTION.md).
 ## Modes
 
 **Solo** waves on 10 battlefields (outdoor, city, town, mudpit, castle,
-gymnasium, beach, island, volcano, baby room) with easy/medium/hard, five
-vehicles (tank, plane, biplane, helicopter, runner), day / golden hour /
-night-ops stealth, and silly mutators (low-g, underwater, balloon,
-paintball). **ENDLESS TOUR** hops to a random new battlefield every three
-cleared waves and keeps your score rolling. **Co-op** over LAN: one headset
-drives + machine-guns, the other runs the turret. **Versus**: tank duel,
-first to five. New players get voice coaching and cockpit hints — veterans
-can switch **HELP: OFF** in the menu and the tank computer stops repeating
+gymnasium, beach, island, volcano, baby room) plus a **DEBUG: KITCHEN SINK**
+level with one of every enemy type at close range for fast smoke-testing,
+with easy/medium/hard, five vehicles (tank, plane, biplane, helicopter,
+runner), day / golden hour / night-ops stealth, and silly mutators (low-g,
+underwater, balloon, paintball). **ENDLESS TOUR** hops to a random new
+battlefield every three cleared waves and keeps your score rolling.
+**On-foot mode**: dismount your vehicle and walk, sprint (arm-swing —
+pump your arms), grapple-swing, and climb using three pickable items found
+in the world (grapple hook, climbing gloves, energy drink), then climb back
+into the seat you left. **Co-op** over LAN: one headset drives +
+machine-guns, the other runs the turret — both players render as full
+Rec-Room-style procedural avatars (hip/head/hand IK, no imported skeletal
+assets) to each other, on-foot or seated. **Versus**: tank duel, first to
+five. New players get voice coaching and cockpit hints — veterans can
+switch **HELP: OFF** in the menu and the tank computer stops repeating
 itself.
 
 ## Play
@@ -52,19 +61,10 @@ in `export_presets.cfg`.
 
 ## Controls
 
-**Physical (the fun way):** grip-grab levers and grips, poke buttons and
-switches. Follow the yellow hints on the front wall.
+**Thumbsticks (fully working, recommended for now):** drive, aim, fire,
+reload, rockets, restart, and MG are all mapped to thumbsticks/buttons.
+This is the reliable way to play today.
 
-**Hand tracking:** put the controllers down — pinch = trigger, whole-hand
-squeeze = grab, poking works the way poking works. Every control in the
-game is reachable without buttons. (Runner mode: pump your arms to sprint.)
-
-**Playtest tuning:** every gameplay number lives in `tuning.cfg`
-(auto-created in the app's files dir; on Quest:
-`/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg`).
-Edit, restart, report back.
-
-**Thumbsticks (the easy way):**
 | Input | Action |
 |---|---|
 | X / L-stick click | Auto start ritual (battery + engine) |
@@ -74,6 +74,39 @@ Edit, restart, report back.
 | A (hold) | Coax machine gun |
 | B | Fire rocket salvo |
 | Y | Recalibrate seat height |
+
+**Physical grab/poke (in progress):** the cockpit is built entirely from
+real `VRControl` levers/switches/knobs/buttons meant to be grabbed and
+poked by hand, and the interaction logic itself is fully implemented and
+unit-tested (`tools/xr_interaction_smoke.gd`, 14/14 pass) — but a discovery
+bug currently prevents the rig from finding controls by physical proximity
+(see **Known issues** below), so reaching out and grabbing a lever doesn't
+yet register in a real headset. Follow the yellow hints on the front wall
+once this is fixed.
+
+**Hand tracking:** put the controllers down — pinch = trigger (fire), whole-
+hand squeeze = grab. There's currently no bare-hand equivalent for the
+analog thumbsticks, so **driving/turret-aim need a physical controller
+today** — hand tracking alone can fire but can't steer. Physical grab of
+cockpit controls is subject to the same in-progress fix noted above.
+(Runner/on-foot mode: pump your arms to sprint — that part works hands-free.)
+
+**Playtest tuning:** every gameplay number lives in `tuning.cfg`
+(auto-created in the app's files dir; on Quest:
+`/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg`).
+Edit, restart, report back.
+
+## Known issues
+
+- **Physical VR grab/poke never actually reaches cockpit controls.** All six
+  `VRControl` types (`scripts/interactables.gd`) work correctly in isolation,
+  but nothing in the codebase ever calls
+  `add_to_group("vrcontrols")` — the exact group `scripts/xr_rig.gd`'s
+  hand-proximity discovery loop reads from. The game still plays fully via
+  the thumbstick fallback path above; only reaching out with a hand/controller
+  to grab or poke a lever/switch/knob/button doesn't register yet. Fix is a
+  one-line `add_to_group()` call; holding off on landing it until it's been
+  verified with real hands in a headset.
 
 ## Performance (measured on Quest 3S)
 
@@ -98,6 +131,28 @@ Written overnight by [Claude Code](https://claude.com/claude-code) on the
 Agile Lens fleet — desktop-verified via a self-playing screenshot loop, then
 exported straight to Quest. Design notes and the full build story live in the
 Agile Lens knowledge base.
+
+**Using this as a sample project?** The [wiki](../../wiki) covers both
+how to play and how the code is put together — procedural mesh generation
+(`MeshKit`), the zero-imported-assets/vertex-color rendering convention, the
+`VRControl` grab/poke system, `XRRig`/`DesktopRig` structure, the on-foot
+locomotion + procedural avatar systems (built on
+[godot-xr-tools](https://github.com/GodotVR/godot-xr-tools)), and the
+headless QA/smoke-test harnesses under `tools/` and `scripts/*_qa.gd` that
+let this project be verified without a headset attached. Everything is
+built at runtime in pure GDScript — nothing is instantiated from a `.tscn`
+scene file — which is unusual but deliberate; see the wiki's Architecture
+page for why and what it costs.
+
+## Store assets
+
+`docs/store-art/` holds App Lab / marketing assets composed from the game's
+own real screenshots (this project has zero external art assets, so store
+art is built the same way as everything else — from what the engine
+actually renders, not stock imagery): `icon_512.png` (square store icon),
+`hero_1920x1080.png` (store cover image), `banner_1280x400.png` (this
+README's header), and `screenshot_0[1-5]_*.png` (gallery). Regenerate with
+ImageMagick if screenshots change — see git history for the exact commands.
 
 ## License
 
