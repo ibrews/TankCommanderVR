@@ -2,6 +2,9 @@
 # ("action") while held boosts OnFootBody's sprint speed for a fixed duration
 # via the same get_tree().create_timer(...).timeout idiom used throughout
 # player_tank.gd/main.gd, then the can is dropped and freed.
+# Branded "SUPER FIZZ MAX" per Alex, in the same "the world has a cabbage
+# merchant, of course the energy drink has a name" comedic-labeling
+# tradition as the rest of the game's NPCs/signage.
 class_name EnergyDrinkPickable
 extends XRToolsPickable
 
@@ -34,6 +37,16 @@ func _build_mesh() -> void:
 	var mi := MeshInstance3D.new()
 	mi.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.35, 0.35))
 	add_child(mi)
+	var brand := Label3D.new()
+	brand.text = "SUPER\nFIZZ MAX"
+	brand.font_size = 28
+	brand.pixel_size = 0.0009
+	brand.modulate = Color(1.0, 0.15, 0.1)
+	brand.outline_size = 6
+	brand.outline_modulate = Color(1, 1, 1)
+	brand.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	brand.position = Vector3(0, 0.06, 0.033)
+	add_child(brand)
 
 func _pulse_holder(amp: float, dur: float) -> void:
 	var ctrl := get_picked_up_by_controller()

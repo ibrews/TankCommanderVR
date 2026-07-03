@@ -157,8 +157,17 @@ static func _build_static(root: Node3D) -> void:
 	# left console (rockets)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(X0 + 0.17, -0.18, -0.05)), Vector3(0.30, 0.06, 0.55), STEEL_DARK)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(X0 + 0.17, -0.50, -0.05)), Vector3(0.26, 0.58, 0.50), STEEL)
-	# right console pedestal (turret grip)
-	MeshKit.box(st, Transform3D(Basis(), Vector3(0.10, -0.32, -0.02)), Vector3(0.22, 0.5, 0.30), STEEL)
+	# right console pedestal (turret grip) — Alex, live headset: "a big
+	# metal box blocking half the tank." Confirmed via debug-facing render
+	# (2026-07-03) NOT a winding bug (correctly front-facing) — it's a
+	# plain untextured box close enough to the eye (was 0.5 tall, top edge
+	# near EYE.y=0.33) to dominate the view at typical FOV. Shrunk and
+	# pulled down/right/back so its top sits well below the sightline.
+	# Original box's near face sat only 0.17m from the eye (Z=-0.02, half-
+	# depth 0.15, eye Z=0.30) — close enough on its own to dominate the
+	# frame regardless of the box's absolute size. Pushed forward and
+	# thinned in depth so its near face clears the eye by ~0.35m.
+	MeshKit.box(st, Transform3D(Basis(), Vector3(0.10, -0.30, -0.16)), Vector3(0.20, 0.34, 0.20), STEEL)
 	# tiller floor mounts
 	for tx in [EYE.x - 0.20, EYE.x + 0.20]:
 		MeshKit.box(st, Transform3D(Basis(), Vector3(tx, -0.72, -0.16)), Vector3(0.09, 0.10, 0.16), STEEL_DARK)
@@ -193,7 +202,13 @@ static func _build_static(root: Node3D) -> void:
 	gmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 	gmat.roughness = 0.9
 	gmat.metallic_specular = 0.0   # no sky sheen washing out the view
-	gmat.cull_mode = BaseMaterial3D.CULL_DISABLED
+	# NOT cull_disabled: Alex, live headset, 2026-07-03: "a white plane on
+	# top of the viewer holes out the tank." cull_disabled + transparency
+	# is a documented Godot Mobile/Compatibility-renderer bug (visual
+	# artifacts instead of real alpha blending) — the same class of issue
+	# flagged by web search earlier tonight. This box is only ever seen
+	# from one side (crew compartment looking out through the slit), so
+	# double-sided was never actually needed here.
 	var glass := MeshInstance3D.new()
 	glass.mesh = MeshKit.commit(gst, gmat)
 	root.add_child(glass)

@@ -151,6 +151,19 @@ func _build_chunks() -> void:
 			mi.material_override = mat
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
+			# Terrain has NEVER had real collision — vehicles (tank/plane/
+			# boat) never needed it, they sample height() analytically every
+			# frame for their own grounding. On-foot mode's
+			# XRToolsPlayerBody is a genuine CharacterBody3D that needs a
+			# real floor to move_and_slide() against; with nothing here it
+			# falls through the world forever the instant physics runs —
+			# Alex, live headset, DEBUG level: "I just fall through the
+			# ground and fall forever." Not level-specific — every level's
+			# terrain was missing this; DEBUG was just where on-foot mode
+			# happened to get tested first. create_trimesh_collision() reuses
+			# this exact chunk's own geometry, so it can't drift out of sync
+			# with the visual mesh or with terrain.height()'s analytic value.
+			mi.create_trimesh_collision()
 
 func _chunk_mesh(x0: float, z0: float, size: float) -> ArrayMesh:
 	var st := SurfaceTool.new()
@@ -181,8 +194,16 @@ func _chunk_mesh(x0: float, z0: float, size: float) -> ArrayMesh:
 			var b := a + 1
 			var c := a + n
 			var d := c + 1
-			st.add_index(a); st.add_index(c); st.add_index(b)
-			st.add_index(b); st.add_index(c); st.add_index(d)
+			# Was (a,c,b)/(b,c,d) — confirmed backwards by direct render test
+			# 2026-07-03 (tools/terrain_winding_test.gd: ground genuinely
+			# invisible from directly overhead, visible from below) — the
+			# same never-fixed instance of the MeshKit box/cyl winding bug,
+			# just less obvious at typical shallow driving angles than
+			# looking straight down from a plane/helicopter. Swapped to
+			# match Godot's clockwise-front convention (see
+			# godot-winding-convention-clockwise KB doc).
+			st.add_index(a); st.add_index(b); st.add_index(c)
+			st.add_index(b); st.add_index(d); st.add_index(c)
 	return st.commit()
 
 func _splat(x: float, z: float, h: float) -> Color:

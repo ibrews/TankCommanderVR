@@ -189,10 +189,20 @@ func _build_exterior() -> void:
 	var gmi := MeshInstance3D.new()
 	gmi.mesh = MeshKit.commit(gst, MeshKit.mat_vcol(0.6, 0.35))
 	recoil.add_child(gmi)
-	# breech block (interior render layer — no direct sun inside the turret)
+	# breech block (interior render layer — no direct sun inside the turret).
+	# "Cockpit space = turret space" (cockpit_builder.gd header) — this box
+	# is in the SAME local frame as the crew compartment (cockpit Z0=-0.58
+	# front wall, EYE.z=0.30, Z1=0.58 rear wall). At the old Z=0.55/0.95
+	# (turret-local ≈ -0.35/0.05 after the gun_pivot/turret offsets — still
+	# right in the driver's face), the plain untextured breech geometry
+	# read as "a big metal box blocking half the tank." Alex correctly
+	# guessed it was the gun's own breech, not a wall or console — my
+	# earlier console-pedestal theory was wrong (verified: repositioning
+	# it changed nothing in a render test). Pulled forward so its rearmost
+	# extent clears the eye/rear-wall area.
 	var bst := MeshKit.begin()
-	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.55)), Vector3(0.34, 0.4, 0.75), Color(0.35, 0.38, 0.34))
-	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.95)), Vector3(0.28, 0.32, 0.10), Color(0.24, 0.26, 0.24))
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.20)), Vector3(0.34, 0.4, 0.75), Color(0.35, 0.38, 0.34))
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.60)), Vector3(0.28, 0.32, 0.10), Color(0.24, 0.26, 0.24))
 	var bmi := MeshInstance3D.new()
 	bmi.mesh = MeshKit.commit(bst, MeshKit.mat_vcol(0.6, 0.35))
 	bmi.layers = 2
@@ -207,7 +217,7 @@ func _build_exterior() -> void:
 	# breech reload lever — mounted on the gun cradle, left side (player side)
 	var breech_lever := VRControl.Lever.create(0.22, Color(0.75, 0.15, 0.1), 45.0, true)
 	breech_lever.center_rate = 5.0
-	breech_lever.position = Vector3(-0.22, 0.0, 0.55)
+	breech_lever.position = Vector3(-0.22, 0.0, 0.20)  # matches the breech block's new position above
 	breech_lever.rotation.z = deg_to_rad(90)  # sticks out toward player
 	gun_pivot.add_child(breech_lever)
 	breech_lever.value_changed.connect(_on_breech_lever)

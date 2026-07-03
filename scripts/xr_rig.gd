@@ -69,6 +69,7 @@ class XRHand:
 	# runtime hand) owns that case, so the two never double-render.
 	var glove: Node3D
 	var _interact_mat: StandardMaterial3D
+	var _indicator: MeshInstance3D
 
 	func _init(tracker_name: String) -> void:
 		tracker = tracker_name
@@ -87,13 +88,24 @@ class XRHand:
 		_interact_mat.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
 		_interact_mat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
-		var indicator := MeshInstance3D.new()
+		_indicator = MeshInstance3D.new()
 		var ism := SphereMesh.new()
 		ism.radius = 0.018
 		ism.height = 0.036
-		indicator.mesh = ism
-		indicator.material_override = _interact_mat
-		poke_tip.add_child(indicator)
+		_indicator.mesh = ism
+		_indicator.material_override = _interact_mat
+		# top_level: this ball is the ACTUAL hitbox used for grab/poke, not a
+		# decoration — it must track wherever `tip` really is every frame
+		# (see _physics_process below), which differs from this node's own
+		# rigid-child transform during hand-tracking. Before this fix the
+		# ball stayed rigidly parented to poke_tip (itself rigid in
+		# controller-grip space), so it visibly froze wherever the
+		# controller was last held instead of following the real tracked
+		# hand — Alex: "highlight[s] a weird part... outside my thumb,"
+		# because the ball he saw and the real check position were two
+		# different places.
+		_indicator.top_level = true
+		add_child(_indicator)
 		# Real Touch controller model. OpenXRFbRenderModel (XR_FB_render_model)
 		# would be the zero-asset way to do this, but it's confirmed NOT
 		# supported on Quest 3S specifically (Khronos runtime extension matrix,
@@ -206,6 +218,7 @@ class XRHand:
 		# once the controller's untracked and this node's own transform has gone
 		# stale, so fall back to the live hand-tracking position instead.
 		var tip := poke_tip.global_position if get_has_tracking_data() else hand_pos()
+		_indicator.global_position = tip   # ball now always shows the REAL hitbox, not a rigid guess
 		var poke_near := false
 		for c in get_tree().get_nodes_in_group("vrcontrols"):
 			var vc := c as VRControl
@@ -431,6 +444,14 @@ func to_menu_anchor(parent: Node3D) -> void:
 		get_parent().remove_child(self)
 		parent.add_child(self)
 	transform = Transform3D()
+	# Alex, live headset: "when we toggle to third person the menu needs to
+	# come with us or we're too far away." Root cause: Game.third_person
+	# carried over from the last mission, never reset here — any later
+	# _apply_view_offset() call (camera_mode_changed re-firing, etc.) then
+	# applies the seated third-person chase offset (+3,+8 local) on top of
+	# the menu's own transform, displacing the rig away from the hangar UI.
+	# The menu has no vehicle to orbit, so third-person has no meaning here.
+	Game.third_person = false
 	_calibrated = true  # natural floor height at the menu
 	# reparenting knocks the camera out of the tree and clears `current` —
 	# without this the XR viewport renders NOTHING (black, draws=0)
@@ -616,6 +637,39 @@ func _physics_process(delta: float) -> void:
 	_update_debug_label()
 	if Game.state == Game.GState.MENU:
 		return
+	# Global bindings — active whether seated or on-foot, per Alex's
+	# explicit ask (2026-07-03): right-stick click toggles 1st/3rd person,
+	# left-stick click resets the level (or leaves to the menu in
+	# multiplayer, same as a networked player quitting out). Placed before
+	# the on-foot/no-vehicle early returns below so they always work,
+	# unlike the seated-only bindings further down.
+	var r_click := hand_r.is_button_pressed("primary_click")
+	if r_click and not get_meta("rsc_was", false):
+		Game.toggle_camera_mode()
+	set_meta("rsc_was", r_click)
+	var l_click := hand_l.is_button_pressed("primary_click")
+	if l_click and not get_meta("lsc2_was", false):
+		if Game.mode == Game.Mode.COOP or Game.mode == Game.Mode.VERSUS:
+			var m_leave := get_tree().get_first_node_in_group("main")
+			if m_leave:
+				m_leave.call_deferred("to_menu")
+		else:
+			Game.restart()
+	set_meta("lsc2_was", l_click)
+	# Return-to-menu fallback: the physical "menu_switch" cockpit toggle
+	# (cockpit_builder.gd) calls main.to_menu() correctly, but it's poke-only
+	# and depends on the same vrcontrols-group discovery that's currently
+	# broken (see docs/EVOLUTION.md / KB), so there was otherwise no working
+	# way back to the menu once a level starts. The system menu button is
+	# only read here while NOT already in the menu (see _menu_pointer(),
+	# which reads it for UI clicks while Game.state == MENU) so the two
+	# never conflict.
+	var menu_pressed := hand_l.is_button_pressed("menu_button") or hand_r.is_button_pressed("menu_button")
+	if menu_pressed and not get_meta("menu_btn_was", false):
+		var m_menu := get_tree().get_first_node_in_group("main")
+		if m_menu:
+			m_menu.call_deferred("to_menu")
+	set_meta("menu_btn_was", menu_pressed)
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_feed_arm_swing(delta)
 		_check_reentry()
@@ -628,8 +682,12 @@ func _physics_process(delta: float) -> void:
 			_calibrate()
 	var ls := hand_l.get_vector2("primary")
 	var rs := hand_r.get_vector2("primary")
-	tank.call("set_stick_drive", Vector2(_dz(ls.x), _dz(ls.y)))
-	tank.call("set_stick_turret", Vector2(_dz(rs.x), _dz(rs.y)))
+	# Y axis was backwards (Alex, live headset, 2026-07-03) — pushing the
+	# stick forward drove the tank backward and (on the right stick)
+	# elevated the gun the wrong way. Both sticks read the same "primary"
+	# action's Y component, so both get the same sign flip.
+	tank.call("set_stick_drive", Vector2(_dz(ls.x), -_dz(ls.y)))
+	tank.call("set_stick_turret", Vector2(_dz(rs.x), -_dz(rs.y)))
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
 		var trig := hand_r.effective_trigger() > 0.6
 		if trig and not get_meta("rtrig_was", false):
@@ -647,23 +705,9 @@ func _physics_process(delta: float) -> void:
 	if hand_l.is_button_pressed("ax_button") and not get_meta("x_was", false):
 		tank.call("quick_start")
 	set_meta("x_was", hand_l.is_button_pressed("ax_button"))
-	if hand_l.is_button_pressed("primary_click") and not get_meta("lsc_was", false):
-		tank.call("quick_start")
-	set_meta("lsc_was", hand_l.is_button_pressed("primary_click"))
-	# Return-to-menu fallback: the physical "menu_switch" cockpit toggle
-	# (cockpit_builder.gd) calls main.to_menu() correctly, but it's poke-only
-	# and depends on the same vrcontrols-group discovery that's currently
-	# broken (see docs/EVOLUTION.md / KB), so there was otherwise no working
-	# way back to the menu once a level starts. The system menu button is
-	# only read here while NOT already in the menu (see _menu_pointer(),
-	# which reads it for UI clicks while Game.state == MENU) so the two
-	# never conflict.
-	var menu_pressed := hand_l.is_button_pressed("menu_button") or hand_r.is_button_pressed("menu_button")
-	if menu_pressed and not get_meta("menu_btn_was", false):
-		var m := get_tree().get_first_node_in_group("main")
-		if m:
-			m.call_deferred("to_menu")
-	set_meta("menu_btn_was", menu_pressed)
+	# primary_click (left-stick click) used to also trigger quick_start here
+	# — now repurposed for the global reset-level binding above (X button
+	# alone still starts the engine), per Alex's explicit ask.
 	_check_easter_egg(delta)
 	_feed_arm_swing(delta)
 

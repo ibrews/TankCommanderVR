@@ -60,11 +60,16 @@ func _build() -> void:
 	MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0, -4.0)), 0.45, 0.18, 0.9, 8, Color(0.9, 0.5, 0.15))
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, -0.15, -0.3)), Vector3(9.6, 0.14, 1.8), col)
 	if biplane:
-		# second wing + struts = 100% more aviation
-		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 1.15, -0.3)), Vector3(9.6, 0.14, 1.8), col)
+		# second wing + struts = 100% more aviation. Top wing's underside
+		# was at Y=1.08 with the pilot's eye at Y=1.02 (cockpit root 0.45 +
+		# seat -0.15 + eye_local 0.72) — 6cm of clearance, essentially in
+		# the pilot's face. Alex, live headset: "in a biplane I can't see
+		# anything." Raised for real head clearance; struts stretched to
+		# match the new span between the two wings.
+		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 1.65, -0.3)), Vector3(9.6, 0.14, 1.8), col)
 		for sx in [-3.4, 3.4]:
 			for sz in [-0.9, 0.3]:
-				MeshKit.box(st, Transform3D(Basis(), Vector3(sx, 0.5, sz)), Vector3(0.09, 1.3, 0.09), col * 0.8)
+				MeshKit.box(st, Transform3D(Basis(), Vector3(sx, 0.75, sz)), Vector3(0.09, 1.8, 0.09), col * 0.8)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.1, 3.4)), Vector3(3.4, 0.12, 1.0), col)
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.75, 3.5)), Vector3(0.09, 1.4, 1.0), Color(0.9, 0.5, 0.15))
 	var mi := MeshInstance3D.new()
