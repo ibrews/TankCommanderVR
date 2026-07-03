@@ -1,148 +1,146 @@
 # Handoff — asset showcase geometry investigation (2026-07-03)
 
-For whichever Claude Code session picks this up overnight. Read this fully
-before touching anything — two real near-misses happened in the session
-that produced this handoff; don't repeat them.
+**UPDATE (later same night): ROOT CAUSE FOUND AND FIXED.** The section
+below this line is the important one — read it first. The rest of the
+document is kept for the two AI-tooling gotchas and the tooling setup,
+which are still relevant.
 
-## Why this exists
+## THE FIX — read this first
 
-Alex built the asset showcase scene (`scenes/asset_showcase.tscn`,
-`scripts/asset_showcase.gd`) last session to visually audit every
-procedurally-generated model in the game. Alex is now reporting "a lot of
-flipped normals, but inconsistently" across the showcase. This handoff
-parks a partial investigation and sets up tooling for whoever continues it.
+Alex's "flipped normals, inconsistently" report was real, and it wasn't
+the city-building anomaly logged earlier tonight (that one didn't survive
+scrutiny — see "Retracted" below). The actual bug: **`MeshKit.cyl()`'s
+side-wall triangles had inverted winding**, in `scripts/mesh_kit.gd`.
 
-Full background: [`intelligence/techniques/godot-asset-showcase-scene-and-floating-mountain-finding.md`](../../knowledge/intelligence/techniques/godot-asset-showcase-scene-and-floating-mountain-finding.md)
-in the KB (`C:\Users\Sam\knowledge`) — read this first, it has the complete
-history including the floating-mountain root cause (already solved,
-separate issue) and today's update section.
+**How it was found:** built a headless, no-rendering analytical check
+(`scripts/mesh_audit.gd` + `scenes/mesh_audit.tscn`, run via
+`godot --path . scenes/mesh_audit.tscn`) that reads the real
+`ArrayMesh.surface_get_arrays()` vertex/index data for every cylinder-based
+mesh in the game and checks: does the triangle's *geometric* winding
+(right-hand-rule cross product of the actual vertex order) agree with the
+*stored* per-vertex normal `MeshKit.cyl()` writes? Godot's backface culling
+decides visibility from winding; lighting shades from the stored normal —
+a mismatch between the two is exactly the "some faces look right, some
+look inside-out, depending on angle" symptom, because culling and shading
+are working off two different, disagreeing ideas of which way the face
+points.
 
-## What's actually confirmed so far
+**Result before the fix:** 8 of 10 real meshes tested had mismatches —
+every one of them cylinder-based (tank turret 36/72, enemy plane 32/112,
+jeep 100/236, gunner infantry 34/104, mortar 36/180, ship 54/198,
+tree/palm foliage). The two box-only meshes (tank hull, rocks) were
+already 100% correct — this bug was specific to `MeshKit.cyl()`, not
+`MeshKit.box()` or `MeshKit.prism()`.
 
-**Clean (no flipped normals, verified by direct screenshot inspection):**
-player/enemy vehicles, village house (prism roof), castle keep roof (prism),
-castle corner tower (cylinder caps), trees, rocks. These are the exact
-primitives that had a real winding-order bug in a *previous* session
-(fixed already, see daily log "checkpoint ~14:40" 2026-07-02) — re-checked
-and still fixed.
+**Fix applied** (`scripts/mesh_kit.gd`, `cyl()` function): the side-wall
+quad was split into triangles `(b0,b1,t1)` + `(b0,t1,t0)`, which — verified
+by hand with the actual vertex math before touching code — computes a
+face normal pointing *inward* toward the cylinder axis, opposite the
+correct outward per-vertex normal already being written. Swapping the last
+two vertices of each triangle (`(b0,t1,b1)` + `(b0,t0,t1)`) flips it
+outward, matching the stored normal. The normal/UV arrays were reordered
+to match the new vertex order (each vertex position must keep pairing
+with the same normal/UV regardless of which triangle it appears in — this
+was checked, not assumed).
 
-**One confirmed, reproducible, NOT-yet-root-caused bug:** `CITY BUILDING`
-(the `tall=true` branch of `WorldDressing._building()`) renders like its
-exterior wall is invisible from a clean ~20m-away outside vantage — you see
-what looks like an interior corner (two walls + a window-patterned
-"ceiling"/"floor") with no exterior silhouette against the sky. Reproduced
-from two different camera distances/angles, so it isn't a too-close-camera
-artifact. The `tall=false` village house, built by the *identical* code
-path at smaller scale, renders correctly. Candidates not yet checked:
-scale-dependent behavior, the `uv_scale=0.12` tiling branch in
-`MeshKit.box()` (only used when `tall=true`), the roof-cap box sitting
-exactly flush with the wall-top (`hgt` vs `hgt+0.25`).
+**Verified, not assumed, three ways:**
+1. Re-ran `mesh_audit.gd` after the fix: **0/1194 mismatches across every
+   mesh tested** (was >0 on 8/10 before). One residual case (tree foliage,
+   14 apparent mismatches) turned out to be a false positive from the
+   audit script itself — cone-shaped foliage has `top_r=0`, so both "top"
+   vertices of a side-wall triangle coincide at the apex, producing a
+   zero-area degenerate triangle whose winding is numerically meaningless.
+   Added an area filter (`area < 0.0001 → skip`) to the audit script and
+   confirmed the count matched exactly (14 = 2 cones × 7 sides each).
+2. `-- --smoke` clean after the fix.
+3. Re-rendered the full showcase (`TC_SHOWCASE_SHOT=1`) and visually
+   confirmed the helicopter, jeep, gunner rifle, palm trunk — all
+   previously-affected cylinder meshes — render correctly.
 
-**Alex still perceives more issues than this ("a lot... inconsistently")**
-— the investigation so far has been screenshot-based (Read tool loading
-PNGs from `TC_SHOWCASE_SHOT=1` renders) and spot-checked maybe 10 of the
-~30 showcase specimens closely. This was NOT an exhaustive per-object
-audit. That's the main gap to close — see "Suggested loop" below.
+**Retracted from earlier tonight:** the "CITY BUILDING renders inside-out"
+claim in the original version of this doc. That was investigated further
+with an analytical check on `MeshKit.box()` specifically (not `cyl()`) —
+both the small and large wall-box sizes came back 100% correctly wound.
+The actual bug was never in `box()` at all; the city-building screenshot
+was very likely just a misread on my part (a very tall, narrow building
+viewed close-up against open sky). Don't re-chase it — if Alex still sees
+something wrong with buildings specifically after this cylinder fix, that
+would be a *new* finding, not the one already investigated twice tonight.
 
-## Two gotchas from tonight — read before doing anything
+**What this means for you (the parallel session):** the primary
+investigation is DONE. What's left:
+- Confirm on your end that the fix looks right in-editor
+  (`scenes/asset_showcase.tscn`, F6) — a second pair of eyes before Alex
+  wakes up is worth it, especially since Alex's original report was more
+  specific/emphatic than what one round of screenshot review caught.
+- If Alex is *still* seeing something after this, it's a genuinely new
+  lead — use `mesh_audit.gd` as the template (it's fast, cheap, and far
+  more reliable than screenshots — extend it to check `MeshKit.prism()`
+  callers too, which weren't isolated on their own, only inside the
+  EnemyShip combined-mesh test which came back clean).
+- **This was a real gameplay-code fix** (`scripts/mesh_kit.gd`), not
+  showcase-only. It affects literally every cylinder in the game — export
+  a fresh APK when this feels solid so Alex can confirm on the Quest, since
+  this is exactly the kind of thing that can look different on-device than
+  on desktop.
 
-1. **The Godot editor can silently rewrite `project.godot`.** It happened
-   tonight from opening a second editor process via computer-use
-   (`open_application` on the bare .exe, no `--path`) — the editor dumped
-   its in-memory ProjectSettings back to disk, dropping hand-written
-   comments and several non-default settings including the load-bearing
-   `openxr/extensions/meta/render_model=false` line (Quest 3S doesn't
-   support that extension — see the comment that was there) and the action
-   map reference. Caught via `git diff` before it was committed, reverted
-   with `git checkout -- project.godot openxr_action_map.tres .gitignore`.
-   **Rule: `git status`/`git diff` after ANY Godot editor GUI interaction,
-   before committing anything, every time.** Full writeup:
-   `intelligence/techniques/godot-editor-silently-rewrites-project-godot.md`.
-   The original task boundary still applies: **do not modify
+## Two gotchas from tonight — still relevant, read before doing anything
+
+1. **The Godot editor can silently rewrite `project.godot`.** Happened
+   once already tonight from opening a second editor process via
+   computer-use. **Rule: `git status`/`git diff` after ANY Godot editor
+   GUI interaction, before committing anything, every time.** Full
+   writeup: `intelligence/techniques/godot-editor-silently-rewrites-project-godot.md`
+   in the KB. Task boundary still applies: **do not modify
    `project.godot`'s [xr]/rendering settings or `export_presets.cfg`, and
    do not touch the App Lab upload pipeline.**
 
+   **Note from later tonight:** while wrapping up, an `addons/godot-xr-tools/`
+   folder and a `scripts/game.gd` modification showed up staged in git
+   again — almost certainly *your* (the parallel session's) own
+   in-progress work, since you were active in this same repo concurrently.
+   I deliberately did NOT touch, revert, or investigate that state — I
+   committed my own fix by exact file path only
+   (`git commit scripts/mesh_kit.gd scripts/mesh_audit.gd ... `, never
+   `git add -A`) specifically so I wouldn't clobber whatever you were
+   mid-way through. If that addon/game.gd state is actually *not* yours
+   and is a recurrence of the same accidental-editor-rewrite gotcha,
+   handle it the same way as before: check `git diff` carefully, confirm
+   with Alex before reverting anything that looks intentional.
+
 2. **Gemini CLI will confidently fabricate answers from files it never
-   read.** Tried `gemini -p ... --include-directories out` to offload the
-   screenshot QA pass — every single `read_file` call failed silently
-   (Gemini CLI's default ignore patterns exclude images from that tool),
-   and it still returned a detailed, specific, completely fabricated
-   16-item defect report. Only caught by reading the full raw stdout
-   (including the tool-error lines), not just the final answer. **If you
-   use Gemini CLI for anything file-based, verify from the raw log that
-   the reads actually succeeded before trusting the answer.** Full
-   writeup: `intelligence/techniques/gemini-cli-hallucinates-on-failed-file-reads.md`.
+   read.** Every `read_file` call can fail silently (default ignore
+   patterns exclude images) and it'll still return a detailed, confident,
+   completely fabricated report. Verify from the raw log that reads
+   actually succeeded before trusting any Gemini CLI output. Full writeup:
+   `intelligence/techniques/gemini-cli-hallucinates-on-failed-file-reads.md`.
 
-## New tooling set up tonight
+## Tooling set up tonight (still available)
 
-- **Godot 4.7 stable** installed at `D:\Projects\godot-4.7-stable\`
-  (`Godot_v4.7-stable_win64.exe` / `_console.exe`), export templates
-  installed at `%APPDATA%\Godot\export_templates\4.7.stable\` (Windows +
-  Android templates present). Verified: `--headless --import` and
-  `-- --smoke` both run clean against this project under stable — **not
-  yet switched over as the project's primary engine** (`tools/build_apk.sh`
-  and the `.tscn` file association still point at beta3, deliberately, so
-  this is a decision to make with Alex, not something to just do).
-- **`godot-mcp`** (Coding-Solo, MIT, 4.5k★, github.com/Coding-Solo/godot-mcp)
-  registered as a Claude Code MCP server at **user scope** — will be
-  available once you start a fresh session or reconnect
-  (`claude mcp list` should show `godot: ... - ✔ Connected`). No Godot-side
-  addon required (lower risk than the alternatives — doesn't touch the
-  project itself). `GODOT_PATH` env is set to the new 4.7 stable console
-  exe. Exposes: launch/run/stop the editor, capture debug output, project
-  analysis, create/modify scenes+nodes, export MeshLibrary, UID management.
-  **This is the tool to use for root-causing the city-building bug** —
-  should let you query the actual mesh/material state (surface count,
-  `cull_mode`, node transforms) instead of inferring from screenshots.
-- Alex's original suggestion, `3ddelano/gdai-mcp-plugin-godot`, turned out
-  to require going through gdaimcp.com directly (the GitHub repo is just a
-  demo project, not the installable addon/server) — possibly a paid/
-  account-gated product, didn't investigate further or sign up for
-  anything without checking first. Flag this back to Alex if `godot-mcp`
-  doesn't pan out and a second option is wanted.
-- A handful of other open-source Godot MCP servers exist if `godot-mcp`
-  turns out to be insufficient: `tugcantopaloglu/godot-mcp` (149 tools,
-  broader scope), `mkdevkit/godot-mcp`, `hi-godot/godot-ai`. Not evaluated
-  in depth — `godot-mcp` was picked for being the most established
-  (star count) with the simplest, addon-free install.
+- **Godot 4.7 stable**: `D:\Projects\godot-4.7-stable\` (both exe
+  variants), export templates installed, verified compatible
+  (`--import` + `--smoke` clean). Not switched over as primary yet.
+- **`godot-mcp`** (Coding-Solo, MIT, no project-side addon) registered as
+  a user-scope Claude Code MCP server — should appear in a fresh session's
+  tool list. Turned out **not to be needed** for tonight's actual fix — a
+  plain headless analytical script (`mesh_audit.gd`) settled the question
+  directly and more reliably than live introspection would have. Keep it
+  registered regardless; it's still the right tool for genuinely
+  runtime-only questions (Alex's own framework: plain-text-edit +
+  headless-validate covers most Godot work, MCP/live-introspection is for
+  the narrower case where you need actual running-editor state).
+- Alex's original MCP suggestion, `gdai-mcp-plugin-godot`, requires going
+  through gdaimcp.com directly (possibly paid/account-gated) — not set up,
+  didn't sign up for anything without checking first.
 
-## Suggested loop for tonight
+## Original investigation notes (superseded by the fix above, kept for context)
 
-1. **Root-cause the city building bug first** — it's the one confirmed,
-   reproducible lead. Use `godot-mcp` to inspect the live `walls`
-   MeshInstance3D on a running showcase instance: surface material
-   `cull_mode`, actual mesh AABB, and ideally the raw vertex winding.
-   Compare directly against the village house's `walls` mesh (same
-   function, different size) to isolate what actually differs.
-2. **Then do the exhaustive per-object audit Alex is actually asking for.**
-   Don't spot-check — go through all ~30 showcase specimens systematically
-   with `godot-mcp` queries (material cull_mode, mesh face counts) cross-
-   referenced against a close-up screenshot per object
-   (`TC_SHOWCASE_SHOT=1`, extend `_DEBUG_WAYPOINTS` in `asset_showcase.gd`
-   as needed — waypoints already exist for most structures). Build a
-   simple checklist/table as you go (pass/fail/uncertain per object) so
-   the next session — or Alex — can see coverage at a glance, not just
-   vibes. If you find more real issues, add them to the KB doc's list
-   rather than starting a new document (one topic, one doc).
-3. **If you find and fix a real bug**, that means editing `world_dressing.gd`
-   or `mesh_kit.gd` (real gameplay code) — that's fine and expected for an
-   actual fix, unlike the showcase-building task which was add-only. Just:
-   verify with `git diff` before every commit (gotcha #1 above), re-run
-   `--smoke` after any gameplay-code edit, and re-render the showcase
-   (`TC_SHOWCASE_SHOT=1`) to confirm the fix visually before calling it done.
-4. **Don't go chase the floating-mountain illusion further** — that one's
-   already understood (perspective foreshortening, not a bug) with a
-   proposed mitigation (steepen the rim's inner smoothstep edge in
-   `terrain.gd`) sitting in the KB doc, unapplied. It's a polish call, not
-   a bug fix — leave it for Alex to decide, don't implement without asking.
-5. **If you get properly stuck or hit something that would require
-   touching `project.godot`'s XR/rendering settings or `export_presets.cfg`
-   to fix, stop and leave a clear note instead of guessing** — that
-   boundary was set deliberately in the original task and should stay in
-   place unless Alex explicitly lifts it.
-6. Log real findings to the KB as you go (checkpoints, not just at the
-   end) — same convention as always, `daily/2026-07-03-fort.md` +
-   the showcase KB doc.
-
-Good luck — the tooling gap (screenshots only, no structured introspection)
-is now closed. Use it before falling back to more eyeballing.
+Original scope: Alex reported "a lot of flipped normals, but
+inconsistently" after inspecting the showcase scene. First pass
+(screenshot-only) found nothing definitive and wrongly flagged the city
+building as the culprit — corrected above once analytical tooling (not
+just visual inspection) was actually applied. Full history including the
+separately-resolved floating-mountain investigation:
+`intelligence/techniques/godot-asset-showcase-scene-and-floating-mountain-finding.md`
+in the KB — this has been updated with tonight's full story, read it for
+the complete timeline rather than reconstructing from this file alone.
