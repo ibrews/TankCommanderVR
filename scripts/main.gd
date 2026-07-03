@@ -318,9 +318,17 @@ func start_game() -> void:
 		"heli":
 			vehicle = PlayerAlt.Heli.new(terrain, projectiles, fx)
 		"runner":
-			on_foot = true
-			vehicle = OnFootBody.new(terrain, projectiles, fx)
-			rig.call("set_on_foot_body", vehicle)
+			if rig is XRRig:
+				on_foot = true
+				vehicle = OnFootBody.new(terrain, projectiles, fx)
+				rig.call("set_on_foot_body", vehicle)
+			else:
+				# on-foot mode needs a real XROrigin3D (XRToolsPlayerBody's
+				# hard requirement) — DesktopRig has no equivalent, so fall
+				# back to the tank instead of calling a method it lacks.
+				push_warning("[main] \"runner\" selected without an active XR rig — falling back to tank")
+				player = PlayerTank.new(terrain, projectiles, fx)
+				vehicle = player
 		"boat":
 			vehicle = PlayerBoat.new(terrain, projectiles, fx)
 		_:
@@ -401,7 +409,7 @@ func _spawn_on_foot_pickables() -> void:
 		["energy_drink", Vector2(0.0, 8.0)],
 	]
 	for entry in offsets:
-		var pos := Vector2(Terrain.SPAWN_CENTER.x, Terrain.SPAWN_CENTER.y) + entry[1]
+		var pos: Vector2 = Terrain.SPAWN_CENTER + (entry[1] as Vector2)
 		var prop: RigidBody3D
 		match entry[0]:
 			"grapple_hook":

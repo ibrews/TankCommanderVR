@@ -279,6 +279,14 @@ var _debug_label: Label3D
 
 func _ready() -> void:
 	camera = XRCamera3D.new()
+	# XRHelpers.get_xr_camera() (used by XRToolsPlayerBody) looks up
+	# origin.get_node_or_null("Camera") first, falling back to an
+	# owner-filtered child search otherwise — and nothing in this rig has an
+	# `owner` set (it's all built at runtime, never instantiated from a
+	# .tscn), so that fallback always misses. Naming it "Camera" is required,
+	# not cosmetic — without it XRToolsPlayerBody.camera_node stays null and
+	# OnFootBody crashes every physics frame.
+	camera.name = "Camera"
 	add_child(camera)
 	# Temporary on-device diagnostic readout (2026-07-02) — pinned to the
 	# camera so it's always in view. Two rounds of "still doesn't work"
@@ -423,34 +431,49 @@ func attach_to_vehicle(v: Node3D) -> void:
 # movement_sprint.gd resolves XRToolsMovementDirect.find_left/right(self) via
 # @onready — so pickups and direct-movement nodes must exist under hand_l/
 # hand_r before climb/sprint are added.
+# XRTools.find_xr_child() (used by the find_left()/find_right() helpers that
+# XRToolsMovementClimb/Sprint call from their own @onready vars) defaults to
+# owned=true — i.e. it skips any node whose `owner` is null. Every node below
+# was built at runtime (never instantiated as part of a .tscn scene tree), so
+# none of them have an owner unless set explicitly, and it must be set
+# BEFORE the next node's add_child() (whose @onready vars resolve
+# synchronously, during that same call) — not batched at the end. Without
+# this, movement_climb.gd's _ready() calls .connect() on a null
+# _left_pickup_node and crashes on the first frame.
 func _build_on_foot_nodes() -> void:
 	var pickup_scene: PackedScene = load("res://addons/godot-xr-tools/functions/function_pickup.tscn")
 	_pickup_l = pickup_scene.instantiate()
 	_pickup_l.enabled = false
 	hand_l.add_child(_pickup_l)
+	_pickup_l.owner = self
 	_pickup_r = pickup_scene.instantiate()
 	_pickup_r.enabled = false
 	hand_r.add_child(_pickup_r)
+	_pickup_r.owner = self
 
 	var direct_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_direct.tscn")
 	_direct_l = direct_scene.instantiate()
 	_direct_l.strafe = true
 	_direct_l.enabled = false
 	hand_l.add_child(_direct_l)
+	_direct_l.owner = self
 	_direct_r = direct_scene.instantiate()
 	_direct_r.strafe = true
 	_direct_r.enabled = false
 	hand_r.add_child(_direct_r)
+	_direct_r.owner = self
 
 	var sprint_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_sprint.tscn")
 	_sprint = sprint_scene.instantiate()
 	_sprint.enabled = false
 	add_child(_sprint)
+	_sprint.owner = self
 
 	var climb_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_climb.tscn")
 	_climb = climb_scene.instantiate()
 	_climb.enabled = false
 	add_child(_climb)
+	_climb.owner = self
 
 	var grapple_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_grapple.tscn")
 	_grapple_l = grapple_scene.instantiate()
@@ -462,11 +485,13 @@ func _build_on_foot_nodes() -> void:
 	_grapple_l.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
 	_grapple_l.grapple_enable_mask = 1 << 5
 	hand_l.add_child(_grapple_l)
+	_grapple_l.owner = self
 	_grapple_r = grapple_scene.instantiate()
 	_grapple_r.enabled = false
 	_grapple_r.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
 	_grapple_r.grapple_enable_mask = 1 << 5
 	hand_r.add_child(_grapple_r)
+	_grapple_r.owner = self
 
 # Called once by main.gd right after constructing a fresh OnFootBody (it needs
 # terrain/projectiles/fx, so unlike the nodes above it can't be built here).
