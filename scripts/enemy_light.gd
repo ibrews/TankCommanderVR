@@ -129,16 +129,30 @@ class Jeep:
 
 
 # ============================================================ Gunner (infantry)
+# Visual body upgraded to AvatarRig (Mode.ON_FOOT) — same rig that renders
+# players, per the plan's "soldiers and multiplayer players are one visual
+# system". No IK targets are solved (no tracking data for an NPC); instead a
+# tiny forward-authored pose table (idle/aiming = fixed "rifle shouldered"
+# hand offset, walking = velocity-derived lean) drives the same
+# AvatarRig.update_live() API a real player's tracked hands would.
 class Gunner:
 	extends CharacterBody3D
 
-	static var _mesh: ArrayMesh
+	const UNIFORM := Color(0.35, 0.36, 0.28)
+	# authored pose, local to the avatar root (which sits at Gunner's origin
+	# and inherits Gunner's own look_at() facing — so these are just "eye
+	# height" and "hands holding a rifle forward", no per-frame aiming math)
+	const HEAD_LOCAL := Transform3D(Basis(), Vector3(0, 1.55, 0))
+	const HAND_L_LOCAL := Transform3D(Basis(), Vector3(-0.05, 1.05, -0.55))
+	const HAND_R_LOCAL := Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-8)), Vector3(0.14, 1.15, -0.35))
+
 	var terrain: Terrain
 	var projectiles: Projectiles
 	var player: Node3D
 	var hp := 6.0
 	var shot_t := 2.0
 	var wander := Vector2.ZERO
+	var _avatar: AvatarRig
 	var _dead := false
 
 	func _init(t: Terrain, p: Projectiles, pl: Node3D) -> void:
@@ -149,24 +163,16 @@ class Gunner:
 		collision_mask = 1
 		add_to_group("enemies")
 
-	static func _build() -> void:
-		if _mesh:
-			return
-		var st := MeshKit.begin()
-		var uniform := Color(0.35, 0.36, 0.28)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.95, 0)), Vector3(0.42, 0.7, 0.26), uniform)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(-0.12, 0.35, 0)), Vector3(0.16, 0.7, 0.2), uniform * 0.9)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(0.12, 0.35, 0)), Vector3(0.16, 0.7, 0.2), uniform * 0.9)
-		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.45, 0)), 0.13, 0.12, 0.22, 6, Color(0.75, 0.6, 0.45))
-		MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, 1.6, 0)), 0.16, 0.13, 0.1, 6, uniform * 0.8)
-		MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0.18, 1.1, -0.3)), 0.03, 0.025, 0.8, 5, Color(0.12, 0.1, 0.08))
-		_mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.9))
-
 	func _ready() -> void:
-		_build()
-		var mi := MeshInstance3D.new()
-		mi.mesh = _mesh
-		add_child(mi)
+		_avatar = AvatarRig.new()
+		add_child(_avatar)
+		_avatar.configure(AvatarRig.Mode.ON_FOOT, UNIFORM)
+		# rifle prop rides along with the avatar's right hand
+		var rst := MeshKit.begin()
+		MeshKit.cyl(rst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(0, 0, -0.35)), 0.03, 0.025, 0.8, 5, Color(0.12, 0.1, 0.08))
+		var rifle := MeshInstance3D.new()
+		rifle.mesh = MeshKit.commit(rst, MeshKit.mat_vcol(0.9))
+		_avatar.hand_r_node().add_child(rifle)
 		if Game.mutator == "balloon":
 			Game.balloonize(self)
 		elif Levels.army_green:
@@ -174,7 +180,7 @@ class Gunner:
 			var gm := StandardMaterial3D.new()
 			gm.albedo_color = Color(0.25, 0.5, 0.22)
 			gm.roughness = 0.4
-			mi.material_override = gm
+			_recolor(_avatar, gm)
 			var base := MeshInstance3D.new()
 			var bm := CylinderMesh.new()
 			bm.top_radius = 0.55
@@ -186,7 +192,7 @@ class Gunner:
 			base.position = Vector3(0, 0.05, 0)
 			add_child(base)
 		elif Levels.cardboard:
-			mi.material_override = MeshKit.mat_tex("res://assets/tex/cardboard.png", false, 0.95)
+			_recolor(_avatar, MeshKit.mat_tex("res://assets/tex/cardboard.png", false, 0.95))
 		var shape := CollisionShape3D.new()
 		var cap := BoxShape3D.new()
 		cap.size = Vector3(0.6, 1.7, 0.6)
@@ -195,6 +201,12 @@ class Gunner:
 		add_child(shape)
 		shot_t = Game.rng.randf_range(1.5, 4.0)
 		wander = Vector2(Game.rng.randf_range(-1, 1), Game.rng.randf_range(-1, 1)).normalized()
+
+	static func _recolor(node: Node, mat: Material) -> void:
+		if node is MeshInstance3D:
+			node.material_override = mat
+		for c in node.get_children():
+			_recolor(c, mat)
 
 	func _physics_process(delta: float) -> void:
 		if _dead:
@@ -212,6 +224,8 @@ class Gunner:
 		var target_y := terrain.height(gp.x, gp.z) + 0.02
 		velocity = mv + Vector3(0, clampf((target_y - gp.y) / delta, -10.0, 10.0), 0)
 		move_and_slide()
+		var moving := Vector2(velocity.x, velocity.z).length() > 0.5
+		_avatar.update_live(delta, HEAD_LOCAL, HAND_L_LOCAL, HAND_R_LOCAL, {"sprinting": moving})
 		shot_t -= delta
 		if shot_t <= 0.0 and Game.alive and flat_d < 90.0 * Game.detect_scale():
 			shot_t = Game.rng.randf_range(1.6, 3.2) / Game.diff(0.7, 1.0, 1.4)

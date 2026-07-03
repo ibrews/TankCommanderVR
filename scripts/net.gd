@@ -34,6 +34,12 @@ var fx: FxPool = null
 var terrain: Terrain = null
 var gunner_input := Vector2.ZERO     # host: last gunner aim from client
 
+func my_id() -> int:
+	return AvatarCosmetics.PlayerId.HOST if hosting else AvatarCosmetics.PlayerId.CLIENT
+
+func their_id() -> int:
+	return AvatarCosmetics.PlayerId.CLIENT if hosting else AvatarCosmetics.PlayerId.HOST
+
 func is_client() -> bool:
 	return client
 
@@ -114,12 +120,15 @@ func _process(delta: float) -> void:
 			if Game.mode == Game.Mode.COOP and tank:
 				_send_coop_snap()
 			elif Game.mode == Game.Mode.VERSUS and tank:
-				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev)
+				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
+					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 		elif client and tank:
 			if Game.mode == Game.Mode.COOP:
-				c_gunner.rpc_id(1, tank.turret_input, _my_head_rel())
+				c_gunner.rpc_id(1, tank.turret_input, _my_head_rel(),
+					_my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 			elif Game.mode == Game.Mode.VERSUS:
-				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev)
+				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
+					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 
 # ================================================================ CO-OP
 func setup_coop(t: PlayerTank) -> void:
@@ -145,7 +154,7 @@ func make_replica_pool(t: Terrain) -> ReplicaPool:
 func _send_coop_snap() -> void:
 	var head := _my_head_rel()
 	if head != Transform3D():
-		s_driver_head.rpc(head)
+		s_driver_head.rpc(head, _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 	var enemies: Array = []
 	for grp in ["enemies", "planes"]:
 		for n in get_tree().get_nodes_in_group(grp):
@@ -169,10 +178,11 @@ func _send_coop_snap() -> void:
 		Game.hp, tank.ammo, tank.rockets_left, tank.loaded, tank.engine_on, Game.wave, Game.score, enemies)
 
 @rpc("any_peer", "unreliable_ordered")
-func c_gunner(input: Vector2, head_rel := Transform3D()) -> void:
+func c_gunner(input: Vector2, head_rel := Transform3D(), hand_l_rel := Transform3D(),
+		hand_r_rel := Transform3D(), move_flags := 0) -> void:
 	gunner_input = input
 	if head_rel != Transform3D():
-		_apply_crew_head(head_rel)
+		_apply_crew_avatar(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 @rpc("any_peer", "reliable")
 func c_event(kind: String) -> void:
@@ -217,8 +227,9 @@ func s_coop_snap(tank_t: Transform3D, turret_y: float, gun_e: float, hp: float,
 		replicas.apply(enemies)
 
 @rpc("authority", "unreliable_ordered")
-func s_driver_head(head_rel: Transform3D) -> void:
-	_apply_crew_head(head_rel)
+func s_driver_head(head_rel: Transform3D, hand_l_rel := Transform3D(), hand_r_rel := Transform3D(),
+		move_flags := 0) -> void:
+	_apply_crew_avatar(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 @rpc("authority", "reliable")
 func s_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
@@ -268,9 +279,10 @@ func v_i_died() -> void:
 		fx.explosion(remote_tank.global_position + Vector3(0, 1.5, 0), true, tank.global_position if tank else Vector3.ZERO)
 
 @rpc("any_peer", "unreliable_ordered")
-func s_versus_state(t: Transform3D, turret_y: float, gun_e: float) -> void:
+func s_versus_state(t: Transform3D, turret_y: float, gun_e: float, head_rel := Transform3D(),
+		hand_l_rel := Transform3D(), hand_r_rel := Transform3D(), move_flags := 0) -> void:
 	if remote_tank:
-		remote_tank.net_target(t, turret_y, gun_e)
+		remote_tank.net_target(t, turret_y, gun_e, head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 @rpc("any_peer", "reliable")
 func v_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
@@ -286,59 +298,16 @@ func v_damage(amount: float) -> void:
 	Game.damage_player(amount / Game.diff(0.6, 1.0, 1.35))  # undo diff scale: pvp is symmetric
 
 # ================================================================ avatars
-# Rec Room energy: round head, big visor, floating bean body. No legs. Ever.
-static func build_avatar(tint: Color) -> Node3D:
-	var root := Node3D.new()
-	var st := MeshKit.begin()
-	# bean torso
-	MeshKit.cyl(st, Transform3D(Basis(), Vector3(0, -0.32, 0)), 0.13, 0.17, 0.30, 10, tint)
-	var body := MeshInstance3D.new()
-	body.mesh = MeshKit.commit(st, MeshKit.mat_vcol(0.6))
-	root.add_child(body)
-	# head
-	var head := MeshInstance3D.new()
-	var sm := SphereMesh.new()
-	sm.radius = 0.135
-	sm.height = 0.27
-	sm.radial_segments = 14
-	sm.rings = 8
-	head.mesh = sm
-	var hm := StandardMaterial3D.new()
-	hm.albedo_color = tint.lightened(0.25)
-	hm.roughness = 0.5
-	head.material_override = hm
-	root.add_child(head)
-	# visor
-	var visor := MeshInstance3D.new()
-	var vb := BoxMesh.new()
-	vb.size = Vector3(0.19, 0.085, 0.09)
-	visor.mesh = vb
-	var vm := StandardMaterial3D.new()
-	vm.albedo_color = Color(0.08, 0.08, 0.1)
-	vm.roughness = 0.15
-	vm.metallic = 0.4
-	visor.material_override = vm
-	visor.position = Vector3(0, 0.02, -0.105)
-	root.add_child(visor)
-	# smile
-	var smile := MeshInstance3D.new()
-	var sb := BoxMesh.new()
-	sb.size = Vector3(0.07, 0.014, 0.01)
-	smile.mesh = sb
-	var smm := StandardMaterial3D.new()
-	smm.albedo_color = Color(0.15, 0.1, 0.1)
-	smile.material_override = smm
-	smile.position = Vector3(0, -0.075, -0.128)
-	root.add_child(smile)
-	return root
-
-var _crew_avatar: Node3D = null
-var _crew_target := Transform3D()
+# Rec Room energy: round head, big visor body. AvatarRig (scripts/
+# avatar_rig.gd) absorbs the old hand-built mesh here — SEATED mode is the
+# same legless bean, now with arms that track the gunner's hands.
+var _crew_avatar: AvatarRig = null
 
 func _ensure_crew_avatar() -> void:
 	if _crew_avatar == null and tank:
-		_crew_avatar = build_avatar(Color(0.9, 0.45, 0.15) if hosting else Color(0.2, 0.55, 0.9))
+		_crew_avatar = AvatarRig.new()
 		tank.add_child(_crew_avatar)
+		_crew_avatar.configure(AvatarRig.Mode.SEATED, AvatarCosmetics.tint_for(their_id()))
 		CockpitBuilder.set_interior_layer(_crew_avatar)
 
 func _my_head_rel() -> Transform3D:
@@ -347,17 +316,37 @@ func _my_head_rel() -> Transform3D:
 		return tank.global_transform.affine_inverse() * m.rig.camera.global_transform
 	return Transform3D()
 
-func _apply_crew_head(rel: Transform3D) -> void:
+## Sibling to _my_head_rel() — hand transform relative to the tank. left=true
+## for hand_l, false for hand_r. Returns identity if no hand tracking exists
+## (e.g. DesktopRig has no hand_l/hand_r at all).
+func _my_hand_rel(left: bool) -> Transform3D:
+	var m = get_tree().get_first_node_in_group("main")
+	if not (m and tank and m.rig):
+		return Transform3D()
+	var hand = m.rig.get("hand_l") if left else m.rig.get("hand_r")
+	if hand == null:
+		return Transform3D()
+	return tank.global_transform.affine_inverse() * hand.global_transform
+
+## Stub returning 0 until Phase A's on-foot locomotion exposes real
+## sprint/climb/grapple state through a queryable API — flagged dependency,
+## see the plan's Phase B section on "both-players-on-foot-simultaneously".
+## Seated driver/gunner crew never sprint/climb/grapple anyway, so 0 is
+## correct today, not just a placeholder.
+func _my_move_flags() -> int:
+	return 0
+
+func _apply_crew_avatar(head_rel: Transform3D, hand_l_rel: Transform3D, hand_r_rel: Transform3D, move_flags: int) -> void:
 	_ensure_crew_avatar()
 	if _crew_avatar:
-		_crew_target = rel
-		_crew_avatar.transform = _crew_avatar.transform.interpolate_with(rel, 0.5)
+		_crew_avatar.set_net_target(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 # ================================================================ replicas
 class RemoteTank:
 	extends CharacterBody3D
 
 	var turret: Node3D
+	var _avatar: AvatarRig
 	var _target := Transform3D()
 	var _turret_y := 0.0
 	var _has_target := false
@@ -379,9 +368,10 @@ class RemoteTank:
 		tm.mesh = EnemyTank._turret_mesh
 		turret.add_child(tm)
 		# the other kid, peeking out of the hatch
-		var av := NetManager.build_avatar(Color(0.2, 0.55, 0.9) if NetManager.hosting else Color(0.9, 0.45, 0.15))
-		av.position = Vector3(-0.28, 1.15, 0.25)
-		turret.add_child(av)
+		_avatar = AvatarRig.new()
+		_avatar.position = Vector3(-0.28, 1.15, 0.25)
+		turret.add_child(_avatar)
+		_avatar.configure(AvatarRig.Mode.SEATED, AvatarCosmetics.tint_for(NetManager.their_id()))
 		if Game.mutator == "balloon":
 			Game.balloonize(self)
 		var shape := CollisionShape3D.new()
@@ -391,10 +381,13 @@ class RemoteTank:
 		shape.position = Vector3(0, 1.0, 0)
 		add_child(shape)
 
-	func net_target(t: Transform3D, ty: float, _ge: float) -> void:
+	func net_target(t: Transform3D, ty: float, _ge: float, head_rel := Transform3D(),
+			hand_l_rel := Transform3D(), hand_r_rel := Transform3D(), move_flags := 0) -> void:
 		_target = t
 		_turret_y = ty
 		_has_target = true
+		if _avatar and head_rel != Transform3D():
+			_avatar.set_net_target(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 	func _physics_process(delta: float) -> void:
 		if not _has_target:
@@ -465,10 +458,13 @@ class ReplicaPool:
 				m.mesh = EnemyLight.Jeep._mesh
 				root.add_child(m)
 			3:
-				EnemyLight.Gunner._build()
-				var m := MeshInstance3D.new()
-				m.mesh = EnemyLight.Gunner._mesh
-				root.add_child(m)
+				# Gunner's visual body is an AvatarRig now (no static _mesh to
+				# reuse) — client-side replicas get their own idle-pose
+				# instance, driven by the same authored pose constants.
+				var av := AvatarRig.new()
+				root.add_child(av)
+				av.configure(AvatarRig.Mode.ON_FOOT, EnemyLight.Gunner.UNIFORM)
+				av.update_live(0.0, EnemyLight.Gunner.HEAD_LOCAL, EnemyLight.Gunner.HAND_L_LOCAL, EnemyLight.Gunner.HAND_R_LOCAL)
 			4:
 				EnemyLight.Mortar._build()
 				var m := MeshInstance3D.new()

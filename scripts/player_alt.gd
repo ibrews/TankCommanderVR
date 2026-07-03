@@ -1,6 +1,7 @@
-# Alternate player vehicles: helicopter (collective + cyclic) and the guy
-# who just runs around really fast for some reason (arm-swing locomotion —
-# perfect with hand tracking). Both expose the PlayerTank input API.
+# Alternate player vehicle: helicopter (collective + cyclic). Exposes the
+# PlayerTank input API. The old hand-rolled "Runner" (arm-swing locomotion)
+# has been retired in favor of OnFootBody (scripts/on_foot_body.gd), which
+# uses godot-xr-tools' XRToolsPlayerBody + movement providers instead.
 class_name PlayerAlt
 extends Object
 
@@ -218,115 +219,4 @@ class Heli:
 	func stick_fire() -> void: fire_rockets()
 	func stick_rockets() -> void: fire_rockets()
 	func set_mg(h: bool) -> void: mg_held = h
-	func quick_start() -> void: pass
-
-
-# ============================================================ The Runner
-class Runner:
-	extends CharacterBody3D
-
-	var terrain: Terrain
-	var projectiles: Projectiles
-	var fx: FxPool
-	var cockpit: Dictionary = {}
-	var stick_move := Vector2.ZERO
-	var rocket_cool := 0.0
-	var _rumble_cb: Callable = Callable()
-	var _rig: Node3D = null
-	var _step_t := 0.0
-	var _arm_speed := 0.0   # arm-swing locomotion magnitude
-
-	func _init(t: Terrain, p: Projectiles, f: FxPool) -> void:
-		terrain = t
-		projectiles = p
-		fx = f
-		name = "PlayerRunner"
-		collision_layer = 2
-		collision_mask = 1 | 4
-		add_to_group("player")
-
-	func _ready() -> void:
-		var shape := CollisionShape3D.new()
-		var cap := CapsuleShape3D.new()
-		cap.radius = 0.35
-		cap.height = 1.6
-		shape.shape = cap
-		shape.position = Vector3(0, 0.9, 0)
-		add_child(shape)
-		# a hand-held rocket tube so you're not defenseless
-		var seat := Node3D.new()
-		seat.name = "Feet"
-		add_child(seat)
-		cockpit = {"seat_anchor": seat, "eye_local": Vector3(0, 1.55, 0), "controls": {}}
-		Game.game_restarted.connect(_respawn)
-		_respawn()
-
-	func _respawn() -> void:
-		global_position = Vector3(terrain.spawn.x, terrain.height(terrain.spawn.x, terrain.spawn.y) + 0.1, terrain.spawn.y)
-
-	# the rig hands us controller/hand velocities for arm-swing locomotion
-	func set_arm_swing(speed: float) -> void:
-		_arm_speed = speed
-
-	func _physics_process(delta: float) -> void:
-		var cam: Node3D = _rig.get("camera") if _rig else null
-		var fwd := -cam.global_transform.basis.z if cam else -basis.z
-		fwd.y = 0.0
-		fwd = fwd.normalized()
-		var right := fwd.cross(Vector3.UP) * -1.0
-		var run := Tune.v("runner_speed")
-		var mv := (fwd * stick_move.y + right * -stick_move.x) * run
-		# arm-swing: pump your arms to sprint (hands or controllers!)
-		if _arm_speed > 1.2:
-			mv += fwd * clampf(_arm_speed * 2.2, 0.0, run * 1.4)
-		var gp := global_position
-		var ty := terrain.height(gp.x, gp.z) + 0.05
-		velocity = mv + Vector3(0, clampf((ty - gp.y) / delta, -20, 20), 0)
-		move_and_slide()
-		var spd := Vector2(velocity.x, velocity.z).length()
-		_step_t -= delta * spd
-		if _step_t <= 0.0 and spd > 2.0:
-			_step_t = 3.0
-			Sfx.play_at("sneaker", global_position, -14.0, Game.rng.randf_range(0.9, 1.2))
-			fx.dust(global_position, 0.4)
-		rocket_cool -= delta
-		# lava / arena safety
-		var flat := Vector2(global_position.x, global_position.z)
-		if flat.length() > terrain.arena_radius:
-			flat = flat.normalized() * terrain.arena_radius
-			global_position.x = flat.x
-			global_position.z = flat.y
-
-	func fire_bazooka() -> void:
-		if rocket_cool > 0.0 or not Game.alive:
-			return
-		rocket_cool = 1.6
-		Game.make_noise()
-		var cam: Node3D = _rig.get("camera") if _rig else self
-		var dir := -cam.global_transform.basis.z
-		projectiles.fire(Projectiles.Kind.ROCKET, cam.global_position + dir * 0.5 + Vector3(0, -0.2, 0),
-			dir * 55.0, [get_rid()], true)
-		Sfx.play_at("rocket", global_position, 2.0)
-		_rumble(0.6, 0.1)
-
-	func take_damage(amount: float, at: Vector3) -> void:
-		if not Game.alive:
-			return
-		Game.damage_player(amount * 1.5)   # squishy!
-		Sfx.play_at("hit", at, -4.0)
-		_rumble(0.8, 0.15)
-
-	func _rumble(a: float, d: float) -> void:
-		if _rumble_cb.is_valid():
-			_rumble_cb.call(a, d)
-
-	# rig-facing API
-	func set_stick_drive(v: Vector2) -> void: stick_move = v
-	func set_stick_turret(_v: Vector2) -> void: pass
-	func fire_primary() -> void: fire_bazooka()
-	func stick_fire() -> void: fire_bazooka()
-	func stick_rockets() -> void: fire_bazooka()
-	func set_mg(h: bool) -> void:
-		if h:
-			fire_bazooka()
 	func quick_start() -> void: pass

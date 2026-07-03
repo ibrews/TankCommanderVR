@@ -135,6 +135,13 @@ func _build() -> void:
 	bomb.position = Vector3(-0.34, -0.10, -0.28)
 	root.add_child(bomb)
 	bomb.pressed.connect(drop_bomb)
+	# canopy-rail hatch lever — bail out on foot mid-mission (parachute-free,
+	# same abandon-in-place rule as the tank hatch)
+	var hatch := VRControl.Lever.create(0.18, Color(0.85, 0.72, 0.15), 42.0, false)
+	hatch.position = Vector3(0.42, 0.15, 0.05)
+	hatch.rotation.z = deg_to_rad(-90)
+	root.add_child(hatch)
+	hatch.value_changed.connect(_on_hatch_lever)
 	# instruments
 	speed_label = _mk_label(root, Vector3(-0.18, 0.26, -0.415))
 	alt_label = _mk_label(root, Vector3(0.05, 0.26, -0.415))
@@ -281,3 +288,9 @@ func set_mg(held: bool) -> void:
 
 func quick_start() -> void:
 	pass  # engine is always running
+
+func _on_hatch_lever(v: float) -> void:
+	if absf(v) > 0.8 and Game.player_mode == Game.PlayerMode.SEATED:
+		var m := get_tree().get_first_node_in_group("main")
+		if m:
+			m.call_deferred("exit_vehicle")

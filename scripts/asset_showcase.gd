@@ -241,11 +241,11 @@ func _place_player_vehicles() -> void:
 	heli.global_position = Vector3(xs[3], _gy(xs[3], ROW_PLAYER) + 1.6, ROW_PLAYER)
 	_label("PLAYER HELICOPTER", heli.global_position + Vector3(0, 3.2, 0))
 
-	var runner := PlayerAlt.Runner.new(terrain, projectiles, fx)
+	var runner := OnFootBody.new(terrain, projectiles, fx)
 	add_child(runner)
 	_freeze(runner)
 	runner.global_position = Vector3(xs[4], _gy(xs[4], ROW_PLAYER) + 0.1, ROW_PLAYER)
-	_label("PLAYER RUNNER\n(no visible mesh — VR hands/arms only)", runner.global_position + Vector3(0, 2.6, 0), 36)
+	_label("PLAYER ON-FOOT\n(no visible mesh — VR hands/arms only)", runner.global_position + Vector3(0, 2.6, 0), 36)
 
 	var boat := PlayerBoat.new(terrain, projectiles, fx)
 	add_child(boat)

@@ -116,6 +116,12 @@ func _build() -> void:
 	rkt.position = Vector3(0.45, 0.28, -0.26)
 	root.add_child(rkt)
 	rkt.pressed.connect(fire_rockets)
+	# gunwale grab-rail lever — vault over the side to go on-foot mid-mission
+	var hatch := VRControl.Lever.create(0.18, Color(0.85, 0.72, 0.15), 42.0, false)
+	hatch.position = Vector3(-0.55, 0.05, -0.3)
+	hatch.rotation.z = deg_to_rad(90)
+	root.add_child(hatch)
+	hatch.value_changed.connect(_on_hatch_lever)
 	speed_label = Label3D.new()
 	speed_label.text = "0 KTS"
 	speed_label.font_size = 56
@@ -215,3 +221,9 @@ func stick_fire() -> void: fire_primary()
 func stick_rockets() -> void: fire_rockets()
 func set_mg(h: bool) -> void: mg_held = h
 func quick_start() -> void: pass
+
+func _on_hatch_lever(v: float) -> void:
+	if absf(v) > 0.8 and Game.player_mode == Game.PlayerMode.SEATED:
+		var m := get_tree().get_first_node_in_group("main")
+		if m:
+			m.call_deferred("exit_vehicle")
