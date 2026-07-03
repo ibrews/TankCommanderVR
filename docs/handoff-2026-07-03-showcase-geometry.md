@@ -28,9 +28,19 @@ points.
 **Result before the fix:** 8 of 10 real meshes tested had mismatches —
 every one of them cylinder-based (tank turret 36/72, enemy plane 32/112,
 jeep 100/236, gunner infantry 34/104, mortar 36/180, ship 54/198,
-tree/palm foliage). The two box-only meshes (tank hull, rocks) were
-already 100% correct — this bug was specific to `MeshKit.cyl()`, not
-`MeshKit.box()` or `MeshKit.prism()`.
+tree/palm foliage). The two box-only meshes tested (tank hull, rocks)
+were already correct at that point.
+
+**⚠️ IMPORTANT — Alex explicitly confirmed this is NOT the whole
+picture, do not treat it as closed.** After the cylinder fix, Alex said
+directly: *"it's not just cylinders — it's boxes and sphere and all sorts
+of other shapes too. but it's inconsistent... don't lie and say this is
+only cylinders."* Coverage was broadened in response (see below) and
+**every additional case tested still came back clean** — but that is
+sample coverage, not proof of correctness everywhere. There are real,
+unexplored gaps (also listed below). Treat Alex's report as an open,
+unresolved signal, not something this session cleared. See "What's
+genuinely still open" near the end of this doc before concluding anything.
 
 **Fix applied** (`scripts/mesh_kit.gd`, `cyl()` function): the side-wall
 quad was split into triangles `(b0,b1,t1)` + `(b0,t1,t0)`, which — verified
@@ -58,31 +68,62 @@ was checked, not assumed).
    previously-affected cylinder meshes — render correctly.
 
 **Retracted from earlier tonight:** the "CITY BUILDING renders inside-out"
-claim in the original version of this doc. That was investigated further
-with an analytical check on `MeshKit.box()` specifically (not `cyl()`) —
-both the small and large wall-box sizes came back 100% correctly wound.
-The actual bug was never in `box()` at all; the city-building screenshot
-was very likely just a misread on my part (a very tall, narrow building
-viewed close-up against open sky). Don't re-chase it — if Alex still sees
-something wrong with buildings specifically after this cylinder fix, that
-would be a *new* finding, not the one already investigated twice tonight.
+claim in the original version of this doc — a narrow analytical check on
+`MeshKit.box()` came back clean and the screenshot was very likely a
+misread on my part. That specific claim is retracted. It is NOT evidence
+that buildings/boxes in general are fine — see below.
 
-**What this means for you (the parallel session):** the primary
-investigation is DONE. What's left:
-- Confirm on your end that the fix looks right in-editor
-  (`scenes/asset_showcase.tscn`, F6) — a second pair of eyes before Alex
-  wakes up is worth it, especially since Alex's original report was more
-  specific/emphatic than what one round of screenshot review caught.
-- If Alex is *still* seeing something after this, it's a genuinely new
-  lead — use `mesh_audit.gd` as the template (it's fast, cheap, and far
-  more reliable than screenshots — extend it to check `MeshKit.prism()`
-  callers too, which weren't isolated on their own, only inside the
-  EnemyShip combined-mesh test which came back clean).
-- **This was a real gameplay-code fix** (`scripts/mesh_kit.gd`), not
-  showcase-only. It affects literally every cylinder in the game — export
-  a fresh APK when this feels solid so Alex can confirm on the Quest, since
-  this is exactly the kind of thing that can look different on-device than
-  on desktop.
+**Coverage was then broadened, at Alex's insistence, to 13 meshes total**
+(added: `MeshKit.prism()` in isolation, `CastleWall`'s wall+crenellations
+and rubble — both use many rotated/compound-rotated `box()` calls).
+**Every one of those 13 came back with 0 winding mismatches.** This is
+real evidence that the specific cases tested are correct — it is NOT
+proof that `box()`/`prism()`/`SphereMesh` are correct everywhere. Explicit
+gaps, not yet tested by anything in this session:
+- Every individual `box()`/`cyl()`/`prism()` call site in
+  `world_dressing.gd` that wasn't specifically isolated: village/city
+  building walls+roofs (only the wall box was checked earlier, not via
+  `mesh_audit.gd`'s winding test), beach umbrellas, wrecks, gym
+  (walls/bleachers/hoops/forts), baby room (crib/blocks/bricks), sea/lava
+  quad grids.
+- `npc.gd`: cabbage merchant stand, green creeper, giant baby — none
+  audited.
+- **`SphereMesh` usage is completely untested by this audit** — it's
+  Godot's own built-in primitive (`cockpit_builder.gd`, `interactables.gd`,
+  `net.gd`, `world_dressing.gd`'s gym/babyroom balls, `xr_rig.gd`), a
+  different code path from `MeshKit` entirely. If Alex is seeing a sphere
+  issue, it's either a genuinely different bug in a different place, or
+  something about how a `SphereMesh` interacts with a specific material —
+  worth checking Godot's own primitive generation isn't the assumption to
+  make; check what material/transform is actually applied to it first.
+- The winding-vs-stored-normal test itself only catches ONE class of bug
+  (culling/shading disagreement from bad triangle order). It would NOT
+  catch: a wrong but *self-consistent* normal (still shades wrong, no
+  mismatch — see `_check()`'s docstring caveat), UV/material issues that
+  look like geometry problems, or anything that's actually correct
+  geometry but reads as "flipped" due to lighting/rendering context (like
+  the original mountain-foreshortening finding from earlier tonight).
+
+**What this means for you (the parallel session): this is NOT done.**
+The cylinder fix is real, verified, and worth keeping — but Alex's report
+of additional box/sphere issues, "inconsistently," has not been resolved
+or disproven, only narrowed. Don't tell Alex this is fixed until either
+you find and fix more real bugs, or you get specific enough detail from
+Alex (which object, from which angle, in the showcase or in-headset) to
+either reproduce it analytically or rule it out with actual evidence —
+not another round of screenshot-squinting.
+- Start with the gaps listed above — extend `mesh_audit.gd` (it's fast,
+  cheap, far more reliable than screenshots) to cover them before doing
+  anything else.
+- If you find a real box/prism/sphere winding bug, it needs the same
+  treatment as the cylinder fix: work out the exact vertex math by hand,
+  verify with the audit script before AND after, re-run `--smoke`, re-render
+  the showcase for a visual check. Don't ship a fix you haven't verified
+  three ways like the cylinder one was.
+- Once genuinely confident (not just "the tests I thought to run pass"),
+  export a fresh APK so Alex can confirm on the Quest — this is real
+  gameplay code now (`scripts/mesh_kit.gd`), not showcase-only, and it can
+  look different on-device than on desktop.
 
 ## Two gotchas from tonight — still relevant, read before doing anything
 
