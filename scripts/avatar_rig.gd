@@ -64,6 +64,14 @@ func configure(p_mode: int, p_tint: Color) -> void:
 	_rebuild()
 	_configured = true
 
+## Stable attachment points for props that need to ride along with a hand
+## (e.g. an NPC's rifle-shouldered pose) — valid only after configure().
+func hand_l_node() -> Node3D:
+	return _hand_l
+
+func hand_r_node() -> Node3D:
+	return _hand_r
+
 func _rebuild() -> void:
 	for c in get_children():
 		c.queue_free()

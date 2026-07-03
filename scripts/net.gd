@@ -458,10 +458,13 @@ class ReplicaPool:
 				m.mesh = EnemyLight.Jeep._mesh
 				root.add_child(m)
 			3:
-				EnemyLight.Gunner._build()
-				var m := MeshInstance3D.new()
-				m.mesh = EnemyLight.Gunner._mesh
-				root.add_child(m)
+				# Gunner's visual body is an AvatarRig now (no static _mesh to
+				# reuse) — client-side replicas get their own idle-pose
+				# instance, driven by the same authored pose constants.
+				var av := AvatarRig.new()
+				root.add_child(av)
+				av.configure(AvatarRig.Mode.ON_FOOT, EnemyLight.Gunner.UNIFORM)
+				av.update_live(0.0, EnemyLight.Gunner.HEAD_LOCAL, EnemyLight.Gunner.HAND_L_LOCAL, EnemyLight.Gunner.HAND_R_LOCAL)
 			4:
 				EnemyLight.Mortar._build()
 				var m := MeshInstance3D.new()
