@@ -96,7 +96,16 @@ class XRHand:
 		trigger_haptic_pulse("haptic", 0.0, amp, dur, 0.0)
 
 	func hand_pos() -> Vector3:
-		if not get_has_tracking_data() and hand_mesh and hand_mesh.get_has_tracking_data():
+		# Prefer the hand-tracking-mesh position whenever it's actually tracked,
+		# not just when the controller ISN'T — XR_EXT_hand_interaction (enabled
+		# for bare-hand pinch/grasp) synthesizes a grip pose on this SAME
+		# left_hand/right_hand tracker while hand-tracking is active, so
+		# get_has_tracking_data() alone can read true with no controller in
+		# hand. That synthesized pose is fine for pinch/grasp button values but
+		# isn't guaranteed to track the real hand position accurately — the
+		# hand tracker's own position (feeding the visible hand mesh) is the
+		# authoritative source whenever it has data.
+		if hand_mesh and hand_mesh.get_has_tracking_data():
 			return hand_mesh.global_position
 		return global_position
 
@@ -184,21 +193,25 @@ class XRHand:
 		if m == null:
 			laser.visible = false
 			return
-		# Ray origin/direction: prefer this hand's aim pose; if the controller
-		# isn't tracked (set down, or hand-tracking lost), fall back to the head
-		# so the menu is always pointable by gaze.
+		# Ray origin/direction: prefer the hand-tracking-mesh position whenever
+		# it's actually tracked (authoritative — see hand_pos()'s comment on
+		# why get_has_tracking_data() alone on the controller tracker isn't
+		# enough during bare-hand play), then this hand's real controller aim
+		# pose, then its grip pose; if nothing is tracked (controller set
+		# down, hand-tracking lost), fall back to the head so the menu is
+		# always pointable by gaze.
 		var from: Vector3
 		var dir: Vector3
 		var head := false
-		if aim and aim.get_has_tracking_data():
+		if hand_mesh and hand_mesh.get_has_tracking_data():
+			from = hand_mesh.global_position
+			dir = -hand_mesh.global_transform.basis.z
+		elif aim and aim.get_has_tracking_data():
 			from = aim.global_position
 			dir = -aim.global_transform.basis.z
 		elif get_has_tracking_data():
 			from = global_position
 			dir = -global_transform.basis.z
-		elif hand_mesh and hand_mesh.get_has_tracking_data():
-			from = hand_mesh.global_position
-			dir = -hand_mesh.global_transform.basis.z
 		elif rig and rig.camera and tracker == "right_hand":
 			# only one hand drives the gaze fallback, else both double-click it
 			from = rig.camera.global_position
