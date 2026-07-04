@@ -38,6 +38,17 @@ func start_transit(target: Vector2) -> void:
 	transit_target = target
 	_has_transit = true
 	state = State.TRANSIT
+	# Snap to face the target NOW. The _ready() heading snap can't cover this:
+	# EnemyManager add_child()s the plane (firing _ready with _has_transit
+	# still false → random heading) and only then positions it and calls this.
+	# With TRANSIT's slow 0.35 rad/s steer, a bad initial heading meant many
+	# seconds flying the wrong way — Alex: "planes are still spawning right by
+	# the edge of the map facing outward."
+	if is_inside_tree():
+		var gp := global_position
+		heading = atan2(-(target.x - gp.x), -(target.y - gp.z))
+		alt = 70.0
+		basis = Basis(Vector3.UP, heading)
 
 func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 	terrain = t
