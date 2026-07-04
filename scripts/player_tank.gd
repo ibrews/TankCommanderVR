@@ -154,7 +154,16 @@ func _build_exterior() -> void:
 	var ust := MeshKit.begin()
 	# turret shell — wide flat dome look via stacked cyl + box front
 	MeshKit.cyl(ust, Transform3D(Basis(), Vector3(-0.1, 0.38, 0.0)), 1.05, 0.85, 0.78, 12, hull_c)
-	MeshKit.box(ust, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(12)), Vector3(0, 0.35, -0.72)), Vector3(1.5, 0.62, 0.5), hull_c, 0.18)
+	# Front armor slab, now with a real driver's-window opening cut through
+	# it (x -0.75..-0.06, matching the interior wall's widened gap). The old
+	# single solid box covered the interior vision slit COMPLETELY — the
+	# actual reason there has never been a front view out of this tank, no
+	# matter how much the interior slit was widened.
+	var fb := Basis(Vector3.RIGHT, deg_to_rad(12))
+	var fc := Vector3(0, 0.35, -0.72)
+	MeshKit.box(ust, Transform3D(fb, fc + fb * Vector3(0.345, 0.0, 0.0)), Vector3(0.81, 0.62, 0.5), hull_c, 0.18)
+	MeshKit.box(ust, Transform3D(fb, fc + fb * Vector3(-0.405, 0.23, 0.0)), Vector3(0.69, 0.16, 0.5), hull_c, 0.18)
+	MeshKit.box(ust, Transform3D(fb, fc + fb * Vector3(-0.405, -0.25, 0.0)), Vector3(0.69, 0.12, 0.5), hull_c, 0.18)
 	# mantlet
 	MeshKit.box(ust, Transform3D(Basis(), Vector3(0, 0.35, -0.98)), Vector3(0.55, 0.5, 0.3), Color(0.55, 0.57, 0.50), 0.18)
 	# commander cupola
@@ -172,16 +181,20 @@ func _build_exterior() -> void:
 	# Darkened to a dull olive-drab matching the rest of the hull, and
 	# pushed out/back slightly so they crowd the periscope sightlines less.
 	var pst := MeshKit.begin()
+	# v0.6.15: pods moved BEHIND the turret (z 0.22 -> 0.62). At z 0.22 they
+	# sat directly over the side hatches and inside the side-window z range
+	# (-0.15..0.10) — Alex: "missile launchers are still blocking side
+	# hatches." Rear-mounted pods clear both (no rear window exists).
 	for sx in [-1.1, 1.1]:
-		MeshKit.box(pst, Transform3D(Basis(), Vector3(sx, 0.45, 0.22)), Vector3(0.35, 0.4, 0.9), Color(0.28, 0.30, 0.24), 0.18)
+		MeshKit.box(pst, Transform3D(Basis(), Vector3(sx, 0.45, 0.62)), Vector3(0.35, 0.4, 0.9), Color(0.28, 0.30, 0.24), 0.18)
 		for iy in 2:
-			for iz in 2:
-				MeshKit.cyl(pst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(sx, 0.37 + iy * 0.17, -0.25 + iz * 0.0)), 0.055, 0.055, 0.12, 8, Color(0.1, 0.1, 0.1))
+			for ix in 2:
+				MeshKit.cyl(pst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(sx + (ix - 0.5) * 0.16, 0.37 + iy * 0.17, 0.17)), 0.055, 0.055, 0.12, 8, Color(0.1, 0.1, 0.1))
 	var pods_mi := MeshInstance3D.new()
 	pods_mi.mesh = MeshKit.commit(pst, MeshKit.mat_vcol(0.7, 0.2))
 	turret.add_child(pods_mi)
-	pod_l = Node3D.new(); pod_l.position = Vector3(-1.0, 0.45, -0.35); turret.add_child(pod_l)
-	pod_r = Node3D.new(); pod_r.position = Vector3(1.0, 0.45, -0.35); turret.add_child(pod_r)
+	pod_l = Node3D.new(); pod_l.position = Vector3(-1.1, 0.45, 0.15); turret.add_child(pod_l)
+	pod_r = Node3D.new(); pod_r.position = Vector3(1.1, 0.45, 0.15); turret.add_child(pod_r)
 
 	# gun: pivot -> recoil -> barrel + breech
 	gun_pivot = Node3D.new()
@@ -213,8 +226,11 @@ func _build_exterior() -> void:
 	# an X=0 breech was only ~0.11m clear of the eye's own X position,
 	# barely offset at all despite the "seated left of" design intent.
 	var bst := MeshKit.begin()
-	MeshKit.box(bst, Transform3D(Basis(), Vector3(0.12, 0, 0.20)), Vector3(0.34, 0.4, 0.75), Color(0.35, 0.38, 0.34))
-	MeshKit.box(bst, Transform3D(Basis(), Vector3(0.12, 0, 0.75)), Vector3(0.26, 0.30, 0.10), Color(0.24, 0.26, 0.24))
+	# v0.6.15: render sweep showed the old block STILL filling the whole
+	# right half of the seated view (rear plate ended 5cm from the eye).
+	# Shrunk and pulled forward: rear face now ~0.7m ahead of the eye.
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0.12, 0, 0.0)), Vector3(0.30, 0.34, 0.40), Color(0.35, 0.38, 0.34))
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0.12, 0, 0.22)), Vector3(0.22, 0.26, 0.08), Color(0.24, 0.26, 0.24))
 	var bmi := MeshInstance3D.new()
 	bmi.mesh = MeshKit.commit(bst, MeshKit.mat_vcol(0.6, 0.35))
 	bmi.layers = 2
@@ -229,7 +245,10 @@ func _build_exterior() -> void:
 	# breech reload lever — mounted on the gun cradle, left side (player side)
 	var breech_lever := VRControl.Lever.create(0.22, Color(0.75, 0.15, 0.1), 45.0, true)
 	breech_lever.center_rate = 5.0
-	breech_lever.position = Vector3(-0.22, 0.0, 0.20)  # matches the breech block's new position above
+	# base overlaps the breech box's left face (x -0.03) so the lever is
+	# visibly MOUNTED on it, not floating mid-air (Alex: "levers not
+	# attached to anything")
+	breech_lever.position = Vector3(-0.02, 0.0, 0.10)
 	breech_lever.rotation.z = deg_to_rad(90)  # sticks out toward player
 	gun_pivot.add_child(breech_lever)
 	breech_lever.value_changed.connect(_on_breech_lever)

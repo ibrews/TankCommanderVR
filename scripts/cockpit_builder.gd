@@ -66,22 +66,26 @@ static func _build_static(root: Node3D) -> void:
 
 	# ---- front wall with 3 vision-slit gaps (eye sits just above slit center
 	# so the natural sightline through the periscopes is slightly downward)
-	var slit_y0 := 0.24
-	var slit_y1 := 0.39
+	# Widened 0.15m -> 0.34m (v0.6.13's release note claimed this was done;
+	# the code never actually changed — Alex: "still no front view out of
+	# the tank" was literally true). Eye y=0.33 sits just above band center.
+	var slit_y0 := 0.16
+	var slit_y1 := 0.50
 	# below band
 	MeshKit.box(st, Transform3D(Basis(), Vector3((X0 + X1) / 2, (YF + slit_y0) / 2, Z0)), Vector3(X1 - X0, slit_y0 - YF, w), STEEL)
 	# above band
 	MeshKit.box(st, Transform3D(Basis(), Vector3((X0 + X1) / 2, (slit_y1 + YR) / 2, Z0)), Vector3(X1 - X0, YR - slit_y1, w), STEEL)
-	# columns between slits: gaps at [-0.46,-0.13] (center), [-0.71,-0.51] (left), [0.00,0.20] (right)
+	# columns between slits: left+center gaps merged into one wide driver's
+	# window [-0.71,-0.06] (eye x=-0.28 centers on it), right gap [0.00,0.20]
 	var band_y := (slit_y0 + slit_y1) / 2.0
 	var band_h := slit_y1 - slit_y0
-	for seg in [[X0, -0.71], [-0.51, -0.46], [-0.13, 0.00], [0.20, X1]]:
+	for seg in [[X0, -0.71], [-0.06, 0.00], [0.20, X1]]:
 		var cx: float = (seg[0] + seg[1]) / 2.0
 		var cw: float = seg[1] - seg[0]
 		if cw > 0.005:
 			MeshKit.box(st, Transform3D(Basis(), Vector3(cx, band_y, Z0)), Vector3(cw, band_h, w), STEEL)
 	# periscope housings (protrude out through turret front armor)
-	for slit in [[-0.71, -0.51], [-0.46, -0.13], [0.00, 0.20]]:
+	for slit in [[-0.71, -0.06], [0.00, 0.20]]:
 		var cx: float = (slit[0] + slit[1]) / 2.0
 		var cw: float = slit[1] - slit[0]
 		var tunnel_len := 0.28

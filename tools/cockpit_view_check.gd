@@ -62,9 +62,26 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
 	DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://out"))
-	get_viewport().get_texture().get_image().save_png(
-		ProjectSettings.globalize_path("res://out/cockpit_view_forward.png"))
-	print("[cockpit-check] forward (normal) shot saved")
+	# Full seated sweep, not just forward -- side hatches, levers, breech and
+	# the periscope band all live off-axis. [yaw_deg, pitch_deg, name]
+	var views := [
+		[0.0, 0.0, "forward"],
+		[0.0, 12.0, "forward_up"],
+		[55.0, 0.0, "left55"],
+		[-55.0, 0.0, "right55"],
+		[90.0, 0.0, "left90"],
+		[-90.0, 0.0, "right90"],
+		[180.0, 0.0, "rear"],
+	]
+	for v in views:
+		cam.global_position = eye_pos
+		cam.rotation = Vector3(deg_to_rad(v[1]), deg_to_rad(v[0]), 0)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		get_viewport().get_texture().get_image().save_png(
+			ProjectSettings.globalize_path("res://out/cockpit_view_%s.png" % v[2]))
+		print("[cockpit-check] %s shot saved" % v[2])
+	cam.global_transform = forward_transform
 
 	# Same exact transform, now with the debug facing shader on the WHOLE
 	# tank (hull + cockpit) — settles whether the big flat surface seen in
