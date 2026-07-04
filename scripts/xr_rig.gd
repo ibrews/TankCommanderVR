@@ -483,7 +483,25 @@ func to_menu_anchor(parent: Node3D) -> void:
 	camera.current = true
 	camera.make_current()
 
-func attach_to_vehicle(v: Node3D) -> void:
+# Wide establishing shot held during the ~1.2s pre-calibration window (see
+# _calibrate() below) when entering a fresh level. Alex, live headset:
+# "when we first begin in first person mode, for about a second we
+# quickly see an 'almost' third person view. I actually quite like that...
+# start with a nice wide shot... at a good 45 degree angle, with your
+# vehicle dead center, before you pop into control." That glimpse was
+# actually an ACCIDENT of timing -- before _calibrate() runs, `position`
+# is whatever the raw pre-offset state happens to be, and it looked wide/
+# elevated because a real standing headset height differs from the
+# eventual seated eye position (so it varies with however tall the player
+# is / however they're standing at that exact moment). Made it a
+# deliberate, consistent offset instead. Rotation stays identity (matches
+# the seat's own forward, same as third-person's existing offset) --
+# empirically the player's natural head orientation already frames the
+# vehicle fine without forcing a look-at, exactly like third person
+# already does.
+const ESTABLISHING_SHOT_OFFSET := Vector3(0, 10.0, 10.0)
+
+func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 	tank = v
 	Game.player_mode = Game.PlayerMode.SEATED
 	_set_on_foot_active(false)
@@ -494,6 +512,8 @@ func attach_to_vehicle(v: Node3D) -> void:
 		get_parent().remove_child(self)
 		anchor.add_child(self)
 	transform = Transform3D()
+	if show_establishing_shot:
+		position = ESTABLISHING_SHOT_OFFSET
 	_calibrated = false
 	_calib_t = 0.0
 	camera.current = true

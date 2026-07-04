@@ -33,18 +33,30 @@ func to_menu_anchor(parent: Node3D) -> void:
 	camera.top_level = false
 	camera.current = true
 
-func attach_to_vehicle(v: Node3D) -> void:
+# Matches XRRig.ESTABLISHING_SHOT_OFFSET (see its own comment for why) --
+# duplicated rather than shared since the two rigs don't have a common
+# base class, kept in sync by value only.
+const ESTABLISHING_SHOT_OFFSET := Vector3(0, 10.0, 10.0)
+
+func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 	tank = v
 	var anchor: Node3D = v.cockpit["seat_anchor"]
 	if get_parent() != anchor:
 		get_parent().remove_child(self)
 		anchor.add_child(self)
 	transform = Transform3D()
-	position = v.cockpit["eye_local"]
-	camera.current = true
 	_yaw = 0.0
 	_pitch = 0.0
-	_apply_camera_mode()
+	camera.current = true
+	if show_establishing_shot:
+		position = ESTABLISHING_SHOT_OFFSET
+		get_tree().create_timer(1.2).timeout.connect(func():
+			if tank == v and is_instance_valid(self):
+				position = v.cockpit["eye_local"]
+				_apply_camera_mode())
+	else:
+		position = v.cockpit["eye_local"]
+		_apply_camera_mode()
 
 # First person seats the camera at the cockpit eye; third person detaches it to
 # a chase position behind the vehicle. Mouse-look still steers the view in both.

@@ -597,7 +597,11 @@ func start_game() -> void:
 	elif Game.mode == Game.Mode.COOP:
 		NetManager.setup_coop(player)
 	if not on_foot:
-		rig.call("attach_to_vehicle", vehicle)
+		# show_establishing_shot=true here specifically -- this is the
+		# "entering a fresh level" path. _swap_vehicle()/enter_vehicle()'s
+		# own attach_to_vehicle() calls deliberately don't pass this; a
+		# mid-mission vehicle swap or re-entry isn't "starting a level."
+		rig.call("attach_to_vehicle", vehicle, true)
 		_auto_start_if_third_person(vehicle)
 	_spawn_on_foot_pickables()
 	if Levels.current.has("sphere_world"):
