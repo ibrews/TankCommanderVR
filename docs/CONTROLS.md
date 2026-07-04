@@ -9,6 +9,8 @@
 | Left stick click | Restart level (solo) / leave to hangar (co-op, versus) |
 | Either menu button | **Pause** — freezes the level in place (solo only; co-op/versus keep running since the other player can't be stopped) and shows the real lobby menu, positioned where you were looking when you paused. Press the same button again with nothing selected to resume exactly where you were. Picking a different vehicle (same level/mode/difficulty/mutator) swaps in place — you keep your wave/score. Picking a different level, mode, difficulty, or mutator does a full restart. |
 | Laser pointer (aim pose, or gaze if no hand/controller tracked) + trigger / A-X / menu button | Click menu / pause-menu buttons |
+| **Hold LEFT trigger ~1 second (seated, empty hand)** | **Exit the current vehicle** — works in every vehicle, no lever hunt. Plane: ejection seat + parachute. Biplane: bail out + parachute. Airborne helicopter: bail out + parachute. Everything else: climb out beside the vehicle. Haptic ticks confirm the hold is charging. |
+| Hold LEFT trigger (on foot, within ~0.6m of a vehicle seat) | Climb back in (grip squeeze still works too) |
 
 ### Entering a level
 A wide establishing shot (pulled back further than normal 3rd person, ~45° overhead angle, vehicle centered) holds for about a second before you drop into normal control — first or third person, whichever you have selected. Only on a genuine level start, not on a vehicle swap or re-entry.

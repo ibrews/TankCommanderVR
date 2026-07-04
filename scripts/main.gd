@@ -59,6 +59,8 @@ func _ready() -> void:
 		print("[smoke] starting smoke test")
 	if "--shots" in args:
 		_run_shot_sequence()
+	if "--previewtest" in args:
+		_run_preview_test()
 	if "--disaster" in args:
 		get_tree().create_timer(9.0).timeout.connect(func():
 			var w: Weather = get_tree().get_first_node_in_group("weather")
@@ -434,26 +436,162 @@ func to_menu() -> void:
 	lamp.light_energy = 3.0
 	lamp.shadow_enabled = false
 	hangar.add_child(lamp)
-	# display tank (decorative)
-	EnemyTank._build_meshes()
-	var disp := Node3D.new()
-	disp.position = Vector3(2.8, 0, -3.4)
-	disp.rotation.y = deg_to_rad(35)
-	var hull := MeshInstance3D.new()
-	hull.mesh = EnemyTank._hull_mesh
-	disp.add_child(hull)
-	var tur := MeshInstance3D.new()
-	tur.mesh = EnemyTank._turret_mesh
-	tur.position = Vector3(0, 1.45, -0.2)
-	disp.add_child(tur)
-	hangar.add_child(disp)
+	# hangar sun for the time-of-day preview (energy/color set in
+	# _apply_hangar_tod; the spot lamp above stays the "workshop" key light)
+	_hangar_lamp = lamp
+	_hangar_sun = DirectionalLight3D.new()
+	_hangar_sun.rotation_degrees = Vector3(-38, 32, 0)
+	_hangar_sun.shadow_enabled = false
+	hangar.add_child(_hangar_sun)
 	# the menu board
 	menu = MainMenu.new()
 	menu.position = Vector3(0, 1.5, -1.9)
 	hangar.add_child(menu)
 	menu.start_requested.connect(_on_start_requested)
 	menu.join_requested.connect(_on_join_requested)
+	# live previews: vehicle turntable, level diorama, hangar TOD lighting
+	# (Alex: "when I'm changing the vehicle selection I should see the
+	# vehicle on the right change", "like a site model", "changing time of
+	# day should change the look of the lobby")
+	menu.vehicle_changed.connect(_display_vehicle)
+	menu.level_changed.connect(_display_level)
+	menu.time_changed.connect(_apply_hangar_tod)
+	_build_preview_env()
+	_display_vehicle(MainMenu.VEHICLES[menu.sel_vehicle][0])
+	_diorama_id = ""
+	_display_level(menu.sel_level)
+	_apply_hangar_tod(menu.sel_time)
 	rig.call("to_menu_anchor", hangar)
+
+# ---- hangar live previews ------------------------------------------------
+var _disp_root: Node3D
+var _disp_terrain: Terrain
+var _disp_fx: FxPool
+var _disp_proj: Projectiles
+var _diorama_root: Node3D
+var _diorama_id := ""
+var _hangar_lamp: SpotLight3D
+var _hangar_sun: DirectionalLight3D
+
+func _build_preview_env() -> void:
+	# hidden flat terrain + fx/projectile pools: the real Player* classes
+	# demand them at _init, and building the REAL vehicle beats maintaining
+	# a parallel set of preview meshes that would drift out of date
+	_disp_terrain = Terrain.new({
+		"rolling": 0.0, "dunes": false, "pond": false, "coast": false,
+		"flatten": [[Vector2.ZERO, 50.0, 0.0]],
+		"village": {}, "city": {}, "castle": {}, "mud": [],
+		"arena_radius": 55.0, "spawn": Vector2.ZERO, "spawn_h": 0.0,
+		"tint": Color(1, 1, 1),
+	})
+	_disp_terrain.visible = false
+	hangar.add_child(_disp_terrain)
+	_disp_fx = FxPool.new()
+	hangar.add_child(_disp_fx)
+	_disp_proj = Projectiles.new(_disp_terrain, _disp_fx)
+	hangar.add_child(_disp_proj)
+	_disp_root = Node3D.new()
+	_disp_root.position = Vector3(2.8, 0, -3.4)
+	_disp_root.rotation.y = deg_to_rad(35)
+	hangar.add_child(_disp_root)
+	# slow turntable
+	var tw := _disp_root.create_tween().set_loops()
+	tw.tween_property(_disp_root, "rotation:y", deg_to_rad(35.0 + 360.0), 16.0) 		.from(deg_to_rad(35.0))
+
+func _display_vehicle(vid: String) -> void:
+	if _disp_root == null or not is_instance_valid(_disp_root):
+		return
+	for c in _disp_root.get_children():
+		c.queue_free()
+	var v: Node3D
+	match vid:
+		"plane", "biplane":
+			var pl := PlayerPlane.new(_disp_terrain, _disp_proj, _disp_fx)
+			pl.biplane = vid == "biplane"
+			v = pl
+		"heli":
+			v = PlayerAlt.Heli.new(_disp_terrain, _disp_proj, _disp_fx)
+		"boat":
+			v = PlayerBoat.new(_disp_terrain, _disp_proj, _disp_fx)
+		"runner":
+			var av := AvatarRig.new()
+			av.configure(AvatarRig.Mode.ON_FOOT, Color(0.30, 0.55, 0.90))
+			v = av
+		_:
+			v = PlayerTank.new(_disp_terrain, _disp_proj, _disp_fx)
+	v.set_physics_process(false)
+	v.set_process(false)
+	_disp_root.add_child(v)
+	# position AFTER add_child and AFTER the vehicle's own _ready/_respawn
+	# (both clobber transforms — see store_capture.gd's identical gotcha),
+	# and mute any engine/idle loops the class auto-starts
+	(func() -> void:
+		if is_instance_valid(v):
+			v.position = Vector3.ZERO
+			v.rotation = Vector3.ZERO
+			_silence_audio(v)).call_deferred()
+
+func _silence_audio(n: Node) -> void:
+	if n is AudioStreamPlayer3D or n is AudioStreamPlayer:
+		n.stop()
+		n.autoplay = false
+	for c in n.get_children():
+		_silence_audio(c)
+
+func _display_level(id: String) -> void:
+	if hangar == null or _diorama_id == id:
+		return
+	_diorama_id = id
+	if _diorama_root and is_instance_valid(_diorama_root):
+		_diorama_root.queue_free()
+	_diorama_root = Node3D.new()
+	_diorama_root.position = Vector3(-2.9, 0.95, -3.2)
+	hangar.add_child(_diorama_root)
+	var ped := MeshInstance3D.new()
+	var pm := CylinderMesh.new()
+	pm.top_radius = 1.05
+	pm.bottom_radius = 1.2
+	pm.height = 0.9
+	var pmat := StandardMaterial3D.new()
+	pmat.albedo_color = Color(0.16, 0.17, 0.18)
+	pm.material = pmat
+	ped.mesh = pm
+	ped.position.y = -0.5
+	_diorama_root.add_child(ped)
+	# scaled-down REAL terrain build of the selected level ("site model")
+	var t := Terrain.new(Levels.get_config(id))
+	var sc := 0.95 / maxf(t.arena_radius, 1.0)
+	t.scale = Vector3(sc, sc * 2.0, sc)  # slight vertical exaggeration reads better at this size
+	_diorama_root.add_child(t)
+
+func _apply_hangar_tod(t: int) -> void:
+	if _hangar_sun == null or not is_instance_valid(_hangar_sun):
+		return
+	match t:
+		1:  # golden hour
+			_hangar_sun.light_energy = 0.7
+			_hangar_sun.light_color = Color(1.0, 0.72, 0.45)
+			_hangar_sun.rotation_degrees = Vector3(-14, 55, 0)
+			env.ambient_light_energy = 0.4
+			env.ambient_light_color = Color(0.75, 0.6, 0.5)
+			env.background_color = Color(0.10, 0.05, 0.035)
+			_hangar_lamp.light_energy = 2.2
+		2:  # night
+			_hangar_sun.light_energy = 0.06
+			_hangar_sun.light_color = Color(0.55, 0.65, 1.0)
+			_hangar_sun.rotation_degrees = Vector3(-55, 20, 0)
+			env.ambient_light_energy = 0.14
+			env.ambient_light_color = Color(0.5, 0.55, 0.8)
+			env.background_color = Color(0.005, 0.008, 0.015)
+			_hangar_lamp.light_energy = 3.6
+		_:  # day
+			_hangar_sun.light_energy = 0.55
+			_hangar_sun.light_color = Color(1.0, 0.97, 0.9)
+			_hangar_sun.rotation_degrees = Vector3(-38, 32, 0)
+			env.ambient_light_energy = 0.45
+			env.ambient_light_color = Color(0.7, 0.72, 0.75)
+			env.background_color = Color(0.03, 0.04, 0.05)
+			_hangar_lamp.light_energy = 3.0
 
 func _on_start_requested(mode: int, level_id: String, diff: int, mutator := "") -> void:
 	Game.mode = mode
@@ -840,7 +978,7 @@ func request_exit_vehicle() -> void:
 		return
 	if current_vehicle is PlayerPlane:
 		exit_vehicle_airborne(current_vehicle, not current_vehicle.biplane)
-	elif current_vehicle is PlayerAlt \
+	elif current_vehicle is PlayerAlt.Heli \
 			and current_vehicle.global_position.y - terrain.height(
 				current_vehicle.global_position.x, current_vehicle.global_position.z) > 4.0:
 		exit_vehicle_airborne(current_vehicle, false)
@@ -1165,3 +1303,24 @@ func _shot(_cam: Camera3D, tag: String) -> void:
 	var path := ProjectSettings.globalize_path(dir + "/" + tag + ".png")
 	img.save_png(path)
 	print("[shots] saved ", path)
+
+# Headless CI check for the hangar previews: cycles every vehicle preview,
+# several level dioramas and all three TOD states, then quits. Run:
+#   godot --headless --path . -- --previewtest
+func _run_preview_test() -> void:
+	await get_tree().process_frame
+	await get_tree().process_frame
+	for vid in ["tank", "plane", "biplane", "heli", "runner", "boat"]:
+		_display_vehicle(vid)
+		await get_tree().process_frame
+		await get_tree().process_frame
+		print("[preview-test] vehicle ok: ", vid)
+	for lid in ["outdoor", "city", "castle", "island", "volcano", "moon"]:
+		_display_level(lid)
+		await get_tree().process_frame
+		print("[preview-test] diorama ok: ", lid)
+	for t in [0, 1, 2]:
+		_apply_hangar_tod(t)
+		await get_tree().process_frame
+	print("[preview-test] ALL OK")
+	get_tree().quit(0)

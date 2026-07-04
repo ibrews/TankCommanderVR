@@ -6,6 +6,10 @@ extends Node3D
 
 signal start_requested(mode: int, level_id: String, difficulty: int, mutator: String)
 signal join_requested
+# hangar live previews (main.gd): vehicle model, level diorama, TOD lighting
+signal vehicle_changed(vehicle_id: String)
+signal level_changed(level_id: String)
+signal time_changed(t: int)
 
 const PANEL_W := 2.3
 const PANEL_H := 1.78
@@ -34,7 +38,7 @@ var _hovered: Dictionary = {}
 const HOWTO := [
 	"",  # page 0 unused
 	"STARTING THE TANK\n\n1. Flip BATTERY (left console)\n2. Open FUEL PUMP cover, flip switch\n3. HOLD green STARTER until the engine catches\n4. Shift GEAR to D (right pedestal)\n\nOr press X / click left stick for auto-start.",
-	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr just use the LEFT STICK.\nWatch the mud — it slows you down.\n\nGETTING OUT: grab the yellow HATCH lever\nabove your head and pull. To climb back in,\nwalk up to your abandoned vehicle and\nsqueeze either grip near the seat.",
+	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr just use the LEFT STICK.\nWatch the mud — it slows you down.\n\nGETTING OUT: hold the LEFT TRIGGER for one\nsecond (or pull the yellow HATCH lever).\nTo climb back in, walk up to your vehicle\nand squeeze a grip (or hold LEFT TRIGGER).",
 	"FIGHTING\n\nGrab the turret STICK (right pedestal).\nMove it to aim. TRIGGER = cannon.\nAfter each shot pull the red BREECH LEVER to reload.\nA (while gripping) = machine gun.\n\nROCKETS: left console — open the red cover,\nflip ARM, press the big red button.",
 	"CO-OP + VERSUS (same Wi-Fi)\n\nCO-OP: one headset hosts, the other joins.\nHost DRIVES + machine gun. Friend runs the\nTURRET: cannon, breech, and the heavy rockets.\n\nVERSUS: tank vs tank duel. First to 5 wins.\n\nPLANE MODE: stick + throttle. Bombs away!",
 ]
@@ -249,6 +253,7 @@ func _press(id: String) -> void:
 			_show_main()
 		"vehcycle":
 			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()
+			vehicle_changed.emit(VEHICLES[sel_vehicle][0])
 			match VEHICLES[sel_vehicle][0]:
 				"heli": Sfx.vo("vo_heli", 2, 30.0)
 				"runner": Sfx.vo("vo_runner", 2, 30.0)
@@ -258,6 +263,7 @@ func _press(id: String) -> void:
 			_show_main()
 		"timecycle":
 			sel_time = (sel_time + 1) % 3
+			time_changed.emit(sel_time)
 			if sel_time == 2:
 				Sfx.vo("vo_night", 2, 30.0)
 			_show_main()
@@ -283,6 +289,7 @@ func _press(id: String) -> void:
 						join_requested.emit()
 			elif id.begins_with("level:"):
 				sel_level = id.trim_prefix("level:")
+				level_changed.emit(sel_level)
 				if sel_level == "gym":
 					Sfx.vo("vo_gym", 2, 30.0)
 			elif id.begins_with("mut:"):
