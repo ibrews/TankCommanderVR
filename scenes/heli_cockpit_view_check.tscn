@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://heli_cockpit_view_c1"]
+
+[ext_resource type="Script" path="res://tools/heli_cockpit_view_check.gd" id="1"]
+
+[node name="HeliCockpitViewCheck" type="Node3D"]
+script = ExtResource("1")
