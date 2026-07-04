@@ -272,9 +272,20 @@ void fragment() {
 	float tot = max(w.r + w.g + w.b, 0.001);
 	vec3 alb = (s * w.r + g * w.g + r * w.b) / tot * tint;
 	// macro patchiness: low-freq brightness variation survives mipping, so
-	// the ground reads varied from any distance instead of one flat color
+	// the ground reads varied from any distance instead of one flat color.
+	// Alex: "some basic macrotexturing across the environments to cut down
+	// on the sense of tiling" -- brightness alone still reads as "the same
+	// texture, dimmer/brighter" once you notice the base grain repeating,
+	// so added a SECOND, decorrelated sample (different texture, frequency,
+	// AND offset so it doesn't just double up the same pattern) driving a
+	// warm/cool hue drift instead of just luminance. Two independent low-
+	// freq axes break up repetition much more convincingly than one.
 	float macro = texture(tex_rock, UV * 0.006).g;
-	alb *= mix(0.82, 1.15, macro);
+	float macro2 = texture(tex_sand, UV * 0.0021 + vec2(37.0, 12.0)).r;
+	alb *= mix(0.78, 1.22, macro);
+	vec3 cool_shift = vec3(0.94, 1.0, 1.08);
+	vec3 warm_shift = vec3(1.06, 1.0, 0.92);
+	alb *= mix(cool_shift, warm_shift, macro2);
 	float dist = length(VERTEX);
 	alb *= mix(1.0, 0.60, clamp((dist - 100.0) / 180.0, 0.0, 1.0));
 	ALBEDO = alb;
