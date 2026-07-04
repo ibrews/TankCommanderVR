@@ -813,6 +813,47 @@ func exit_vehicle() -> void:
 	rig.hand_l.pulse(0.35, 0.12)
 	rig.hand_r.pulse(0.35, 0.12)
 
+# Plane/biplane-only mid-mission exit. Alex, live headset: "if I exit from a
+# plane I should get a cockpit ejection then a parachute. Biplane I should
+# just be falling out and then using parachute." Unlike exit_vehicle() (every
+# other vehicle's hatch — instant teleport to standing on the ground),
+# this hands the rig off to a PlayerParachute at the plane's own altitude and
+# velocity: it free-falls (with a scripted eject pop first if `ejected`),
+# then the pilot deploys the chute themselves (trigger or chest-pull — see
+# player_parachute.gd), and only reaches on-foot mode once it actually lands
+# (see _land_parachute()). The vacated plane/biplane is left flying itself
+# on its last input, same "abandon in place" rule as every other hatch exit
+# in this game (the tank hatch just leaves the tank sitting there too).
+func exit_vehicle_airborne(v: PlayerPlane, ejected: bool) -> void:
+	if not (rig is XRRig) or v == null or not is_instance_valid(v):
+		return
+	if Game.player_mode != Game.PlayerMode.SEATED:
+		return
+	var chute := PlayerParachute.new(terrain, projectiles, fx)
+	world.add_child(chute)
+	chute.launch(v.global_transform, v.velocity, ejected)
+	current_vehicle = chute
+	rig.call("attach_to_vehicle", chute)  # also wires _rumble_cb, same as every other vehicle
+	chute.set("_rig", rig)
+	Sfx.play_at("switch", v.global_position, -2.0, 0.85)
+	if ejected:
+		Sfx.play_at("crash", v.global_position, -6.0, 1.3)  # eject-charge pop, pitched up
+	rig.hand_l.pulse(0.4, 0.15)
+	rig.hand_r.pulse(0.4, 0.15)
+
+# Called by PlayerParachute._land() once it actually touches the ground —
+# hands off to the exact same on-foot flow exit_vehicle() uses, just without
+# the ground-snap (the parachutist is already standing at terrain height).
+func _land_parachute(chute: PlayerParachute) -> void:
+	if not (rig is XRRig) or Game.player_mode != Game.PlayerMode.SEATED or current_vehicle != chute:
+		return
+	var dismount := Transform3D(chute.global_transform.basis.orthonormalized(), chute.global_position)
+	if rig.on_foot_body == null or not is_instance_valid(rig.on_foot_body):
+		rig.call("set_on_foot_body", OnFootBody.new(terrain, projectiles, fx))
+	rig.call("enter_on_foot", world, dismount)
+	current_vehicle = null
+	chute.queue_free()
+
 func enter_vehicle(v: Node3D) -> void:
 	if not (rig is XRRig) or v == null or not is_instance_valid(v):
 		return

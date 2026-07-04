@@ -61,10 +61,11 @@ func _build() -> void:
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, -0.15, -0.3)), Vector3(9.6, 0.14, 1.8), col)
 	if biplane:
 		# second wing + struts = 100% more aviation. Top wing's underside
-		# was at Y=1.08 with the pilot's eye at Y=1.02 (cockpit root 0.45 +
-		# seat -0.15 + eye_local 0.72) — 6cm of clearance, essentially in
-		# the pilot's face. Alex, live headset: "in a biplane I can't see
-		# anything." Raised for real head clearance; struts stretched to
+		# went through two rounds: Y=1.08 (6cm clearance, "in a biplane I
+		# can't see anything") raised to Y=1.22 (20cm, still crowding the
+		# upward view per the next report: "in the plane and biplane I
+		# can't see over the top of the front... doesn't feel like a
+		# cockpit"). Raised again for real head clearance; struts stretched to
 		# match the new span between the two wings.
 		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 1.65, -0.3)), Vector3(9.6, 0.14, 1.8), col)
 		for sx in [-3.4, 3.4]:
@@ -96,13 +97,39 @@ func _build() -> void:
 	# tub
 	MeshKit.box(cst, Transform3D(Basis(), Vector3(0, -0.1, 0.1)), Vector3(0.85, 0.5, 1.6), Color(0.2, 0.23, 0.19))
 	MeshKit.box(cst, Transform3D(Basis(), Vector3(0, -0.34, 0.1)), Vector3(0.8, 0.06, 1.5), Color(0.13, 0.13, 0.14))
-	# windshield frame
-	MeshKit.box(cst, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-35)), Vector3(0, 0.42, -0.62)), Vector3(0.8, 0.5, 0.035), Color(0.25, 0.27, 0.24))
+	# windshield frame — Alex, live headset: "in the plane and biplane I can't
+	# see over the top of the front... this doesn't feel like a cockpit."
+	# Root cause: this used to be ONE solid opaque box covering the entire
+	# 0.8x0.5 windshield opening (same class of bug the tank had before its
+	# own vision-slit widening — see cockpit_builder.gd's slit_y0/slit_y1).
+	# The separate transparent "glass" quad sat in front of it, but the
+	# opaque slab behind it blocked the view regardless. Now built as a thin
+	# border (screen pillars + top/bottom rail only) so the whole windshield
+	# opening is actually open, with just the glass quad across it — a real
+	# forward sightline instead of a wall with a window painted on it.
+	var wf_y := 0.42
+	var wf_z := -0.62
+	var wf_w := 0.8
+	var wf_h := 0.5
+	var wf_t := 0.05  # border thickness
+	var wf_basis := Basis(Vector3.RIGHT, deg_to_rad(-35))
+	# top rail
+	MeshKit.box(cst, Transform3D(wf_basis, Vector3(0, wf_y + wf_h / 2 - wf_t / 2, wf_z)), Vector3(wf_w, wf_t, 0.035), Color(0.25, 0.27, 0.24))
+	# bottom rail (low sill so it doesn't eat into the view band)
+	MeshKit.box(cst, Transform3D(wf_basis, Vector3(0, wf_y - wf_h / 2 + wf_t / 2, wf_z)), Vector3(wf_w, wf_t, 0.035), Color(0.25, 0.27, 0.24))
+	# side pillars
+	for sx in [-wf_w / 2 + wf_t / 2, wf_w / 2 - wf_t / 2]:
+		MeshKit.box(cst, Transform3D(wf_basis, Vector3(sx, wf_y, wf_z)), Vector3(wf_t, wf_h, 0.035), Color(0.25, 0.27, 0.24))
+	# center windscreen post (thin — a real biplane/warplane canopy has one,
+	# but it must not be wide enough to read as "the view is still blocked")
+	MeshKit.box(cst, Transform3D(wf_basis, Vector3(0, wf_y, wf_z)), Vector3(0.025, wf_h, 0.035), Color(0.25, 0.27, 0.24))
 	# seat
 	MeshKit.box(cst, Transform3D(Basis(), Vector3(0, -0.15, 0.62)), Vector3(0.46, 0.08, 0.42), Color(0.24, 0.2, 0.15))
 	MeshKit.box(cst, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-10)), Vector3(0, 0.18, 0.82)), Vector3(0.46, 0.6, 0.07), Color(0.24, 0.2, 0.15))
-	# instrument panel
-	MeshKit.box(cst, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-15)), Vector3(0, 0.22, -0.42)), Vector3(0.7, 0.3, 0.05), Color(0.15, 0.16, 0.15))
+	# instrument panel — shrunk/lowered so its top edge (was y=0.22+0.15=0.37,
+	# close enough to the eye at y=0.57 to crowd the lower half of the view)
+	# clears well below the new open windshield band (wf_y - wf_h/2 = 0.17).
+	MeshKit.box(cst, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-15)), Vector3(0, 0.10, -0.42)), Vector3(0.7, 0.2, 0.05), Color(0.15, 0.16, 0.15))
 	var cmesh := MeshInstance3D.new()
 	var cmat := MeshKit.mat_tex("res://assets/tex/metal.png", true, 0.85)
 	cmat = cmat.duplicate()
@@ -110,7 +137,8 @@ func _build() -> void:
 	cmat.uv1_scale = Vector3(3, 3, 1)
 	cmesh.mesh = MeshKit.commit(cst, cmat)
 	root.add_child(cmesh)
-	# windshield glass
+	# windshield glass (unchanged placement — now actually visible as glass,
+	# not backed by an opaque slab)
 	var glass := MeshInstance3D.new()
 	var gq := QuadMesh.new()
 	gq.size = Vector2(0.74, 0.44)
@@ -126,27 +154,40 @@ func _build() -> void:
 	glass.rotation.x = deg_to_rad(-35)
 	root.add_child(glass)
 
-	# control stick (center) + throttle (left) + bomb button
+	# control stick (center) + throttle (left) + bomb button — Alex, live
+	# headset: "I only see a single yellow lever on the right... doesn't feel
+	# like a cockpit." Root cause: the stick grip and throttle lever were both
+	# dark near-black (0.1,0.1,0.1) — same tone as the tub/shadow around them
+	# — with no captions, so only the bright yellow hatch lever actually read
+	# as a distinct control. Recolored stick/throttle to stand out and
+	# labeled every control the same way cockpit_builder.gd labels the tank.
 	var grip := VRControl.TwoAxisGrip.create()
 	grip.position = Vector3(0, -0.30, -0.05)
 	root.add_child(grip)
 	grip.deflection_changed.connect(func(v): stick = v)
-	var thr := VRControl.Lever.create(0.22, Color(0.1, 0.1, 0.1), 40.0, false)
+	_label(root, "STICK", Vector3(0, -0.10, -0.05), -20, 13)
+	var thr := VRControl.Lever.create(0.22, Color(0.75, 0.42, 0.12), 40.0, false)
 	thr.position = Vector3(-0.34, -0.18, -0.1)
 	root.add_child(thr)
 	thr.value_changed.connect(func(v): throttle = clampf((v + 1.0) / 2.0, 0.0, 1.0))
 	thr.value = 0.2
+	_label(root, "THROTTLE", Vector3(-0.34, -0.10, -0.24), -20, 13)
 	var bomb := VRControl.PushButton.create(Color(0.85, 0.12, 0.1), 0.032)
 	bomb.position = Vector3(-0.34, -0.10, -0.28)
 	root.add_child(bomb)
 	bomb.pressed.connect(drop_bomb)
-	# canopy-rail hatch lever — bail out on foot mid-mission (parachute-free,
-	# same abandon-in-place rule as the tank hatch)
+	_label(root, "BOMB", Vector3(-0.34, -0.06, -0.34), -20, 13)
+	_label(root, "MG TRIGGER", Vector3(0, -0.10, 0.05), -20, 13)
+	# canopy-rail hatch lever — Alex, live headset: plane should get a cockpit
+	# ejection then a parachute on hatch-pull (see _on_hatch_lever /
+	# main.exit_vehicle_airborne); biplane just falls out, no ejection, and
+	# the player deploys their own chute (trigger or a chest-pull gesture).
 	var hatch := VRControl.Lever.create(0.18, Color(0.85, 0.72, 0.15), 42.0, false)
 	hatch.position = Vector3(0.42, 0.15, 0.05)
 	hatch.rotation.z = deg_to_rad(-90)
 	root.add_child(hatch)
 	hatch.value_changed.connect(_on_hatch_lever)
+	_label(root, "EJECT" if not biplane else "BAIL OUT", Vector3(0.42, 0.30, 0.05), 0, 13)
 	# instruments
 	speed_label = _mk_label(root, Vector3(-0.18, 0.26, -0.415))
 	alt_label = _mk_label(root, Vector3(0.05, 0.26, -0.415))
@@ -165,6 +206,18 @@ func _build() -> void:
 	seat_anchor.position = Vector3(0, -0.15, 0.55)
 	root.add_child(seat_anchor)
 	cockpit = {"seat_anchor": seat_anchor, "eye_local": Vector3(0, 0.72, -0.1), "controls": {}}
+
+func _label(root: Node3D, text: String, pos: Vector3, pitch_deg := 0.0, size := 20) -> Label3D:
+	var l := Label3D.new()
+	l.text = text
+	l.font_size = size * 4
+	l.pixel_size = 0.0002
+	l.modulate = Color(0.92, 0.94, 0.90)
+	l.outline_size = 0
+	l.position = pos
+	l.rotation_degrees = Vector3(pitch_deg, 0, 0)
+	root.add_child(l)
+	return l
 
 func _mk_label(root: Node3D, pos: Vector3) -> Label3D:
 	var l := Label3D.new()
@@ -295,7 +348,14 @@ func quick_start() -> void:
 	pass  # engine is always running
 
 func _on_hatch_lever(v: float) -> void:
+	# Alex, live headset: "if I exit from a plane I should get a cockpit
+	# ejection then a parachute. Biplane I should just be falling out and
+	# then using parachute." Routes through main.exit_vehicle_airborne()
+	# instead of the instant-teleport-to-ground exit_vehicle() every other
+	# vehicle's hatch uses — plane gets the ejection pop, biplane free-falls
+	# from the seat, both land in a PlayerParachute that the pilot deploys
+	# themselves (trigger press or a chest-pull gesture while falling).
 	if absf(v) > 0.8 and Game.player_mode == Game.PlayerMode.SEATED:
 		var m := get_tree().get_first_node_in_group("main")
 		if m:
-			m.call_deferred("exit_vehicle")
+			m.call_deferred("exit_vehicle_airborne", self, not biplane)
