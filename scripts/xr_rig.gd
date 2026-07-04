@@ -435,10 +435,19 @@ func _make_glove(hand: XRHand, scene_path: String) -> Node3D:
 	glove.visible = false   # visibility driven per-frame in XRHand._physics_process
 	hand.add_child(glove)
 	glove.owner = self
-	# Layer 2 = cockpit interior (sun-excluded, dome-lit) — same as the
-	# bare-hand meshes get in _make_hand_mesh(), so hands are lit like the
-	# cockpit they're inside rather than by the shadowless exterior sun.
-	MeshKit.set_layer_recursive(glove, 2)
+	# Alex, live headset: hand mesh is "nothing at all" while holding
+	# controllers, despite the glove code itself looking structurally sound.
+	# Found a real asymmetry investigating this: the glove was the ONLY
+	# controller-adjacent visual put on layer 2 alone (cockpit interior,
+	# `sun.light_cull_mask` explicitly EXCLUDES it, and dome_light starts at
+	# energy 0.0 "off until battery on" — cockpit_builder.gd) — the
+	# controller_model it sits right next to uses default layer 1, lit
+	# normally. On foot there's no cockpit/dome light at all, and even
+	# seated before quick-starting the engine the glove would be lit by
+	# ambient only. Adding layer 1 so it's ALSO lit like everything else
+	# (sun/ambient) — dome light on layer 2 still tints it extra when
+	# seated with the engine running, it's just no longer the ONLY source.
+	MeshKit.set_layer_recursive(glove, 1 | 2)
 	return glove
 
 func to_menu_anchor(parent: Node3D) -> void:
