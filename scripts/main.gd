@@ -28,7 +28,7 @@ var _smoke_frames := -1
 # instance survives the seated<->on-foot transition, same idiom as
 # net.gd's _crew_avatar / AvatarRig.configure()'s own doc comment.
 var _local_avatar: AvatarRig = null
-var _pause_menu: PauseMenu = null
+var _pause_lobby: MainMenu = null
 
 func _ready() -> void:
 	add_to_group("main")
@@ -42,6 +42,17 @@ func _ready() -> void:
 	# via adb/HzOSDevMCP) and not a network upload.
 	Game.game_over.connect(func(): EventLog.log_event("game_over", {"score": Game.score, "wave": Game.wave}))
 	Game.wave_changed.connect(func(w): EventLog.log_event("wave_start", {"wave": w}))
+	# Alex: "dying should send me back to the lobby." Scoped to SOLO —
+	# COOP/VERSUS already have their own death handling (net.gd's
+	# _on_versus_death, enemy_manager stopping waves) and yanking every
+	# player to the hangar on any one death isn't obviously right there.
+	# Delay matches the existing death fanfare (smoke, sting, "vo_gameover"
+	# ~5s) so it reads as a beat, not an instant cut.
+	Game.game_over.connect(func():
+		if Game.mode == Game.Mode.SOLO:
+			get_tree().create_timer(4.0).timeout.connect(func():
+				if not Game.alive:
+					to_menu()))
 	var args := OS.get_cmdline_user_args()
 	if "--smoke" in args:
 		_smoke_frames = 200
