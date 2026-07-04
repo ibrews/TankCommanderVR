@@ -77,6 +77,15 @@ func _chase_target() -> Transform3D:
 	return Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
 
 func _unhandled_input(event: InputEvent) -> void:
+	if event is InputEventKey and event.pressed and not event.echo and event.keycode == KEY_BACKSPACE:
+		# Desktop has no laser-pointer panel to click RESUME on (dev/test rig
+		# only), so this is a plain toggle — press again to un-pause. See
+		# Game.toggle_pause() / xr_rig.gd's menu_button for the VR version,
+		# which shows an actual clickable pause_menu.gd panel.
+		Game.toggle_pause()
+		return
+	if Game.paused:
+		return
 	if event is InputEventMouseMotion and tank:
 		_yaw -= event.relative.x * 0.0025
 		_pitch = clampf(_pitch - event.relative.y * 0.0025, -1.2, 1.2)
@@ -100,17 +109,9 @@ func _unhandled_input(event: InputEvent) -> void:
 				_apply_camera_mode()
 			KEY_ESCAPE:
 				Input.mouse_mode = Input.MOUSE_MODE_VISIBLE
-			KEY_BACKSPACE:
-				# Return to menu — same gap as XRRig's menu_button fallback:
-				# the physical "menu_switch" cockpit toggle depends on the
-				# currently-broken vrcontrols discovery, so there was
-				# otherwise no keyboard path back to the menu mid-level.
-				var m := get_tree().get_first_node_in_group("main")
-				if m:
-					m.call_deferred("to_menu")
 
 func _physics_process(_delta: float) -> void:
-	if tank == null:
+	if tank == null or Game.paused:
 		return
 	var drive := Vector2.ZERO
 	if Input.is_physical_key_pressed(KEY_W): drive.y += 1

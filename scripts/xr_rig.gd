@@ -186,7 +186,12 @@ class XRHand:
 		controller_model.visible = get_has_tracking_data() and not bare
 		if glove:
 			glove.visible = get_has_tracking_data() and not bare
-		if Game.state == Game.GState.MENU:
+		# Same laser-pointer path drives both the hangar MainMenu
+		# (GState.MENU) and the mid-mission pause panel (Game.paused) --
+		# both join group "menu" and implement the same pointer()
+		# contract, and the two states are mutually exclusive so there is
+		# never more than one to route to.
+		if Game.state == Game.GState.MENU or Game.paused:
 			_menu_pointer()
 			_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
 			return
@@ -552,6 +557,15 @@ func _build_on_foot_nodes() -> void:
 	hand_r.add_child(_grapple_r)
 	_grapple_r.owner = self
 
+	# main.gd marks THIS rig PROCESS_MODE_ALWAYS so the pause-menu laser
+	# pointer keeps working while get_tree().paused freezes the level (see
+	# Game.toggle_pause()) — but PROCESS_MODE_INHERIT would carry that
+	# ALWAYS down to every child, letting sprint/climb/grapple/pickup keep
+	# reading grip input and moving the player mid-pause. Pin them back to
+	# the normal pausable behavior explicitly.
+	for n in [_pickup_l, _pickup_r, _direct_l, _direct_r, _sprint, _climb, _grapple_l, _grapple_r]:
+		n.process_mode = Node.PROCESS_MODE_PAUSABLE
+
 	_wire_on_foot_haptics()
 
 # The addon's own movement providers have zero haptic feedback wired in —
@@ -653,6 +667,21 @@ func _physics_process(delta: float) -> void:
 	_update_debug_label()
 	if Game.state == Game.GState.MENU:
 		return
+	# Menu button now PAUSES in place instead of tearing the level down
+	# (Alex: "going back to the menu shouldn't kick you out of your current
+	# level... pressing it again puts you back in your current game" —
+	# quitting to the hangar is now a deliberate click on the pause panel
+	# itself, see pause_menu.gd). Checked first, before the pause early-return
+	# below, so the SAME button un-pauses too. _menu_pointer() (used for
+	# both the hangar MainMenu AND this pause panel) reads menu_button for UI
+	# clicks while Game.state == MENU or Game.paused, so this and that never
+	# fight over the same press.
+	var menu_pressed := hand_l.is_button_pressed("menu_button") or hand_r.is_button_pressed("menu_button")
+	if menu_pressed and not get_meta("menu_btn_was", false):
+		Game.toggle_pause()
+	set_meta("menu_btn_was", menu_pressed)
+	if Game.paused:
+		return
 	# Global bindings — active whether seated or on-foot, per Alex's
 	# explicit ask (2026-07-03): right-stick click toggles 1st/3rd person,
 	# left-stick click resets the level (or leaves to the menu in
@@ -672,20 +701,6 @@ func _physics_process(delta: float) -> void:
 		else:
 			Game.restart()
 	set_meta("lsc2_was", l_click)
-	# Return-to-menu fallback: the physical "menu_switch" cockpit toggle
-	# (cockpit_builder.gd) calls main.to_menu() correctly, but it's poke-only
-	# and depends on the same vrcontrols-group discovery that's currently
-	# broken (see docs/EVOLUTION.md / KB), so there was otherwise no working
-	# way back to the menu once a level starts. The system menu button is
-	# only read here while NOT already in the menu (see _menu_pointer(),
-	# which reads it for UI clicks while Game.state == MENU) so the two
-	# never conflict.
-	var menu_pressed := hand_l.is_button_pressed("menu_button") or hand_r.is_button_pressed("menu_button")
-	if menu_pressed and not get_meta("menu_btn_was", false):
-		var m_menu := get_tree().get_first_node_in_group("main")
-		if m_menu:
-			m_menu.call_deferred("to_menu")
-	set_meta("menu_btn_was", menu_pressed)
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_feed_arm_swing(delta)
 		_check_reentry()
@@ -703,7 +718,14 @@ func _physics_process(delta: float) -> void:
 	# elevated the gun the wrong way. Both sticks read the same "primary"
 	# action's Y component, so both get the same sign flip.
 	tank.call("set_stick_drive", Vector2(_dz(ls.x), -_dz(ls.y)))
-	tank.call("set_stick_turret", Vector2(_dz(rs.x), -_dz(rs.y)))
+	# Follow-up (Alex, live headset, same day): the turret stick was STILL
+	# totally backwards on both axes (left/right AND up/down swapped) even
+	# after the Y-only fix above — turret.rotation.y in player_tank.gd is
+	# `+= -inp.x * slew`, the opposite sign convention from the drive
+	# stick's straightforward y-as-forward, so mirroring the drive fix
+	# 1:1 wasn't enough. Flip both axes here to match what the report says
+	# is actually happening on the physical stick.
+	tank.call("set_stick_turret", Vector2(-_dz(rs.x), _dz(rs.y)))
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
 		var trig := hand_r.effective_trigger() > 0.6
 		if trig and not get_meta("rtrig_was", false):

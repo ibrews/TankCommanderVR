@@ -28,6 +28,7 @@ var _smoke_frames := -1
 # instance survives the seated<->on-foot transition, same idiom as
 # net.gd's _crew_avatar / AvatarRig.configure()'s own doc comment.
 var _local_avatar: AvatarRig = null
+var _pause_menu: PauseMenu = null
 
 func _ready() -> void:
 	add_to_group("main")
@@ -236,10 +237,41 @@ func _setup_rig() -> void:
 	else:
 		rig = DesktopRig.new()
 		print("[main] desktop fallback rig")
+	# Must keep evaluating input (laser pointer on the pause panel, the
+	# menu-button toggle itself) while get_tree().paused freezes everything
+	# else — see _on_pause_changed()/Game.toggle_pause().
+	rig.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(rig)
+	Game.pause_changed.connect(_on_pause_changed)
+
+# ---------------------------------------------------------------- pause
+# Head-locked pause panel, shown/hidden on Game.pause_changed (menu button
+# mid-mission — see Game.toggle_pause()). Parented to the camera so it's
+# wherever you're looking; camera exists under both XRRig and DesktopRig.
+func _on_pause_changed(is_paused: bool) -> void:
+	if is_paused:
+		if _pause_menu == null or not is_instance_valid(_pause_menu):
+			_pause_menu = PauseMenu.new()
+			_pause_menu.resume_requested.connect(func(): Game.set_paused(false))
+			_pause_menu.quit_requested.connect(func(): Game.set_paused(false); call_deferred("to_menu"))
+		var cam: Node3D = rig.get("camera")
+		if cam:
+			if _pause_menu.get_parent() != cam:
+				if _pause_menu.get_parent():
+					_pause_menu.get_parent().remove_child(_pause_menu)
+				cam.add_child(_pause_menu)
+			_pause_menu.transform = Transform3D(Basis(), Vector3(0, 0, -1.1))
+	elif _pause_menu and is_instance_valid(_pause_menu):
+		_pause_menu.queue_free()
+		_pause_menu = null
 
 # ---------------------------------------------------------------- menu state
 func to_menu() -> void:
+	# Defensive: quitting to the hangar from a paused mission must not leave
+	# the hangar itself frozen — toggle_pause()/set_paused() both no-op once
+	# Game.state flips below, so clear these directly instead.
+	Game.paused = false
+	get_tree().paused = false
 	Game.state = Game.GState.MENU
 	NetManager.leave()
 	_clear_world()
@@ -746,22 +778,49 @@ func _clear_local_avatar() -> void:
 		_local_avatar.queue_free()
 	_local_avatar = null
 
+# Well below anything a level legitimately places you at (rim mountains top
+# out around +85, lava_y bottoms out around -3.2) — this only fires if
+# something has genuinely fallen through the world (Alex: "if you ever do
+# fall too far out of the map, we should have a kill box to refresh you").
+# Repositions in place rather than routing through Game.restart(), which
+# also zeroes score/wave/hp — a physics glitch shouldn't cost you the run.
+const FALL_KILL_Y := -60.0
+var _fall_recover_cool := 0.0
+
+func _current_ground_entity() -> Node3D:
+	var veh: Node3D = plane if plane else (player if player else null)
+	if veh == null:
+		for n in get_tree().get_nodes_in_group("player"):
+			veh = n
+			break
+	return veh
+
+func _recover_from_fall(veh: Node3D) -> void:
+	if _fall_recover_cool > 0.0 or terrain == null:
+		return
+	_fall_recover_cool = 1.5
+	var spawn_h := terrain.height(terrain.spawn.x, terrain.spawn.y)
+	veh.global_position = Vector3(terrain.spawn.x, spawn_h + 1.2, terrain.spawn.y)
+	if veh is CharacterBody3D:
+		(veh as CharacterBody3D).velocity = Vector3.ZERO
+	Sfx.play_at("thud", veh.global_position, 0.0, 0.85)
+
 # ---------------------------------------------------------------- perf + test modes
 func _process(delta: float) -> void:
 	_demo_tick(delta)
 	_update_local_avatar(delta)
-	# lava is not a swimming pool
-	if Game.state == Game.GState.PLAYING and Levels.current.has("lava_y"):
-		var veh: Node3D = plane if plane else (player if player else null)
-		if veh == null:
-			for n in get_tree().get_nodes_in_group("player"):
-				veh = n
-				break
-		if veh and veh.global_position.y < float(Levels.current["lava_y"]) and Game.alive:
-			if veh.has_method("take_damage"):
-				veh.take_damage(30.0 * delta, veh.global_position)
-			if Game.rng.randf() < delta * 3.0 and fx:
-				fx.muzzle_flash(veh.global_position + Vector3(0, 1, 0), 1.2)
+	_fall_recover_cool = maxf(0.0, _fall_recover_cool - delta)
+	if Game.state == Game.GState.PLAYING:
+		var veh := _current_ground_entity()
+		if veh and is_instance_valid(veh):
+			if veh.global_position.y < FALL_KILL_Y:
+				_recover_from_fall(veh)
+			# lava is not a swimming pool
+			elif Levels.current.has("lava_y") and veh.global_position.y < float(Levels.current["lava_y"]) and Game.alive:
+				if veh.has_method("take_damage"):
+					veh.take_damage(30.0 * delta, veh.global_position)
+				if Game.rng.randf() < delta * 3.0 and fx:
+					fx.muzzle_flash(veh.global_position + Vector3(0, 1, 0), 1.2)
 	_perf_t += delta
 	if _perf_t > 2.0:
 		_perf_t = 0.0

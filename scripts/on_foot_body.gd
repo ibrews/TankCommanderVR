@@ -37,6 +37,12 @@ func _ready() -> void:
 	super._ready()
 	player_radius = 0.35
 	Game.game_restarted.connect(_respawn)
+	# This body lives under the rig (see xr_rig.gd's enter_on_foot()), and
+	# main.gd marks that rig PROCESS_MODE_ALWAYS so its pause-menu laser
+	# pointer survives get_tree().paused — INHERIT would otherwise carry
+	# that down here too, leaving the player still falling/walking under
+	# gravity while the game is supposedly frozen.
+	process_mode = Node.PROCESS_MODE_PAUSABLE
 
 func _respawn() -> void:
 	global_position = Vector3(terrain.spawn.x, terrain.height(terrain.spawn.x, terrain.spawn.y) + 0.1, terrain.spawn.y)

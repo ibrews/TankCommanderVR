@@ -34,12 +34,34 @@ var travel_carry := {}     # score/hp/wave preserved across an endless travel
 var help_on := true        # coaching VO + written hints (menu-toggleable)
 var third_person := false  # false = in-cockpit first person (default), true = chase cam
 var player_mode: int = PlayerMode.SEATED  # SEATED = in a vehicle cockpit, ON_FOOT = walking around
+var paused := false  # mid-mission pause (menu button) — world/level stays alive, unlike GState.MENU
 
 signal camera_mode_changed(third: bool)
+signal pause_changed(is_paused: bool)
 
 func toggle_camera_mode() -> void:
 	third_person = not third_person
 	camera_mode_changed.emit(third_person)
+
+# Menu button while PLAYING pauses in place rather than tearing down the level
+# (Alex: "going back to the menu shouldn't kick you out of your current
+# level... pressing it again puts you back in your current game"). Only
+# actually stops the clock in SOLO — pausing SceneTree time in COOP/VERSUS
+# would desync the other peer, who has no way to know we've stopped, so
+# multiplayer just shows the panel without freezing anything.
+func toggle_pause() -> void:
+	if state != GState.PLAYING:
+		return
+	paused = not paused
+	get_tree().paused = paused and mode == Mode.SOLO
+	pause_changed.emit(paused)
+
+func set_paused(v: bool) -> void:
+	if paused == v or state != GState.PLAYING:
+		return
+	paused = v
+	get_tree().paused = paused and mode == Mode.SOLO
+	pause_changed.emit(paused)
 
 func make_noise() -> void:
 	noise_t = Tune.v("noise_reveal_time")

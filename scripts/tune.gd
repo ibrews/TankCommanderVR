@@ -33,7 +33,11 @@ const DEFAULTS := {
 	"plane_hp": 30.0,
 	"enemy_cadence_scale": 1.0,   # >1 = slower enemy fire
 	"enemy_accuracy_scale": 1.0,  # >1 = more accurate
-	"wave_size_scale": 1.0,
+	# 1.0 made wave 1 a single tank and every level feel empty (Alex, live
+	# headset: "we have far too few enemies-- the levels all feel sparse").
+	# 1.8 puts ~3 tanks + the usual jeep/squad/plane ramp on the board from
+	# the first wave instead of a lone tank.
+	"wave_size_scale": 1.8,
 	# --- stealth / night
 	"detect_range_day": 150.0,
 	"detect_night_dark": 0.35,    # fraction of day range, lights OFF
