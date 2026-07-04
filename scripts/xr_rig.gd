@@ -74,6 +74,17 @@ class XRHand:
 	func _init(tracker_name: String) -> void:
 		tracker = tracker_name
 		pose = "grip_pose"
+		# Alex: hand mesh (curl-driven glove) still "nothing at all" while
+		# holding controllers, despite the visibility code looking
+		# structurally sound. Gemini flagged a real candidate: XRNode3D
+		# (XRController3D's parent class) has a native show_when_tracked
+		# property that, if true, makes the ENGINE itself force this whole
+		# node's visible false whenever ITS OWN tracked-check disagrees with
+		# our manual get_has_tracking_data() one in _physics_process below --
+		# which would silently override glove.visible = true since glove is
+		# a child of this node. Never set explicitly anywhere before, so it
+		# was whatever XRNode3D's own default is. Take back manual control.
+		show_when_tracked = false
 
 	func _ready() -> void:
 		poke_tip = Node3D.new()
