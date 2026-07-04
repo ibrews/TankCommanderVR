@@ -61,6 +61,44 @@ func _ready() -> void:
 		_run_shot_sequence()
 	if "--previewtest" in args:
 		_run_preview_test()
+	if "--simshot" in args:
+		# XR-simulator litmus: the XR swapchain isn't readable from the main
+		# window viewport (black), so mirror the XR camera into a SubViewport
+		# in the same World3D and save THAT every 2s (out/sim_shot_N.png).
+		var svp := SubViewport.new()
+		svp.size = Vector2i(1024, 1024)
+		svp.render_target_update_mode = SubViewport.UPDATE_ALWAYS
+		add_child(svp)
+		var mirror_cam := Camera3D.new()
+		mirror_cam.cull_mask = 0xFFFFF
+		svp.add_child(mirror_cam)
+		var upd := Timer.new()
+		upd.wait_time = 0.05
+		upd.timeout.connect(func() -> void:
+			var xr_cam := get_viewport().get_camera_3d()
+			if xr_cam:
+				mirror_cam.global_transform = xr_cam.global_transform)
+		add_child(upd)
+		upd.start()
+		var shot_i := [0]
+		var t := Timer.new()
+		t.wait_time = 2.0
+		t.timeout.connect(func() -> void:
+			var img := svp.get_texture().get_image()
+			DirAccess.make_dir_recursive_absolute(ProjectSettings.globalize_path("res://out"))
+			img.save_png(ProjectSettings.globalize_path("res://out/sim_shot_%d.png" % shot_i[0]))
+			print("[simshot] saved ", shot_i[0])
+			if rig is XRRig:
+				var hl: XRController3D = rig.hand_l
+				var hr: XRController3D = rig.hand_r
+				print("[simshot] L ctl=%s glove=%s hnd=%s | R ctl=%s glove=%s hnd=%s" % [
+					hl.get_has_tracking_data(), rig.hand_l.glove.visible,
+					rig.hand_l_mesh.get_has_tracking_data(),
+					hr.get_has_tracking_data(), rig.hand_r.glove.visible,
+					rig.hand_r_mesh.get_has_tracking_data()])
+			shot_i[0] += 1)
+		add_child(t)
+		t.start()
 	if "--disaster" in args:
 		get_tree().create_timer(9.0).timeout.connect(func():
 			var w: Weather = get_tree().get_first_node_in_group("weather")
@@ -483,6 +521,7 @@ func _build_preview_env() -> void:
 		"village": {}, "city": {}, "castle": {}, "mud": [],
 		"arena_radius": 55.0, "spawn": Vector2.ZERO, "spawn_h": 0.0,
 		"tint": Color(1, 1, 1),
+		"no_collision": true, "quad_div": 8,
 	})
 	_disp_terrain.visible = false
 	hangar.add_child(_disp_terrain)
@@ -491,8 +530,12 @@ func _build_preview_env() -> void:
 	_disp_proj = Projectiles.new(_disp_terrain, _disp_fx)
 	hangar.add_child(_disp_proj)
 	_disp_root = Node3D.new()
-	_disp_root.position = Vector3(2.8, 0, -3.4)
+	# right + back + scaled: full-size tank at x2.8 clipped straight through
+	# the menu board (live report). 0.6 scale keeps every vehicle inside the
+	# lamp pool and clear of the board's right edge.
+	_disp_root.position = Vector3(4.6, 0, -4.4)
 	_disp_root.rotation.y = deg_to_rad(35)
+	_disp_root.scale = Vector3(0.6, 0.6, 0.6)
 	hangar.add_child(_disp_root)
 	# slow turntable
 	var tw := _disp_root.create_tween().set_loops()
@@ -545,7 +588,7 @@ func _display_level(id: String) -> void:
 	if _diorama_root and is_instance_valid(_diorama_root):
 		_diorama_root.queue_free()
 	_diorama_root = Node3D.new()
-	_diorama_root.position = Vector3(-2.9, 0.95, -3.2)
+	_diorama_root.position = Vector3(-2.35, 0.95, -2.6)
 	hangar.add_child(_diorama_root)
 	var ped := MeshInstance3D.new()
 	var pm := CylinderMesh.new()
@@ -559,7 +602,10 @@ func _display_level(id: String) -> void:
 	ped.position.y = -0.5
 	_diorama_root.add_child(ped)
 	# scaled-down REAL terrain build of the selected level ("site model")
-	var t := Terrain.new(Levels.get_config(id))
+	var dcfg := Levels.get_config(id).duplicate()
+	dcfg["no_collision"] = true   # scenery — full trimesh colliders tanked lobby fps
+	dcfg["quad_div"] = 4          # site-model LOD; the full grid is mission-grade
+	var t := Terrain.new(dcfg)
 	var sc := 0.95 / maxf(t.arena_radius, 1.0)
 	t.scale = Vector3(sc, sc * 2.0, sc)  # slight vertical exaggeration reads better at this size
 	_diorama_root.add_child(t)

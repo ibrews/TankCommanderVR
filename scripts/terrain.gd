@@ -142,12 +142,15 @@ func _build_chunks() -> void:
 		print("[terrain] floor tex applied: ", cfg["floor_tex"], " loaded=", ft != null,
 			" param=", mat.get_shader_parameter("use_floor"))
 	var chunk_size := SIZE / CHUNKS
+	# quad_div: coarsen the grid by N (menu diorama / preview use — the full
+	# 44x44-per-chunk grid x16 chunks is mission-grade, not lobby-grade)
+	var qd := int(cfg.get("quad_div", 1))
 	for cy in CHUNKS:
 		for cx in CHUNKS:
 			var x0 := -HALF + cx * chunk_size
 			var z0 := -HALF + cy * chunk_size
 			var mi := MeshInstance3D.new()
-			mi.mesh = _chunk_mesh(x0, z0, chunk_size)
+			mi.mesh = _chunk_mesh(x0, z0, chunk_size, maxi(QUADS / qd, 4))
 			mi.material_override = mat
 			mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 			add_child(mi)
@@ -163,13 +166,16 @@ func _build_chunks() -> void:
 			# happened to get tested first. create_trimesh_collision() reuses
 			# this exact chunk's own geometry, so it can't drift out of sync
 			# with the visual mesh or with terrain.height()'s analytic value.
-			mi.create_trimesh_collision()
+			# no_collision: hangar preview/diorama terrains are scenery — a
+			# full trimesh collider per chunk is pure physics-broadphase cost
+			if not cfg.get("no_collision", false):
+				mi.create_trimesh_collision()
 
-func _chunk_mesh(x0: float, z0: float, size: float) -> ArrayMesh:
+func _chunk_mesh(x0: float, z0: float, size: float, quads: int = QUADS) -> ArrayMesh:
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	var step := size / QUADS
-	var n := QUADS + 1
+	var step := size / quads
+	var n := quads + 1
 	var verts: Array[Vector3] = []
 	var cols: Array[Color] = []
 	verts.resize(n * n)
@@ -188,8 +194,8 @@ func _chunk_mesh(x0: float, z0: float, size: float) -> ArrayMesh:
 			st.set_uv(Vector2(verts[i].x, verts[i].z) * 0.22)
 			st.set_normal(normal(verts[i].x, verts[i].z))
 			st.add_vertex(verts[i])
-	for iz in QUADS:
-		for ix in QUADS:
+	for iz in quads:
+		for ix in quads:
 			var a := iz * n + ix
 			var b := a + 1
 			var c := a + n

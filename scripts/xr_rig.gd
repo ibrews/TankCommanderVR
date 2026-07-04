@@ -277,22 +277,27 @@ class XRHand:
 		var from: Vector3
 		var dir: Vector3
 		var head := false
-		if hand_aim and hand_aim.get_has_tracking_data():
-			# Bare hands: XR_FB_hand_tracking_aim's ray IS the pointing pose.
-			# The hand-mesh root (used before) is the wrist pose — its -Z is a
-			# palm axis, not where the player is pointing, which made the lobby
-			# unselectable in hand-tracking mode.
-			from = hand_aim.global_position
-			dir = -hand_aim.global_transform.basis.z
-		elif hand_mesh and hand_mesh.get_has_tracking_data():
-			from = hand_mesh.global_position
-			dir = -hand_mesh.global_transform.basis.z
-		elif aim and aim.get_has_tracking_data():
+		# Priority order matters and was wrong twice. Quest 3S runs hand
+		# tracking CONCURRENTLY with controllers (Alex sees "controllers
+		# embedded in the hands"), so a bare-hand tracker reporting data does
+		# NOT mean the player has no controller. Rule: if the CONTROLLER is
+		# tracked, its aim pose wins, full stop — that is what the sample
+		# project does and what works. fbhandaim only drives the ray when the
+		# controller itself is untracked (true bare-hand play); its aim pose
+		# is garbage while a controller is held (ray "pointed up instead of
+		# out", live report 2026-07-04).
+		if get_has_tracking_data() and aim and aim.get_has_tracking_data():
 			from = aim.global_position
 			dir = -aim.global_transform.basis.z
 		elif get_has_tracking_data():
 			from = global_position
 			dir = -global_transform.basis.z
+		elif hand_aim and hand_aim.get_has_tracking_data():
+			from = hand_aim.global_position
+			dir = -hand_aim.global_transform.basis.z
+		elif hand_mesh and hand_mesh.get_has_tracking_data():
+			from = hand_mesh.global_position
+			dir = -hand_mesh.global_transform.basis.z
 		elif rig and rig.camera and tracker == "right_hand":
 			# only one hand drives the gaze fallback, else both double-click it
 			from = rig.camera.global_position
