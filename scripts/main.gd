@@ -36,6 +36,12 @@ func _ready() -> void:
 	_setup_rig()
 	to_menu()
 	_check_autostart()
+	# Solo playtesting has nobody watching — these are what let a future
+	# session see what actually happened without live narration. See
+	# event_log.gd for why this is a local user://events.jsonl file (pulled
+	# via adb/HzOSDevMCP) and not a network upload.
+	Game.game_over.connect(func(): EventLog.log_event("game_over", {"score": Game.score, "wave": Game.wave}))
+	Game.wave_changed.connect(func(w): EventLog.log_event("wave_start", {"wave": w}))
 	var args := OS.get_cmdline_user_args()
 	if "--smoke" in args:
 		_smoke_frames = 200
@@ -371,6 +377,8 @@ func start_game() -> void:
 	_clear_world()
 	Game.restart()
 	Game.state = Game.GState.PLAYING
+	EventLog.log_event("level_start", {"mode": Game.mode, "level": Game.level_id,
+		"vehicle": Game.vehicle, "diff": Game.difficulty, "mutator": Game.mutator})
 	Levels.current = Levels.get_config(Game.level_id)
 	_apply_ambience(false)
 	world = Node3D.new()
@@ -799,6 +807,7 @@ func _recover_from_fall(veh: Node3D) -> void:
 	if _fall_recover_cool > 0.0 or terrain == null:
 		return
 	_fall_recover_cool = 1.5
+	EventLog.log_event("fall_recover", {"level": Game.level_id, "player_mode": Game.player_mode})
 	var spawn_h := terrain.height(terrain.spawn.x, terrain.spawn.y)
 	veh.global_position = Vector3(terrain.spawn.x, spawn_h + 1.2, terrain.spawn.y)
 	if veh is CharacterBody3D:

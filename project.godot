@@ -16,6 +16,7 @@ config/icon="res://icon.png"
 
 Tune="*res://scripts/tune.gd"
 Game="*res://scripts/game.gd"
+EventLog="*res://scripts/event_log.gd"
 Sfx="*res://scripts/audio.gd"
 NetManager="*res://scripts/net.gd"
 XRToolsUserSettings="*res://addons/godot-xr-tools/user_settings/user_settings.gd"
