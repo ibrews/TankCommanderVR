@@ -643,7 +643,15 @@ func _apply_camera_mode() -> void:
 	_apply_view_offset()
 
 func _apply_view_offset() -> void:
-	position = _fp_pos + (Vector3(0, 3.0, 8.0) if Game.third_person else Vector3.ZERO)
+	# Alex: "when I go to third person mode in the lobby we still need the
+	# menu to come closer to me (or get bigger)". Game.third_person is a
+	# persisted PREFERENCE for the next mission (MainMenu's own "viewtoggle"
+	# button lets you set it while still in the hangar) -- it shouldn't
+	# physically pull the camera away from the hangar's menu board, which
+	# never resizes/repositions to compensate. Only apply the chase offset
+	# once actually PLAYING (there's a real vehicle to orbit at that point).
+	var third := Game.third_person and Game.state != Game.GState.MENU
+	position = _fp_pos + (Vector3(0, 3.0, 8.0) if third else Vector3.ZERO)
 
 ## First-person head/hand pose relative to `relative_to`, ignoring any current
 ## third-person chase offset (_apply_view_offset() adds it straight to
@@ -688,6 +696,17 @@ func _physics_process(delta: float) -> void:
 	var menu_pressed := hand_l.is_button_pressed("menu_button") or hand_r.is_button_pressed("menu_button")
 	if menu_pressed and not get_meta("menu_btn_was", false):
 		Game.toggle_pause()
+		# Alex: "pause menu cannot be navigated" -- root cause: _menu_pointer()
+		# (below, per-hand) treats menu_button as a CLICK too, and it's still
+		# physically held down this same frame from the very press that just
+		# opened the panel. Without this, that residual hold immediately
+		# "clicks" whatever the laser happens to be resting on the instant
+		# the panel appears (usually RESUME, since it's dead ahead) -- looked
+		# like the panel couldn't be interacted with at all. Seed both hands'
+		# debounce state so this press doesn't count as a NEW click until the
+		# button is released and pressed again.
+		hand_l.set_meta("mtrig_was", true)
+		hand_r.set_meta("mtrig_was", true)
 	set_meta("menu_btn_was", menu_pressed)
 	if Game.paused:
 		return
@@ -726,15 +745,14 @@ func _physics_process(delta: float) -> void:
 	# stick forward drove the tank backward and (on the right stick)
 	# elevated the gun the wrong way. Both sticks read the same "primary"
 	# action's Y component, so both get the same sign flip.
-	tank.call("set_stick_drive", Vector2(_dz(ls.x), -_dz(ls.y)))
-	# Follow-up (Alex, live headset, same day): the turret stick was STILL
-	# totally backwards on both axes (left/right AND up/down swapped) even
-	# after the Y-only fix above — turret.rotation.y in player_tank.gd is
-	# `+= -inp.x * slew`, the opposite sign convention from the drive
-	# stick's straightforward y-as-forward, so mirroring the drive fix
-	# 1:1 wasn't enough. Flip both axes here to match what the report says
-	# is actually happening on the physical stick.
-	tank.call("set_stick_turret", Vector2(-_dz(rs.x), _dz(rs.y)))
+	# Follow-up, latest App Lab build: "Y (up down) is correct. X (left
+	# right) is backwards" on BOTH sticks now. That means the turret's
+	# earlier both-axes flip overcorrected X (should never have been
+	# touched — only Y was ever wrong there), while the drive stick's X
+	# was wrong all along and just hadn't been reported until now. Drive X
+	# flipped, turret X reverted to raw.
+	tank.call("set_stick_drive", Vector2(-_dz(ls.x), -_dz(ls.y)))
+	tank.call("set_stick_turret", Vector2(_dz(rs.x), _dz(rs.y)))
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
 		var trig := hand_r.effective_trigger() > 0.6
 		if trig and not get_meta("rtrig_was", false):

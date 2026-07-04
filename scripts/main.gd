@@ -454,6 +454,7 @@ func start_game() -> void:
 		NetManager.setup_coop(player)
 	if not on_foot:
 		rig.call("attach_to_vehicle", vehicle)
+		_auto_start_if_third_person(vehicle)
 	_spawn_on_foot_pickables()
 	if Levels.current.has("sphere_world"):
 		_build_sphere_world(Levels.current["sphere_world"])
@@ -675,11 +676,22 @@ func enter_vehicle(v: Node3D) -> void:
 		return
 	var at := v.global_position
 	rig.call("attach_to_vehicle", v)
+	_auto_start_if_third_person(v)
 	# climbing-in clank + seat click, same haptic language as exit_vehicle()
 	Sfx.play_at("switch", at, -2.0, 1.05)
 	Sfx.play_at("click", at, -4.0)
 	rig.hand_l.pulse(0.3, 0.1)
 	rig.hand_r.pulse(0.3, 0.1)
+
+# Alex: "when in third person mode we shouldn't need to do anything to
+# 'start' the vehicle unless we're going to properly show the full
+# dashboard to a third person player" -- the start ritual (battery switch,
+# fuel pump, starter crank) is only discoverable by looking at the physical
+# cockpit, which a third-person/chase view never shows. Auto-skip it
+# whenever the player's already chosen third person.
+func _auto_start_if_third_person(vehicle: Node3D) -> void:
+	if Game.third_person and vehicle and vehicle.has_method("quick_start"):
+		vehicle.call("quick_start")
 
 func _clear_world() -> void:
 	if world:

@@ -140,8 +140,11 @@ func _show_main() -> void:
 	_button("start", "START!", Vector2(0.55, -0.62), Vector2(0.9, 0.20), 28)
 	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.62), 11, Color(0.55, 0.6, 0.55))
 	_text("secret: squeeze EVERYTHING + A...", Vector2(0, -0.78), 11, Color(0.45, 0.5, 0.45))
-	_text("v%s (%d) · built %s" % [BuildInfo.VERSION, BuildInfo.CODE, BuildInfo.BUILT],
-		Vector2(-1.02, -0.87), 9, Color(0.4, 0.42, 0.4), true)
+	# Alex: "we need to list the build number and date on the lobby menu" --
+	# this line already existed but at font size 9 in near-invisible dim
+	# gray, easy to miss entirely. Made it actually readable.
+	_text("BUILD v%s (%d) · %s" % [BuildInfo.VERSION, BuildInfo.CODE, BuildInfo.BUILT],
+		Vector2(-1.02, -0.855), 13, Color(0.75, 0.78, 0.72), true)
 	_refresh_selection()
 
 func _show_howto(p: int) -> void:
