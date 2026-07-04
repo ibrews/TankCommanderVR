@@ -277,7 +277,14 @@ class XRHand:
 		var from: Vector3
 		var dir: Vector3
 		var head := false
-		if hand_mesh and hand_mesh.get_has_tracking_data():
+		if hand_aim and hand_aim.get_has_tracking_data():
+			# Bare hands: XR_FB_hand_tracking_aim's ray IS the pointing pose.
+			# The hand-mesh root (used before) is the wrist pose — its -Z is a
+			# palm axis, not where the player is pointing, which made the lobby
+			# unselectable in hand-tracking mode.
+			from = hand_aim.global_position
+			dir = -hand_aim.global_transform.basis.z
+		elif hand_mesh and hand_mesh.get_has_tracking_data():
 			from = hand_mesh.global_position
 			dir = -hand_mesh.global_transform.basis.z
 		elif aim and aim.get_has_tracking_data():
