@@ -1,0 +1,6 @@
+[gd_scene load_steps=2 format=3 uid="uid://cubestripcap01"]
+
+[ext_resource type="Script" path="res://tools/cubestrip_capture.gd" id="1"]
+
+[node name="CubestripCapture" type="Node3D"]
+script = ExtResource("1")
