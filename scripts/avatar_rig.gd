@@ -85,6 +85,15 @@ func _rebuild() -> void:
 	_head = _mk_sphere(0.135, tint.lightened(0.25))
 	_head.name = "Head"
 	add_child(_head)
+	# soldier dressing pass (Alex: "good looking avatars") — helmet dome +
+	# brim over the bare sphere, all cheap primitives, same draw budget class
+	var helmet := _mk_sphere(0.148, tint.darkened(0.35))
+	helmet.position = Vector3(0, 0.035, 0.01)
+	helmet.scale = Vector3(1.0, 0.72, 1.0)
+	_head.add_child(helmet)
+	var brim := _mk_cyl(0.155, 0.155, 0.02, tint.darkened(0.4))
+	brim.position = Vector3(0, -0.01, 0.015)
+	_head.add_child(brim)
 	var visor := MeshInstance3D.new()
 	var vb := BoxMesh.new()
 	vb.size = Vector3(0.19, 0.085, 0.09)
@@ -104,6 +113,33 @@ func _rebuild() -> void:
 	_torso = _mk_cyl(0.13, 0.17, torso_h, tint)
 	_torso.position = Vector3(0, -torso_h * 0.5, 0)
 	_hip.add_child(_torso)
+	# chest rig / vest + belt + backpack — breaks up the plain cylinder
+	var vest := MeshInstance3D.new()
+	var vbm := BoxMesh.new()
+	vbm.size = Vector3(0.24, torso_h * 0.62, 0.10)
+	vest.mesh = vbm
+	var vmat := StandardMaterial3D.new()
+	vmat.albedo_color = tint.darkened(0.45)
+	vmat.roughness = 0.85
+	vest.material_override = vmat
+	vest.position = Vector3(0, -torso_h * 0.38, -0.115)
+	_hip.add_child(vest)
+	var pack := MeshInstance3D.new()
+	var pbm := BoxMesh.new()
+	pbm.size = Vector3(0.22, torso_h * 0.55, 0.09)
+	pack.mesh = pbm
+	pack.material_override = vmat
+	pack.position = Vector3(0, -torso_h * 0.42, 0.14)
+	_hip.add_child(pack)
+	var belt := _mk_cyl(0.155, 0.165, 0.05, tint.darkened(0.5))
+	belt.position = Vector3(0, -torso_h * 0.92, 0)
+	_hip.add_child(belt)
+	# shoulder pads
+	for spx in [-SHOULDER_X, SHOULDER_X]:
+		var pad := _mk_sphere(0.062, tint.darkened(0.3))
+		pad.position = Vector3(spx, SHOULDER_Y + 0.015, 0)
+		pad.scale = Vector3(1.0, 0.7, 1.0)
+		_hip.add_child(pad)
 	if mode == Mode.ON_FOOT:
 		# "legs, v1: no per-frame foot IK" — hide them below a short skirt
 		# panel, Rec Room's own long-standing default. Revisit only if bare
@@ -201,7 +237,11 @@ func _solve_arm(is_left: bool, hand_pos: Vector3) -> void:
 	var upper: MeshInstance3D = _arm_l_upper if is_left else _arm_r_upper
 	var fore: MeshInstance3D = _arm_l_fore if is_left else _arm_r_fore
 	var s := shoulder.global_position
-	var h := hand_pos
+	# hand_pos arrives in AVATAR-LOCAL space (update_live passes the raw
+	# rig-relative transform origin); the shoulder above is WORLD. Mixing the
+	# two made every arm solve toward a point near the MAP ORIGIN — invisible
+	# in tests staged at (0,0,0), grotesque pole-arms anywhere else.
+	var h := global_transform * hand_pos
 	var d := h - s
 	var dist := clampf(d.length(), absf(UPPER_ARM_LEN - FOREARM_LEN) + 0.01, UPPER_ARM_LEN + FOREARM_LEN - 0.01)
 	if d.length() < 0.001:

@@ -170,6 +170,16 @@ func _build_chunks() -> void:
 			# full trimesh collider per chunk is pure physics-broadphase cost
 			if not cfg.get("no_collision", false):
 				mi.create_trimesh_collision()
+				# Make the WORLD climbable, sample-style ("MOST of what's in
+				# godot-xr-tools should appear in this game"): movement_climb
+				# hard-casts grabbed bodies to XRToolsClimbable, so the script
+				# goes directly on the generated collision body. Layer 19 puts
+				# it in function_pickup's grab mask; layer 1 stays so it keeps
+				# being the walkable floor.
+				for cch in mi.get_children():
+					if cch is StaticBody3D:
+						cch.set_script(load("res://addons/godot-xr-tools/objects/climbable.gd"))
+						cch.collision_layer = 1 | (1 << 18)
 
 func _chunk_mesh(x0: float, z0: float, size: float, quads: int = QUADS) -> ArrayMesh:
 	var st := SurfaceTool.new()

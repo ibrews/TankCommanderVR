@@ -608,13 +608,16 @@ func _build_on_foot_nodes() -> void:
 	# accept a bare hit on any of layers 1-5 as a valid grapple point, which
 	# _is_raycast_valid() below filters back down via grapple_enable_mask)
 	_grapple_l.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
-	_grapple_l.grapple_enable_mask = 1 << 5
+	# Spider-Man rule (Alex): ANY solid world surface is a valid anchor —
+	# terrain/walls (layer 1) and climb bodies (19), not just the dedicated
+	# layer-6 targets nobody ever placed.
+	_grapple_l.grapple_enable_mask = 1 | (1 << 5) | (1 << 18)
 	hand_l.add_child(_grapple_l)
 	_grapple_l.owner = self
 	_grapple_r = grapple_scene.instantiate()
 	_grapple_r.enabled = false
 	_grapple_r.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
-	_grapple_r.grapple_enable_mask = 1 << 5
+	_grapple_r.grapple_enable_mask = 1 | (1 << 5) | (1 << 18)
 	hand_r.add_child(_grapple_r)
 	_grapple_r.owner = self
 
@@ -904,7 +907,7 @@ func _check_reentry() -> void:
 		or hand_l.effective_trigger() > 0.7
 	if v and is_instance_valid(v):
 		var anchor: Node3D = v.cockpit["seat_anchor"]
-		if on_foot_body.global_position.distance_to(anchor.global_position) < 0.6 \
+		if on_foot_body.global_position.distance_to(anchor.global_position) < 1.2 \
 				and gripping and not _reentry_grip_was:
 			m.call_deferred("enter_vehicle", v)
 	_reentry_grip_was = gripping
