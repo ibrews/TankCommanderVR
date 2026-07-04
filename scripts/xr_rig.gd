@@ -622,6 +622,22 @@ func _apply_camera_mode() -> void:
 func _apply_view_offset() -> void:
 	position = _fp_pos + (Vector3(0, 3.0, 8.0) if Game.third_person else Vector3.ZERO)
 
+## First-person head/hand pose relative to `relative_to`, ignoring any current
+## third-person chase offset (_apply_view_offset() adds it straight to
+## `position`, and hand_l/hand_r are children of this rig too so they'd drift
+## by the same amount) — used to drive the local player's own AvatarRig so it
+## stays anchored to the seat instead of floating off with the chase camera.
+func local_body_pose(relative_to: Node3D) -> Dictionary:
+	var origin_parent := get_parent()
+	var base: Transform3D = (origin_parent.global_transform if origin_parent else Transform3D()) \
+		* Transform3D(basis, _fp_pos)
+	var inv := relative_to.global_transform.affine_inverse()
+	return {
+		"head": inv * (base * camera.transform),
+		"hand_l": inv * (base * hand_l.transform),
+		"hand_r": inv * (base * hand_r.transform),
+	}
+
 func _update_debug_label() -> void:
 	_debug_label.text = "%s\n%s" % [_hand_debug_line("L", hand_l), _hand_debug_line("R", hand_r)]
 

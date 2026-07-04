@@ -72,6 +72,13 @@ func hand_l_node() -> Node3D:
 func hand_r_node() -> Node3D:
 	return _hand_r
 
+## Hide the head sphere for the local player's own avatar in first person —
+## otherwise the camera sits inside it every frame. Torso/arms/hands stay
+## visible (looking down at your own body is the point of having one).
+func set_head_visible(v: bool) -> void:
+	if _head:
+		_head.visible = v
+
 func _rebuild() -> void:
 	for c in get_children():
 		c.queue_free()

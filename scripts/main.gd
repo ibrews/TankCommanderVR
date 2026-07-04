@@ -22,6 +22,13 @@ var _demo_t := 0.0
 var _perf_t := 0.0
 var _smoke_frames := -1
 
+# Local player's own body (Alex: "make sure I have a full avatar" — until now
+# AvatarRig only ever got attached to REMOTE crew/NPCs, net.gd's own
+# update_live() call sites, never to the local player themselves). One
+# instance survives the seated<->on-foot transition, same idiom as
+# net.gd's _crew_avatar / AvatarRig.configure()'s own doc comment.
+var _local_avatar: AvatarRig = null
+
 func _ready() -> void:
 	add_to_group("main")
 	_setup_environment()
@@ -685,9 +692,64 @@ func _demo_tick(delta: float) -> void:
 	if fmod(_demo_t, 19.0) < delta:
 		player.stick_rockets()
 
+# ---------------------------------------------------------------- local avatar
+# Attaches/drives an AvatarRig for the LOCAL player's own body — SEATED mode
+# parents it directly to current_vehicle (net.gd's _crew_avatar precedent,
+# same reasoning: tank space never carries the third-person chase offset,
+# unlike `rig` itself), ON_FOOT parents it to the on-foot body so it walks
+# with the player. Head is hidden in first person so the camera isn't stuck
+# inside it; torso/arms/hands stay visible for the "look down at yourself"
+# case that's the whole point of having a body.
+func _update_local_avatar(delta: float) -> void:
+	if Game.state != Game.GState.PLAYING or rig == null:
+		_clear_local_avatar()
+		return
+	var seated := Game.player_mode == Game.PlayerMode.SEATED
+	var parent: Node3D = current_vehicle if seated else (rig.get("on_foot_body") if rig is XRRig else null)
+	if parent == null or not is_instance_valid(parent):
+		_clear_local_avatar()
+		return
+	var want_mode := AvatarRig.Mode.SEATED if seated else AvatarRig.Mode.ON_FOOT
+	if _local_avatar == null or not is_instance_valid(_local_avatar):
+		_local_avatar = AvatarRig.new()
+		_local_avatar.configure(want_mode, AvatarCosmetics.tint_for(NetManager.my_id()))
+	elif _local_avatar.mode != want_mode:
+		_local_avatar.configure(want_mode, _local_avatar.tint)
+	if _local_avatar.get_parent() != parent:
+		if _local_avatar.get_parent():
+			_local_avatar.get_parent().remove_child(_local_avatar)
+		parent.add_child(_local_avatar)
+	var head_t: Transform3D
+	var hand_l_t: Transform3D
+	var hand_r_t: Transform3D
+	if seated and rig.has_method("local_body_pose"):
+		var pose: Dictionary = rig.call("local_body_pose", parent)
+		head_t = pose["head"]
+		hand_l_t = pose["hand_l"]
+		hand_r_t = pose["hand_r"]
+	else:
+		# on-foot: rig's own position IS the physics-authoritative body
+		# location (the addon repositions the origin directly), so no
+		# chase-offset correction is needed the way SEATED requires.
+		var cam: Node3D = rig.get("camera")
+		var hl: Node3D = rig.get("hand_l")
+		var hr: Node3D = rig.get("hand_r")
+		var inv := parent.global_transform.affine_inverse()
+		head_t = inv * cam.global_transform if cam else Transform3D()
+		hand_l_t = inv * hl.global_transform if hl else head_t
+		hand_r_t = inv * hr.global_transform if hr else head_t
+	_local_avatar.set_head_visible(Game.third_person)
+	_local_avatar.update_live(delta, head_t, hand_l_t, hand_r_t, {})
+
+func _clear_local_avatar() -> void:
+	if _local_avatar and is_instance_valid(_local_avatar):
+		_local_avatar.queue_free()
+	_local_avatar = null
+
 # ---------------------------------------------------------------- perf + test modes
 func _process(delta: float) -> void:
 	_demo_tick(delta)
+	_update_local_avatar(delta)
 	# lava is not a swimming pool
 	if Game.state == Game.GState.PLAYING and Levels.current.has("lava_y"):
 		var veh: Node3D = plane if plane else (player if player else null)

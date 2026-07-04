@@ -57,6 +57,18 @@ func _apply_camera_mode() -> void:
 		camera.top_level = false
 		camera.transform = Transform3D()
 
+## Mirrors XRRig.local_body_pose() for desktop testing/smoke-shots — no real
+## hand tracking here, so hand_l/hand_r both fall back to the head pose
+## (matches net.gd's _my_hand_rel() precedent of an identity/head fallback
+## when a rig has no hands, harmless since desktop is test-only).
+func local_body_pose(relative_to: Node3D) -> Dictionary:
+	var origin_parent := get_parent()
+	var fp_local := Transform3D(Basis.from_euler(Vector3(_pitch, _yaw, 0)), position)
+	var base: Transform3D = (origin_parent.global_transform if origin_parent else Transform3D()) * fp_local
+	var inv := relative_to.global_transform.affine_inverse()
+	var head: Transform3D = inv * base
+	return {"head": head, "hand_l": head, "hand_r": head}
+
 func _chase_target() -> Transform3D:
 	# behind + above the vehicle, looking at it, orbited by the mouse-look yaw
 	var back := tank.global_transform.basis.rotated(Vector3.UP, _yaw).z.normalized()
