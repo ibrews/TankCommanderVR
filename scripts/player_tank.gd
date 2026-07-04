@@ -163,13 +163,20 @@ func _build_exterior() -> void:
 	tur_mi.mesh = MeshKit.commit(ust, camo)
 	turret.add_child(tur_mi)
 
-	# rocket pods on turret cheeks
+	# rocket pods on turret cheeks. Alex, live headset: "the white missile
+	# launchers on either side of the tank... it's distracting they are
+	# white while the rest of our tank is camouflaged." (0.8,0.82,0.78) is
+	# the exact same too-light-to-survive-this-environment's-ambient
+	# mistake as enemy_tank.gd's original camo color (see that file's
+	# 2026-07-04 fix) -- washes toward white under the sky-source ambient.
+	# Darkened to a dull olive-drab matching the rest of the hull, and
+	# pushed out/back slightly so they crowd the periscope sightlines less.
 	var pst := MeshKit.begin()
-	for sx in [-1.0, 1.0]:
-		MeshKit.box(pst, Transform3D(Basis(), Vector3(sx, 0.45, 0.15)), Vector3(0.35, 0.4, 0.9), Color(0.8, 0.82, 0.78), 0.18)
+	for sx in [-1.1, 1.1]:
+		MeshKit.box(pst, Transform3D(Basis(), Vector3(sx, 0.45, 0.22)), Vector3(0.35, 0.4, 0.9), Color(0.28, 0.30, 0.24), 0.18)
 		for iy in 2:
 			for iz in 2:
-				MeshKit.cyl(pst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(sx, 0.37 + iy * 0.17, -0.32 + iz * 0.0)), 0.055, 0.055, 0.12, 8, Color(0.1, 0.1, 0.1))
+				MeshKit.cyl(pst, Transform3D(Basis(Vector3.RIGHT, PI / 2), Vector3(sx, 0.37 + iy * 0.17, -0.25 + iz * 0.0)), 0.055, 0.055, 0.12, 8, Color(0.1, 0.1, 0.1))
 	var pods_mi := MeshInstance3D.new()
 	pods_mi.mesh = MeshKit.commit(pst, MeshKit.mat_vcol(0.7, 0.2))
 	turret.add_child(pods_mi)
@@ -198,11 +205,16 @@ func _build_exterior() -> void:
 	# read as "a big metal box blocking half the tank." Alex correctly
 	# guessed it was the gun's own breech, not a wall or console — my
 	# earlier console-pedestal theory was wrong (verified: repositioning
-	# it changed nothing in a render test). Pulled forward so its rearmost
-	# extent clears the eye/rear-wall area.
+	# it changed nothing in a render test). Pulled forward once already
+	# today; STILL reported "poking into the center of the cockpit area" on
+	# the next pass, so pushed further back again (extra 0.15m clearance on
+	# the near block) AND shifted right off the centerline — EYE.x=-0.28
+	# (driver seated LEFT of the breech per this file's own header) means
+	# an X=0 breech was only ~0.11m clear of the eye's own X position,
+	# barely offset at all despite the "seated left of" design intent.
 	var bst := MeshKit.begin()
-	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.20)), Vector3(0.34, 0.4, 0.75), Color(0.35, 0.38, 0.34))
-	MeshKit.box(bst, Transform3D(Basis(), Vector3(0, 0, 0.60)), Vector3(0.28, 0.32, 0.10), Color(0.24, 0.26, 0.24))
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0.12, 0, 0.20)), Vector3(0.34, 0.4, 0.75), Color(0.35, 0.38, 0.34))
+	MeshKit.box(bst, Transform3D(Basis(), Vector3(0.12, 0, 0.75)), Vector3(0.26, 0.30, 0.10), Color(0.24, 0.26, 0.24))
 	var bmi := MeshInstance3D.new()
 	bmi.mesh = MeshKit.commit(bst, MeshKit.mat_vcol(0.6, 0.35))
 	bmi.layers = 2

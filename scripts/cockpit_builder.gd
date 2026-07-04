@@ -91,20 +91,31 @@ static func _build_static(root: Node3D) -> void:
 		MeshKit.box(st, Transform3D(Basis(), Vector3(cx - cw / 2 - 0.012, band_y, zc)), Vector3(0.025, band_h + 0.05, tunnel_len), STEEL_DARK)
 		MeshKit.box(st, Transform3D(Basis(), Vector3(cx + cw / 2 + 0.012, band_y, zc)), Vector3(0.025, band_h + 0.05, tunnel_len), STEEL_DARK)
 
-	# ---- side walls with one small slit each at same band
+	# ---- side walls with one small slit each. Deliberately NOT the same
+	# widened band as the front wall -- a render-test screenshot after
+	# widening the shared band_y/band_h showed a large, ugly dark slab
+	# filling a third of the forward view: the side slits shared those
+	# same variables, so widening the front (the actual reported problem)
+	# also blew the side windows open to ~4x their area, exposing nearby
+	# exterior hull geometry that was never visible (or a problem) through
+	# the old narrow side slit. Side windows keep the original band size.
+	var side_band_y := (0.24 + 0.39) / 2.0
+	var side_band_h := 0.39 - 0.24
+	var side_slit_y0 := 0.24
+	var side_slit_y1 := 0.39
 	for side in [[X0, 1.0], [X1, -1.0]]:
 		var wx: float = side[0]
 		# front-of-slit and rear-of-slit wall parts (slit z -0.15..0.10)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, band_y, (Z0 + -0.15) / 2)), Vector3(w, band_h, -0.15 - Z0), STEEL)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, band_y, (0.10 + Z1) / 2)), Vector3(w, band_h, Z1 - 0.10), STEEL)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, (YF + slit_y0) / 2, 0)), Vector3(w, slit_y0 - YF, Z1 - Z0), STEEL)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, (slit_y1 + YR) / 2, 0)), Vector3(w, YR - slit_y1, Z1 - Z0), STEEL)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, side_band_y, (Z0 + -0.15) / 2)), Vector3(w, side_band_h, -0.15 - Z0), STEEL)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, side_band_y, (0.10 + Z1) / 2)), Vector3(w, side_band_h, Z1 - 0.10), STEEL)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, (YF + side_slit_y0) / 2, 0)), Vector3(w, side_slit_y0 - YF, Z1 - Z0), STEEL)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(wx, (side_slit_y1 + YR) / 2, 0)), Vector3(w, YR - side_slit_y1, Z1 - Z0), STEEL)
 		# housing
 		var sx: float = wx + side[1] * -0.15
-		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, slit_y1 + 0.012, -0.025)), Vector3(0.3, 0.025, 0.30), STEEL_DARK)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, slit_y0 - 0.012, -0.025)), Vector3(0.3, 0.025, 0.30), STEEL_DARK)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, band_y, -0.165)), Vector3(0.3, band_h + 0.05, 0.025), STEEL_DARK)
-		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, band_y, 0.115)), Vector3(0.3, band_h + 0.05, 0.025), STEEL_DARK)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, side_slit_y1 + 0.012, -0.025)), Vector3(0.3, 0.025, 0.30), STEEL_DARK)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, side_slit_y0 - 0.012, -0.025)), Vector3(0.3, 0.025, 0.30), STEEL_DARK)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, side_band_y, -0.165)), Vector3(0.3, side_band_h + 0.05, 0.025), STEEL_DARK)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(sx + side[1] * 0.15, side_band_y, 0.115)), Vector3(0.3, side_band_h + 0.05, 0.025), STEEL_DARK)
 
 	# rear wall + roof
 	MeshKit.box(st, Transform3D(Basis(), Vector3((X0 + X1) / 2, (YF + YR) / 2, Z1)), Vector3(X1 - X0, YR - YF, w), STEEL)

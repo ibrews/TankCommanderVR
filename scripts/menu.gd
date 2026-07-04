@@ -39,10 +39,18 @@ const HOWTO := [
 	"CO-OP + VERSUS (same Wi-Fi)\n\nCO-OP: one headset hosts, the other joins.\nHost DRIVES + machine gun. Friend runs the\nTURRET: cannon, breech, and the heavy rockets.\n\nVERSUS: tank vs tank duel. First to 5 wins.\n\nPLANE MODE: stick + throttle. Bombs away!",
 ]
 
+# Set true (before add_child, so it's already true by the time _ready()
+# runs) when main.gd instantiates this board as the mid-mission pause
+# overlay rather than the real hangar menu -- skips the welcome VO/menu
+# music, which would otherwise replay every time the player pauses.
+var is_pause_overlay := false
+
 func _ready() -> void:
 	add_to_group("menu")
 	_build_board()
 	_show_main()
+	if is_pause_overlay:
+		return
 	Sfx.music_menu()
 	Sfx.coach("vo_welcome", 4, 2.0)
 	get_tree().create_timer(6.5).timeout.connect(func():
