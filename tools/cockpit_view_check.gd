@@ -36,11 +36,19 @@ func _ready() -> void:
 	env.environment = e
 	add_child(env)
 
-	var tank := PlayerTank.new(terrain, projectiles, fx)
+	# SHOT_VEH selects the vehicle (default tank) — same env var as --smoke
+	var veh_id := OS.get_environment("SHOT_VEH")
+	var tank: Node3D
+	match veh_id:
+		"jeep": tank = PlayerJeep.new(terrain, projectiles, fx)
+		"boat": tank = PlayerBoat.new(terrain, projectiles, fx)
+		"heli": tank = PlayerAlt.Heli.new(terrain, projectiles, fx)
+		_: tank = PlayerTank.new(terrain, projectiles, fx)
 	add_child(tank)
 	tank.set_physics_process(false)
 	tank.set_process(false)
 	tank.global_position = Vector3(0, terrain.height(0, 0) + 0.04, 0)
+	tank.basis = Basis()  # boat/jeep _respawn() spawn facing yaw=PI; normalize so "forward" = -Z
 	# battery/dome light on, matching a running tank, so the interior isn't
 	# pitch dark (dome_light.light_energy defaults to 0.0 "off until battery on")
 	if tank.cockpit.get("dome_light"):

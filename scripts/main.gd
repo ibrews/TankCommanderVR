@@ -375,6 +375,8 @@ func _current_vehicle_type() -> String:
 		return "heli"
 	if current_vehicle is PlayerBoat:
 		return "boat"
+	if current_vehicle is PlayerJeep:
+		return "jeep"
 	return "tank"
 
 # Rebuilds just the vehicle (mirrors start_game()'s vehicle-construction
@@ -417,6 +419,8 @@ func _swap_vehicle(new_veh: String) -> void:
 				push_warning("[main] \"runner\" selected without an active XR rig — falling back to tank")
 				player = PlayerTank.new(terrain, projectiles, fx)
 				vehicle = player
+		"jeep":
+			vehicle = PlayerJeep.new(terrain, projectiles, fx)
 		"boat":
 			vehicle = PlayerBoat.new(terrain, projectiles, fx)
 		_:
@@ -554,6 +558,8 @@ func _display_vehicle(vid: String) -> void:
 			v = pl
 		"heli":
 			v = PlayerAlt.Heli.new(_disp_terrain, _disp_proj, _disp_fx)
+		"jeep":
+			v = PlayerJeep.new(_disp_terrain, _disp_proj, _disp_fx)
 		"boat":
 			v = PlayerBoat.new(_disp_terrain, _disp_proj, _disp_fx)
 		"runner":
@@ -752,6 +758,8 @@ func start_game() -> void:
 				push_warning("[main] \"runner\" selected without an active XR rig — falling back to tank")
 				player = PlayerTank.new(terrain, projectiles, fx)
 				vehicle = player
+		"jeep":
+			vehicle = PlayerJeep.new(terrain, projectiles, fx)
 		"boat":
 			vehicle = PlayerBoat.new(terrain, projectiles, fx)
 		_:
@@ -1356,7 +1364,7 @@ func _shot(_cam: Camera3D, tag: String) -> void:
 func _run_preview_test() -> void:
 	await get_tree().process_frame
 	await get_tree().process_frame
-	for vid in ["tank", "plane", "biplane", "heli", "runner", "boat"]:
+	for vid in ["tank", "jeep", "plane", "biplane", "heli", "runner", "boat"]:
 		_display_vehicle(vid)
 		await get_tree().process_frame
 		await get_tree().process_frame

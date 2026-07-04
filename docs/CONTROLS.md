@@ -40,6 +40,16 @@ A wide establishing shot (pulled back further than normal 3rd person, ~45° over
 | Pull a hand from near your chest outward, across your body (like yanking a ripcord) | Alternate parachute-deploy gesture — same effect as the trigger, for hand-tracking or if you don't want to hunt for the trigger while falling |
 | Thumbstick (under canopy) | Drift left/right/forward/back |
 
+### Seated in the jeep
+| Input | Action |
+|---|---|
+| Steering wheel (grab), or left stick X | Steer |
+| Throttle lever, or left stick Y | Throttle (down = reverse) |
+| Right stick | Aim the rear tank gun (full 360° traverse) |
+| Trigger | Fire the rear cannon |
+| A / X button | Machine gun |
+| Yellow rail lever, or hold LEFT trigger | Exit |
+
 ### On foot (RUNNER)
 | Input | Action |
 |---|---|

@@ -29,7 +29,7 @@ const TIMES := ["TIME: DAY", "TIME: GOLDEN HOUR", "TIME: NIGHT OPS"]
 var page := 0   # 0 main, 1..4 how-to
 
 const MUTATORS := [["", "NORMAL"], ["lowg", "LOW-G"], ["underwater", "WATER"], ["balloon", "BALLOON"], ["paintball", "PAINT"]]
-const VEHICLES := [["tank", "TANK"], ["plane", "PLANE"], ["biplane", "BIPLANE"], ["heli", "HELI"], ["runner", "RUNNER"], ["boat", "GUNBOAT"]]
+const VEHICLES := [["tank", "TANK"], ["jeep", "JEEP"], ["plane", "PLANE"], ["biplane", "BIPLANE"], ["heli", "HELI"], ["runner", "RUNNER"], ["boat", "GUNBOAT"]]
 
 var _buttons: Array[Dictionary] = []
 var _labels_to_clear: Array[Node] = []
