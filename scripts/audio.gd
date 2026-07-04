@@ -206,7 +206,11 @@ func _process(delta: float) -> void:
 	if _music_mode == "game":
 		match radio_station:
 			0:  # AUTO — adaptive score
-				calm_target = -14.0 - _threat * 18.0 + gain_db
+				# calm baseline lifted +6dB (was -14): at rest it was ~13dB
+				# under the engine loop's effective level and read as "no
+				# music" to players during ordinary driving, which is most
+				# of actual playtime. Combat crossfade math is unchanged.
+				calm_target = -8.0 - _threat * 18.0 + gain_db
 				combat_target = -34.0 + _threat * 24.0 + gain_db
 			1:  # DAD FM — talk over a quiet bed
 				calm_target = -26.0 + gain_db
