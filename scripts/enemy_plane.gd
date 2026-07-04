@@ -1,9 +1,14 @@
 # Attack plane: orbits high, periodically dives on the player and fires two
 # rockets, then egresses. Kinematic body so raycasts/MG can hit it.
+# Spawns on one edge of the map and TRANSITs in a straight line toward a
+# far-side target (see EnemyManager._spawn_wave) before dropping into its
+# normal orbit -> dive -> rocket volley loop, so the player (whose own spawn
+# sits near an edge, not the arena center) gets a real flyover instead of the
+# plane just appearing and immediately circling nearby.
 class_name EnemyPlane
 extends CharacterBody3D
 
-enum State { ORBIT, ATTACK, EGRESS, SPIRAL }
+enum State { TRANSIT, ORBIT, ATTACK, EGRESS, SPIRAL }
 
 static var _mesh: ArrayMesh
 
@@ -23,6 +28,16 @@ var _fired := false
 var prop: MeshInstance3D
 var engine_p: AudioStreamPlayer3D
 var _spiral_t := 0.0
+
+# TRANSIT: set by EnemyManager right after spawn to fly the plane from its
+# edge-of-map spawn point straight toward the far side of the arena.
+var transit_target := Vector2.ZERO
+var _has_transit := false
+
+func start_transit(target: Vector2) -> void:
+	transit_target = target
+	_has_transit = true
+	state = State.TRANSIT
 
 func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 	terrain = t
@@ -74,9 +89,14 @@ func _ready() -> void:
 	engine_p = Sfx.make_loop_player("plane_loop", self, -2.0, 14.0)
 	engine_p.max_distance = 400.0
 	engine_p.play()
-	heading = Game.rng.randf() * TAU
 	orbit_dir = 1.0 if Game.rng.randf() > 0.5 else -1.0
 	attack_timer = Game.rng.randf_range(6.0, 14.0)
+	if _has_transit:
+		var gp := global_position
+		heading = atan2(-(transit_target.x - gp.x), -(transit_target.y - gp.z))
+		alt = 70.0
+	else:
+		heading = Game.rng.randf() * TAU
 
 func _physics_process(delta: float) -> void:
 	prop.rotation.z += 40.0 * delta
@@ -88,6 +108,16 @@ func _physics_process(delta: float) -> void:
 	var flat_d := Vector2(to_player.x, to_player.z).length()
 
 	match state:
+		State.TRANSIT:
+			# straight-line flythrough from the spawn edge toward the far
+			# side of the arena; hands off to ORBIT once it arrives near
+			# the target or gets close enough to the player to engage.
+			var want_t := atan2(-(transit_target.x - gp.x), -(transit_target.y - gp.z))
+			_steer(want_t, delta, 0.35)
+			alt = move_toward(alt, 70.0, 6.0 * delta)
+			var to_target := Vector2(transit_target.x - gp.x, transit_target.y - gp.z).length()
+			if to_target < 60.0 or flat_d < 260.0:
+				state = State.ORBIT
 		State.ORBIT:
 			# circle the player at ~260 m
 			var tangent := atan2(-to_player.x, -to_player.z) + orbit_dir * (PI / 2.0 + clampf((260.0 - flat_d) / 200.0, -0.5, 0.5))

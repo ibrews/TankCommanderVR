@@ -158,8 +158,23 @@ func _spawn_wave() -> void:
 	for i in planes:
 		var p := EnemyPlane.new(terrain, projectiles, fx, player)
 		add_child(p)
+		# Player spawn sits near one edge of the map (Terrain.SPAWN_CENTER /
+		# terrain.spawn), not the arena center -- a plane that just orbits
+		# near its own random spawn point never gives a real flyover (Alex,
+		# live playtest: "spawn on one side going into the direction of the
+		# farthest side of the map, we spawn near the edge"). So: spawn the
+		# plane on a random point on the outer ring, then aim it at that
+		# point reflected through the player's spawn -- the flight line
+		# passes over the player's spawn area and lands on the far side of
+		# the arena, i.e. the longest possible flythrough for that spawn
+		# point. It drops out of TRANSIT into its normal orbit once it
+		# arrives or gets close enough to the player to engage (enemy_plane.gd).
+		var plane_ring := maxf(terrain.arena_radius * 1.3, 300.0)
 		var a := Game.rng.randf() * TAU
-		p.global_position = Vector3(cos(a) * 300.0, 70.0, sin(a) * 300.0)
+		var spawn_xz := Vector2(cos(a), sin(a)) * plane_ring
+		p.global_position = Vector3(spawn_xz.x, 70.0, spawn_xz.y)
+		var far_target := terrain.spawn * 2.0 - spawn_xz
+		p.start_transit(far_target)
 	# warships raid coastal levels from the deep water
 	var ships_base: int = Levels.current.get("ships", 0)
 	if ships_base > 0:
