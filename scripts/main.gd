@@ -262,25 +262,142 @@ func _setup_rig() -> void:
 	Game.pause_changed.connect(_on_pause_changed)
 
 # ---------------------------------------------------------------- pause
-# Head-locked pause panel, shown/hidden on Game.pause_changed (menu button
-# mid-mission — see Game.toggle_pause()). Parented to the camera so it's
-# wherever you're looking; camera exists under both XRRig and DesktopRig.
+# Alex: "pause menu still doesn't allow me to do anything because it's
+# head-locked. Just make the settings button bring me back to the lobby,
+# but only temporarily. If I press the button again I should be back in
+# the map, including if all I do is swap a vehicle... We only do a full
+# respawn if I change the level."
+#
+# The original small head-locked panel was unusable — aiming a laser at
+# something that moves with your own head every frame is basically
+# impossible. This shows the REAL MainMenu (same board the hangar uses),
+# pre-selected to the mission's current mode/level/diff/mutator/vehicle,
+# positioned at a FIXED world transform computed ONCE (where the player
+# was looking when they paused), not re-locked every frame. World/enemies/
+# score/wave are frozen (Game.toggle_pause()) but NOT torn down.
+#
+# Toggling the same button again with no selection just hides this and
+# resumes exactly where things were (_on_pause_changed(false), below).
+# Picking a vehicle-only change while everything else matches routes to
+# _swap_vehicle() (keeps wave/score/terrain); an actual level/mode/diff/
+# mutator change routes to the normal full start_game() teardown.
 func _on_pause_changed(is_paused: bool) -> void:
 	if is_paused:
-		if _pause_menu == null or not is_instance_valid(_pause_menu):
-			_pause_menu = PauseMenu.new()
-			_pause_menu.resume_requested.connect(func(): Game.set_paused(false))
-			_pause_menu.quit_requested.connect(func(): Game.set_paused(false); call_deferred("to_menu"))
+		_pause_lobby = MainMenu.new()
+		_pause_lobby.is_pause_overlay = true
+		_pause_lobby.sel_mode = Game.mode
+		_pause_lobby.sel_level = Game.level_id
+		_pause_lobby.sel_diff = Game.difficulty
+		_pause_lobby.sel_mut = Game.mutator
+		_pause_lobby.sel_time = Game.time_of_day
+		var cur_veh := _current_vehicle_type()
+		for i in MainMenu.VEHICLES.size():
+			if MainMenu.VEHICLES[i][0] == cur_veh:
+				_pause_lobby.sel_vehicle = i
+				break
+		_pause_lobby.start_requested.connect(_on_paused_start_requested)
+		_pause_lobby.join_requested.connect(_on_paused_join_requested)
+		add_child(_pause_lobby)
 		var cam: Node3D = rig.get("camera")
 		if cam:
-			if _pause_menu.get_parent() != cam:
-				if _pause_menu.get_parent():
-					_pause_menu.get_parent().remove_child(_pause_menu)
-				cam.add_child(_pause_menu)
-			_pause_menu.transform = Transform3D(Basis(), Vector3(0, 0, -1.1))
-	elif _pause_menu and is_instance_valid(_pause_menu):
-		_pause_menu.queue_free()
-		_pause_menu = null
+			var fwd := -cam.global_transform.basis.z
+			fwd.y = 0
+			if fwd.length() < 0.01:
+				fwd = Vector3.FORWARD
+			fwd = fwd.normalized()
+			_pause_lobby.global_position = cam.global_position + fwd * 2.2 - Vector3(0, 0.15, 0)
+			# look_at() over Transform3D.looking_at() per this project's own
+			# convention — the latter has silently produced identity here
+			# before. Target a point FURTHER along the same forward
+			# direction so -Z faces away from the player and +Z (the
+			# panel's own "front" per MainMenu.pointer()'s plane-normal
+			# math) faces back toward them.
+			_pause_lobby.look_at(_pause_lobby.global_position + fwd, Vector3.UP)
+	elif _pause_lobby and is_instance_valid(_pause_lobby):
+		_pause_lobby.queue_free()
+		_pause_lobby = null
+
+func _on_paused_start_requested(mode: int, level_id: String, diff: int, mutator := "") -> void:
+	var same_mission := mode == Game.mode and level_id == Game.level_id \
+		and diff == Game.difficulty and mutator == Game.mutator and not Game.endless
+	Game.set_paused(false)
+	if same_mission:
+		_swap_vehicle(Game.vehicle)
+	else:
+		_on_start_requested(mode, level_id, diff, mutator)
+
+func _current_vehicle_type() -> String:
+	if Game.player_mode == Game.PlayerMode.ON_FOOT:
+		return "runner"
+	if plane and is_instance_valid(plane):
+		return "biplane" if plane.biplane else "plane"
+	if current_vehicle is PlayerAlt.Heli:
+		return "heli"
+	if current_vehicle is PlayerBoat:
+		return "boat"
+	return "tank"
+
+# Rebuilds just the vehicle (mirrors start_game()'s vehicle-construction
+# match block — keep the two in sync) while keeping terrain/world/
+# enemy_manager/wave/score untouched. Falls back to a full start_game()
+# for combinations this hasn't been exercised against (multiplayer,
+# sphere-world, the debug kitchen-sink level) rather than risk a
+# half-correct in-place swap there.
+func _swap_vehicle(new_veh: String) -> void:
+	if new_veh == _current_vehicle_type():
+		return
+	if Game.mode != Game.Mode.SOLO or Levels.current.get("sphere_world", false) \
+			or Levels.current.get("debug_kitchen_sink", false):
+		start_game()
+		return
+	if Game.player_mode == Game.PlayerMode.ON_FOOT:
+		if rig is XRRig and rig.on_foot_body and is_instance_valid(rig.on_foot_body):
+			rig.on_foot_body.queue_free()
+			rig.on_foot_body = null
+	elif current_vehicle and is_instance_valid(current_vehicle):
+		current_vehicle.queue_free()
+	current_vehicle = null
+	player = null
+	plane = null
+	var vehicle: CharacterBody3D
+	var on_foot := false
+	match new_veh:
+		"plane", "biplane":
+			plane = PlayerPlane.new(terrain, projectiles, fx)
+			plane.biplane = new_veh == "biplane"
+			vehicle = plane
+		"heli":
+			vehicle = PlayerAlt.Heli.new(terrain, projectiles, fx)
+		"runner":
+			if rig is XRRig:
+				on_foot = true
+				vehicle = OnFootBody.new(terrain, projectiles, fx)
+				rig.call("set_on_foot_body", vehicle)
+			else:
+				push_warning("[main] \"runner\" selected without an active XR rig — falling back to tank")
+				player = PlayerTank.new(terrain, projectiles, fx)
+				vehicle = player
+		"boat":
+			vehicle = PlayerBoat.new(terrain, projectiles, fx)
+		_:
+			player = PlayerTank.new(terrain, projectiles, fx)
+			vehicle = player
+	if on_foot:
+		var dismount := Transform3D()
+		dismount.origin = Vector3(Terrain.SPAWN_CENTER.x, 0, Terrain.SPAWN_CENTER.y)
+		dismount.origin.y = terrain.height(dismount.origin.x, dismount.origin.z) + 0.1
+		rig.call("enter_on_foot", world, dismount)
+	else:
+		world.add_child(vehicle)
+		current_vehicle = vehicle
+	projectiles.cam = rig.get("camera")
+	for n in world.get_children():
+		if n is EnemyManager:
+			n.player = vehicle
+	if not on_foot:
+		rig.call("attach_to_vehicle", vehicle)
+		_auto_start_if_third_person(vehicle)
+	Game.vehicle = new_veh
 
 # ---------------------------------------------------------------- menu state
 func to_menu() -> void:
@@ -356,7 +473,23 @@ func _on_start_requested(mode: int, level_id: String, diff: int, mutator := "") 
 	start_game()
 
 func _on_join_requested() -> void:
-	menu.call("_text", "Searching for a host on this Wi-Fi...", Vector2(0, -0.75), 14)
+	_join_on(menu)
+
+func _on_paused_join_requested() -> void:
+	# Capture BEFORE unpausing -- Game.set_paused(false) synchronously fires
+	# _on_pause_changed(false), which frees _pause_lobby, so the reference
+	# would already be gone if read after the call below.
+	var m := _pause_lobby
+	Game.set_paused(false)
+	_join_on(m)
+
+# join() needs to write its "searching" status text onto WHICHEVER menu
+# board is actually on screen — the hangar's `menu` normally, but a
+# paused-mid-mission join happens on `_pause_lobby` instead.
+func _join_on(target_menu: MainMenu) -> void:
+	if target_menu == null or not is_instance_valid(target_menu):
+		return
+	target_menu.call("_text", "Searching for a host on this Wi-Fi...", Vector2(0, -0.75), 14)
 	NetManager.join_found.connect(func(cfg):
 		Game.mode = cfg.mode
 		Game.level_id = cfg.level
