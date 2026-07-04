@@ -73,7 +73,16 @@ class XRHand:
 
 	func _init(tracker_name: String) -> void:
 		tracker = tracker_name
-		pose = "grip_pose"
+		# Pose name must be the ENGINE-side name, not the action-map action
+		# name: OpenXRInterface::create_action renames default_pose->default,
+		# aim_pose->aim, grip_pose->grip before registering the pose on the
+		# tracker. "grip_pose" matched nothing, so this node NEVER received a
+		# pose and get_has_tracking_data() was permanently false in controller
+		# mode — the shared root cause behind the invisible glove, dead hatch
+		# grabs, and frozen on-foot movement (XRToolsMovementDirect gates on
+		# get_is_active()). Buttons/sticks kept working because they don't
+		# depend on the pose binding, which is why only pose-side features died.
+		pose = "grip"
 		# Alex: hand mesh (curl-driven glove) still "nothing at all" while
 		# holding controllers, despite the visibility code looking
 		# structurally sound. Gemini flagged a real candidate: XRNode3D
@@ -408,7 +417,7 @@ func _ready() -> void:
 func _make_aim(tracker_name: String) -> XRController3D:
 	var c := XRController3D.new()
 	c.tracker = tracker_name
-	c.pose = "aim_pose"
+	c.pose = "aim"  # engine pose name; "aim_pose" (the action name) never matches
 	add_child(c)
 	return c
 
