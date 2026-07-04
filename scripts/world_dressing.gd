@@ -88,6 +88,7 @@ func _scatter_trees(count: int) -> void:
 	mm.mesh = _tree_mesh()
 	var placed: Array[Transform3D] = []
 	var cols: Array[Color] = []
+	var scales: Array[float] = []
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 314
 	var tries := 0
@@ -105,6 +106,7 @@ func _scatter_trees(count: int) -> void:
 		var gy := _ground_min(x, z, 0.3 * s)
 		placed.append(Transform3D(basis, Vector3(x, gy - 0.12 * s, z)))
 		cols.append(Color(0.75, 0.8, 0.7).lerp(Color(1.05, 1.1, 0.95), rng.randf()))
+		scales.append(s)
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])
@@ -115,6 +117,14 @@ func _scatter_trees(count: int) -> void:
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
+	# one invisible hitbox per tree — single-hit destroy (a shell/rocket splinters
+	# any tree in one shot; MG rounds would take many hits at 4 dmg/round, which
+	# reads as "chipping" rather than instant, so trees use a flat low hp instead
+	# of scaling with s — a sapling and a big pine take the same one hit)
+	for i in placed.size():
+		var prop := DestructibleProp.new(DestructibleProp.Kind.TREE, 12.0, scales[i], mm, i)
+		prop.position = placed[i].origin
+		add_child(prop)
 
 func _rock_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()
@@ -133,8 +143,7 @@ func _scatter_rocks(count: int) -> void:
 	rng.seed = 217
 	var placed: Array[Transform3D] = []
 	var cols: Array[Color] = []
-	var big: Array[Vector3] = []
-	var big_scale: Array[float] = []
+	var scales: Array[float] = []
 	var tries := 0
 	while placed.size() < count and tries < count * 30:
 		tries += 1
@@ -150,9 +159,7 @@ func _scatter_rocks(count: int) -> void:
 		placed.append(Transform3D(basis, Vector3(x, gy, z)))
 		var tint := rng.randf_range(0.75, 1.15)
 		cols.append(Color(tint, tint, tint * rng.randf_range(0.92, 1.0)))
-		if s > 2.2:
-			big.append(Vector3(x, gy + 0.5, z))
-			big_scale.append(s)
+		scales.append(s)
 	mm.instance_count = placed.size()
 	for i in placed.size():
 		mm.set_instance_transform(i, placed[i])
@@ -163,8 +170,17 @@ func _scatter_rocks(count: int) -> void:
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
-	for i in big.size():
-		MeshKit.add_static_box_collider(self, big[i], Vector3(1.9, 1.4, 1.6) * big_scale[i])
+	# one hitbox per rock — small/medium rocks (s <= 2.2, previously had NO
+	# collision at all) are single-hit rubble; big rocks (s > 2.2, previously
+	# the only ones solid — see the old add_static_box_collider() call this
+	# replaces) keep blocking movement/shots longer, scaling hp with size so
+	# the biggest boulders take a couple of shells like a tougher wall segment
+	for i in placed.size():
+		var s: float = scales[i]
+		var hp := 60.0 * s if s > 2.2 else 10.0
+		var prop := DestructibleProp.new(DestructibleProp.Kind.ROCK, hp, s, mm, i)
+		prop.position = placed[i].origin
+		add_child(prop)
 
 func _building(x: float, z: float, w: float, d: float, hgt: float, yaw: float,
 		mat_wall: Material, mat_roof: Material, rng: RandomNumberGenerator, tall := false) -> void:
