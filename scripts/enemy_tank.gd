@@ -39,8 +39,17 @@ func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 static func _build_meshes() -> void:
 	if _hull_mesh:
 		return
-	var col := Color(0.55, 0.48, 0.38)  # enemy desert tan
-	var dark := Color(0.16, 0.16, 0.17)
+	# Alex, live headset: "flat solid white, basic shading (no shadows or
+	# textures)" -- confirmed via tools/enemy_material_check.gd, a render
+	# test using main.gd's REAL sky+sun+ambient setup (not a guess): this
+	# light tan washed out to ~(0.88, 0.82, 0.73), basically white, under the
+	# real environment's sky-source ambient (energy 0.85, full sky
+	# contribution) stacked with the sun -- roughness 0.85 (near-Lambertian)
+	# picks up ambient hard, and the original color was too light/desaturated
+	# to survive it. Darkened + more saturated so it reads as tan instead of
+	# blowing out; not a missing-texture bug, an exposure one.
+	var col := Color(0.34, 0.28, 0.19)  # enemy desert tan (darkened, was washing to near-white)
+	var dark := Color(0.13, 0.13, 0.14)
 	var st := MeshKit.begin()
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0, 1.05, 0.2)), Vector3(2.3, 0.7, 5.2), col)
 	MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, deg_to_rad(-35)), Vector3(0, 0.95, -2.7)), Vector3(2.3, 0.65, 1.2), col)

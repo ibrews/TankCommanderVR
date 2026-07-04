@@ -35,7 +35,10 @@ class Jeep:
 		if _mesh:
 			return
 		var st := MeshKit.begin()
-		var body := Color(0.42, 0.4, 0.3)
+		# Darkened alongside enemy_tank.gd's same fix -- this level of tan
+		# also washes toward near-white under the real environment's
+		# sky-source ambient (see enemy_tank.gd's _build_meshes() comment).
+		var body := Color(0.30, 0.28, 0.20)
 		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 0.75, 0)), Vector3(1.7, 0.55, 3.2), body)
 		MeshKit.box(st, Transform3D(Basis(), Vector3(0, 1.15, 0.5)), Vector3(1.5, 0.35, 1.6), body * 0.9)
 		MeshKit.box(st, Transform3D(Basis(Vector3.RIGHT, -0.4), Vector3(0, 1.15, -0.7)), Vector3(1.4, 0.5, 0.1), Color(0.25, 0.3, 0.35))
