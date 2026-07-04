@@ -4,6 +4,6 @@
 class_name BuildInfo
 extends RefCounted
 
-const VERSION := "0.6.13"
-const CODE := 23
-const BUILT := "2026-07-04 05:09 UTC"
+const VERSION := "0.6.14"
+const CODE := 24
+const BUILT := "2026-07-04 05:27 UTC"
