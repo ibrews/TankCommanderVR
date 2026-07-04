@@ -405,7 +405,11 @@ class Heli:
 	# stick_fallback covers the cyclic grip).
 	func set_stick_drive(v: Vector2) -> void:
 		stick_coll = v.y
-		yaw_pedal = clampf(v.x, -1.0, 1.0)
+		# v.x arrives PRE-NEGATED by xr_rig (tank convention); `rotation.y -=
+		# yaw_pedal` means positive pedal yaws right, so un-negate here or
+		# stick-right yaws left (Alex: "helicopter mode, left thumbstick
+		# rotate (X) is backwards")
+		yaw_pedal = clampf(-v.x, -1.0, 1.0)
 	func set_stick_turret(v: Vector2) -> void: stick_fallback = v
 	func fire_primary() -> void: mg_held = true; get_tree().create_timer(0.4).timeout.connect(func(): mg_held = false)
 	func stick_fire() -> void: fire_rockets()

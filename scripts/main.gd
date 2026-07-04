@@ -828,7 +828,26 @@ func exit_vehicle() -> void:
 # (see _land_parachute()). The vacated plane/biplane is left flying itself
 # on its last input, same "abandon in place" rule as every other hatch exit
 # in this game (the tank hatch just leaves the tank sitting there too).
-func exit_vehicle_airborne(v: PlayerPlane, ejected: bool) -> void:
+# Dedicated controller binding (hold LEFT trigger ~1s while seated, see
+# xr_rig.gd) — works in EVERY vehicle, independent of the hatch levers.
+# Planes/biplanes route through the eject/parachute flow; an airborne
+# helicopter parachutes too (teleporting from 50m up to the ground reads
+# as a bug); everything else uses the normal ground exit.
+func request_exit_vehicle() -> void:
+	if current_vehicle == null or not is_instance_valid(current_vehicle):
+		return
+	if Game.player_mode != Game.PlayerMode.SEATED:
+		return
+	if current_vehicle is PlayerPlane:
+		exit_vehicle_airborne(current_vehicle, not current_vehicle.biplane)
+	elif current_vehicle is PlayerAlt \
+			and current_vehicle.global_position.y - terrain.height(
+				current_vehicle.global_position.x, current_vehicle.global_position.z) > 4.0:
+		exit_vehicle_airborne(current_vehicle, false)
+	else:
+		exit_vehicle()
+
+func exit_vehicle_airborne(v: Node3D, ejected: bool) -> void:
 	if not (rig is XRRig) or v == null or not is_instance_valid(v):
 		return
 	if Game.player_mode != Game.PlayerMode.SEATED:

@@ -786,6 +786,26 @@ func _physics_process(delta: float) -> void:
 		_calib_t += delta
 		if _calib_t > 1.2 and camera.transform.origin.length() > 0.01:
 			_calibrate()
+	# Dedicated exit-vehicle binding (Alex: "we should absolutely have a
+	# button to exit/enter vehicles!"): hold LEFT trigger ~1s while seated.
+	# Left trigger was the one unused input in the seated map. Guards: not
+	# while holding a physical control, not while the RIGHT trigger is also
+	# in (that's the easter-egg / firing hand), and never on the parachute
+	# (its trigger deploys the chute). Haptic ticks during the hold telegraph
+	# that something is charging; negative reset debounces until release.
+	if hand_l.effective_trigger() > 0.7 and hand_l.holding == null \
+			and hand_r.effective_trigger() < 0.5 and not (tank is PlayerParachute):
+		if _exit_hold >= 0.0:
+			_exit_hold += delta
+			if fmod(_exit_hold, 0.25) < delta:
+				hand_l.pulse(0.25, 0.04)
+			if _exit_hold > 1.0:
+				_exit_hold = -1.0
+				var m_exit := get_tree().get_first_node_in_group("main")
+				if m_exit:
+					m_exit.call_deferred("request_exit_vehicle")
+	else:
+		_exit_hold = 0.0
 	var ls := hand_l.get_vector2("primary")
 	var rs := hand_r.get_vector2("primary")
 	# Left/right (X) confirmed fine on both sticks per the latest report.
@@ -865,6 +885,7 @@ func _feed_arm_swing(delta: float) -> void:
 # squeeze either grip to climb back in. main.gd tracks current_vehicle across
 # both the "runner" menu-select path and a mid-mission exit_vehicle() call.
 var _reentry_grip_was := false
+var _exit_hold := 0.0
 func _check_reentry() -> void:
 	if on_foot_body == null or not is_instance_valid(on_foot_body):
 		return
@@ -872,7 +893,10 @@ func _check_reentry() -> void:
 	if m == null:
 		return
 	var v: Node3D = m.get("current_vehicle")
-	var gripping := hand_l.effective_grip() > 0.55 or hand_r.effective_grip() > 0.55
+	# grip OR the same left-trigger hold-gesture family as the exit binding —
+	# one input vocabulary for enter and exit
+	var gripping := hand_l.effective_grip() > 0.55 or hand_r.effective_grip() > 0.55 \
+		or hand_l.effective_trigger() > 0.7
 	if v and is_instance_valid(v):
 		var anchor: Node3D = v.cockpit["seat_anchor"]
 		if on_foot_body.global_position.distance_to(anchor.global_position) < 0.6 \

@@ -151,7 +151,11 @@ func _physics_process(delta: float) -> void:
 	var afloat := h < -0.9
 	# stick fallback: forward = throttle, x = rudder
 	var thr_in := maxf(throttle, 0.0) + maxf(stick_drive.y, 0.0)
-	var rud_in := clampf(rudder + stick_drive.x, -1.0, 1.0)
+	# stick_drive.x arrives PRE-NEGATED by xr_rig (tank convention: it sends
+	# -ls.x). `yaw -= rud_in` means positive rud_in turns right, so un-negate
+	# here or stick-right turns the boat left (Alex, live: "left thumbstick
+	# rotate (X) is backwards... It's correct with tank").
+	var rud_in := clampf(rudder - stick_drive.x, -1.0, 1.0)
 	var max_spd := (Tune.v("boat_speed") if afloat else 4.0) * Game.speed_scale()
 	spd = move_toward(spd, clampf(thr_in, -0.3, 1.0) * max_spd, (5.0 if afloat else 8.0) * delta)
 	yaw -= rud_in * clampf(spd / 6.0, 0.15, 1.0) * 0.9 * delta
@@ -171,7 +175,9 @@ func _physics_process(delta: float) -> void:
 	engine_p.pitch_scale = 0.5 + absf(spd) / 18.0
 	speed_label.text = "%d KTS%s" % [int(absf(spd) * 1.94), "" if afloat else "  AGROUND"]
 	# deck gun aim
-	gun_yaw = clampf(gun_yaw + stick_turret.x * 1.8 * delta, -2.4, 2.4)
+	# +Y node rotation is a LEFT turn in Godot, so stick-right must subtract
+	# (Alex: "on gunboat right thumbstick X is backwards (yaw)")
+	gun_yaw = clampf(gun_yaw - stick_turret.x * 1.8 * delta, -2.4, 2.4)
 	gun_pitch = clampf(gun_pitch + stick_turret.y * 1.0 * delta, -0.05, 0.55)
 	gun_pivot.rotation = Vector3(gun_pitch, gun_yaw, 0)
 	if mg_held:
