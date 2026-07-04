@@ -48,7 +48,7 @@ func start_transit(target: Vector2) -> void:
 		var gp := global_position
 		heading = atan2(-(target.x - gp.x), -(target.y - gp.z))
 		alt = 70.0
-		basis = Basis(Vector3.UP, heading)
+		basis = Basis(Vector3.UP, heading + PI)  # mesh faces +Z, same as the per-frame basis below
 
 func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 	terrain = t
