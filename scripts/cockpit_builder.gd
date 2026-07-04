@@ -191,27 +191,18 @@ static func _build_static(root: Node3D) -> void:
 	mesh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	root.add_child(mesh)
 
-	# glass in the periscopes (separate, translucent)
-	var gst := MeshKit.begin()
-	for slit in [[-0.71, -0.51], [-0.46, -0.13], [0.00, 0.20]]:
-		var cx: float = (slit[0] + slit[1]) / 2.0
-		var cw: float = slit[1] - slit[0]
-		MeshKit.box(gst, Transform3D(Basis(), Vector3(cx, band_y, Z0 - 0.18)), Vector3(cw, band_h, 0.006), Color.WHITE)
-	var gmat := StandardMaterial3D.new()
-	gmat.albedo_color = Color(0.55, 0.75, 0.70, 0.10)
-	gmat.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
-	gmat.roughness = 0.9
-	gmat.metallic_specular = 0.0   # no sky sheen washing out the view
-	# NOT cull_disabled: Alex, live headset, 2026-07-03: "a white plane on
-	# top of the viewer holes out the tank." cull_disabled + transparency
-	# is a documented Godot Mobile/Compatibility-renderer bug (visual
-	# artifacts instead of real alpha blending) — the same class of issue
-	# flagged by web search earlier tonight. This box is only ever seen
-	# from one side (crew compartment looking out through the slit), so
-	# double-sided was never actually needed here.
-	var glass := MeshInstance3D.new()
-	glass.mesh = MeshKit.commit(gst, gmat)
-	root.add_child(glass)
+	# Periscope glass pane REMOVED (was here 2026-07-03, dropped 2026-07-04).
+	# Alex reported "a white plane on top of the viewer holes out the tank"
+	# earlier the same day; the fix at the time (dropping cull_disabled,
+	# since cull_disabled + transparency is a documented Godot Mobile/
+	# Compatibility-renderer bug) did NOT actually resolve it — same
+	# complaint came back verbatim on the next headset pass ("something
+	# white blocking both of the windows out of the tank"). Rather than
+	# chase Mobile-renderer alpha-blend correctness a third time, removed
+	# the separate glass mesh entirely: the periscope slit is just an open
+	# view now, same as a real periscope reads visually anyway, and it
+	# permanently eliminates this whole recurring bug class instead of
+	# tuning parameters against it again.
 
 # ------------------------------------------------------------------ controls
 static func _build_controls(root: Node3D, out: Dictionary) -> void:

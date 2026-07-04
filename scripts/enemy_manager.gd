@@ -127,19 +127,24 @@ func _spawn_wave() -> void:
 		planes = mini(int(2 * dm), 3)
 	var mortars: Array = Levels.current.get("mortars", []) if wave >= 2 else []
 
+	# Spawn rings brought in close to half their old radius (Alex, live
+	# headset: "why do they never spawn close to me" -- 150-200m put tanks
+	# at or beyond detect_range_day's 150m base, on top of the wave-size
+	# fix from earlier tonight, so first contact could take a long time
+	# even once enemies existed at all).
 	for i in maxi(tanks, 1):
 		var e := EnemyTank.new(terrain, projectiles, fx, player)
 		e.hp = Tune.v("enemy_tank_hp")
 		e.accuracy = maxf(0.10 - wave * 0.012, 0.03) / (Game.diff(0.75, 1.0, 1.4) * Tune.v("enemy_accuracy_scale"))
 		e.cadence = maxf(6.5 - wave * 0.4, 3.5) * Tune.v("enemy_cadence_scale") / Game.diff(0.8, 1.0, 1.3)
 		add_child(e)
-		e.global_position = _ring_pos(150.0, 200.0)
+		e.global_position = _ring_pos(70.0, 110.0)
 	for i in jeeps:
 		var j := EnemyLight.Jeep.new(terrain, projectiles, fx, player)
 		add_child(j)
-		j.global_position = _ring_pos(120.0, 170.0)
+		j.global_position = _ring_pos(55.0, 90.0)
 	for s in squads:
-		var center := _ring_pos(80.0, 130.0)
+		var center := _ring_pos(40.0, 70.0)
 		for k in 3:
 			var g := EnemyLight.Gunner.new(terrain, projectiles, player)
 			add_child(g)

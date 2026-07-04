@@ -749,11 +749,17 @@ func _demo_tick(delta: float) -> void:
 # parents it directly to current_vehicle (net.gd's _crew_avatar precedent,
 # same reasoning: tank space never carries the third-person chase offset,
 # unlike `rig` itself), ON_FOOT parents it to the on-foot body so it walks
-# with the player. Head is hidden in first person so the camera isn't stuck
-# inside it; torso/arms/hands stay visible for the "look down at yourself"
-# case that's the whole point of having a body.
+# with the player. Alex, live headset: "what are the blue things following
+# me around in the tank?" -- the avatar's hands/arms were visible in FIRST
+# PERSON too, floating right next to (not perfectly aligned with) the real
+# curl-glove/controller-model hands the player already sees, reading as
+# confusing duplicate hands rather than "your own body." Only show the
+# local avatar in third person now, where it's unambiguous and is the
+# whole reason it exists ("make sure I have a full avatar" was specifically
+# about the third-person case) -- first person already has real hand
+# visuals doing that job.
 func _update_local_avatar(delta: float) -> void:
-	if Game.state != Game.GState.PLAYING or rig == null:
+	if Game.state != Game.GState.PLAYING or rig == null or not Game.third_person:
 		_clear_local_avatar()
 		return
 	var seated := Game.player_mode == Game.PlayerMode.SEATED

@@ -34,7 +34,7 @@ var _hovered: Dictionary = {}
 const HOWTO := [
 	"",  # page 0 unused
 	"STARTING THE TANK\n\n1. Flip BATTERY (left console)\n2. Open FUEL PUMP cover, flip switch\n3. HOLD green STARTER until the engine catches\n4. Shift GEAR to D (right pedestal)\n\nOr press X / click left stick for auto-start.",
-	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr just use the LEFT STICK.\nWatch the mud — it slows you down.",
+	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr just use the LEFT STICK.\nWatch the mud — it slows you down.\n\nGETTING OUT: grab the yellow HATCH lever\nabove your head and pull. To climb back in,\nwalk up to your abandoned vehicle and\nsqueeze either grip near the seat.",
 	"FIGHTING\n\nGrab the turret STICK (right pedestal).\nMove it to aim. TRIGGER = cannon.\nAfter each shot pull the red BREECH LEVER to reload.\nA (while gripping) = machine gun.\n\nROCKETS: left console — open the red cover,\nflip ARM, press the big red button.",
 	"CO-OP + VERSUS (same Wi-Fi)\n\nCO-OP: one headset hosts, the other joins.\nHost DRIVES + machine gun. Friend runs the\nTURRET: cannon, breech, and the heavy rockets.\n\nVERSUS: tank vs tank duel. First to 5 wins.\n\nPLANE MODE: stick + throttle. Bombs away!",
 ]

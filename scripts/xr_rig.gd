@@ -741,17 +741,14 @@ func _physics_process(delta: float) -> void:
 			_calibrate()
 	var ls := hand_l.get_vector2("primary")
 	var rs := hand_r.get_vector2("primary")
-	# Y axis was backwards (Alex, live headset, 2026-07-03) — pushing the
-	# stick forward drove the tank backward and (on the right stick)
-	# elevated the gun the wrong way. Both sticks read the same "primary"
-	# action's Y component, so both get the same sign flip.
-	# Follow-up, latest App Lab build: "Y (up down) is correct. X (left
-	# right) is backwards" on BOTH sticks now. That means the turret's
-	# earlier both-axes flip overcorrected X (should never have been
-	# touched — only Y was ever wrong there), while the drive stick's X
-	# was wrong all along and just hadn't been reported until now. Drive X
-	# flipped, turret X reverted to raw.
-	tank.call("set_stick_drive", Vector2(-_dz(ls.x), -_dz(ls.y)))
+	# Left/right (X) confirmed fine on both sticks per the latest report.
+	# Drive Y went through two rounds: originally raw (+ls.y) read as
+	# backwards, negating it "fixed" that but the NEXT live pass reported
+	# it backwards again in the other direction ("down drives forward, up
+	# drives backward") — i.e. the negation itself was the bug, not the
+	# fix. Reverted to raw. Turret Y stays as the (separately confirmed
+	# correct) non-negated value from the previous round.
+	tank.call("set_stick_drive", Vector2(-_dz(ls.x), _dz(ls.y)))
 	tank.call("set_stick_turret", Vector2(_dz(rs.x), _dz(rs.y)))
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
 		var trig := hand_r.effective_trigger() > 0.6
