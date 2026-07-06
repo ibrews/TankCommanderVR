@@ -553,16 +553,20 @@ func _build_sea() -> void:
 			if absf(x0 + CELL * 0.5) < Terrain.HALF + CELL * 0.5 					and absf(z0 + CELL * 0.5) < Terrain.HALF + CELL * 0.5:
 				continue
 			cells += 1
-			# Winding was inverted (verified 2026-07-03 by the same
-			# geometric-winding-vs-stored-normal audit that caught the
-			# MeshKit.cyl() bug — cross product of the original vertex order
-			# pointed DOWN, opposite the Vector3.UP stored below; with the
-			# engine's default CULL_BACK material, this made the entire sea
-			# horizon skirt back-face-culled/invisible from above). Fix:
-			# swap the last two vertices of each triangle.
+			# Winding fixed 2026-07-06: mesh_audit.gd flagged this quad grid as
+			# fully inside-out (first bad tri at the very corner -448,-448).
+			# The previous "swap the last two vertices" fix here predated the
+			# 2026-07-03 CONVENTION FIX in mesh_audit.gd's _check() (Godot
+			# front faces are CLOCKWISE, so correct geometry needs
+			# cross(edge1,edge2) OPPOSITE the stored normal) — it was still
+			# emitting the RHR-cross-parallel-to-UP ordering, exactly backwards
+			# under the corrected convention. Re-ordered to match terrain.gd's
+			# _chunk_mesh() a,b,c / b,d,c pattern (godot-winding-convention-
+			# clockwise KB doc): a=(x0,z0), b=(x0+CELL,z0), c=(x0,z0+CELL),
+			# d=diagonal corner.
 			for v: Vector3 in [
-				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL), Vector3(x0 + CELL, 0, z0),
-				Vector3(x0, 0, z0), Vector3(x0, 0, z0 + CELL), Vector3(x0 + CELL, 0, z0 + CELL)]:
+				Vector3(x0, 0, z0), Vector3(x0 + CELL, 0, z0), Vector3(x0, 0, z0 + CELL),
+				Vector3(x0 + CELL, 0, z0), Vector3(x0 + CELL, 0, z0 + CELL), Vector3(x0, 0, z0 + CELL)]:
 				st.set_normal(Vector3.UP)
 				st.add_vertex(v)
 	var mi := MeshInstance3D.new()
@@ -626,10 +630,11 @@ func _build_lava() -> void:
 			if not wet:
 				continue
 			# Same inverted-winding bug as _build_sea() (identical copy-pasted
-			# quad-triangulation pattern) — same fix, verified the same way.
+			# quad-triangulation pattern) — same fix, verified the same way:
+			# re-ordered to terrain.gd's _chunk_mesh() a,b,c / b,d,c pattern.
 			for v: Vector3 in [
-				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0 + 32), Vector3(x0 + 32, 0, z0),
-				Vector3(x0, 0, z0), Vector3(x0, 0, z0 + 32), Vector3(x0 + 32, 0, z0 + 32)]:
+				Vector3(x0, 0, z0), Vector3(x0 + 32, 0, z0), Vector3(x0, 0, z0 + 32),
+				Vector3(x0 + 32, 0, z0), Vector3(x0 + 32, 0, z0 + 32), Vector3(x0, 0, z0 + 32)]:
 				st.set_normal(Vector3.UP)
 				st.set_uv(Vector2(v.x, v.z) * 0.07)
 				st.add_vertex(v)
