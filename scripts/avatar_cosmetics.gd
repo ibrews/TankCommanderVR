@@ -1,5 +1,5 @@
 # Single source of truth for player-avatar tint. Replaces the tint ternary
-# duplicated in net.gd's _ensure_crew_avatar() and RemoteTank._ready()
+# duplicated in net.gd's _ensure_crew_avatar() and RemoteVehicle._ready()
 # (host=orange, client=blue — same values as before, just centralized).
 class_name AvatarCosmetics
 extends Object

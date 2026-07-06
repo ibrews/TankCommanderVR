@@ -345,6 +345,12 @@ func set_stick_drive(v: Vector2) -> void:
 func set_stick_turret(v: Vector2) -> void:
 	stick_fallback = v
 
+## Generic accessor read by net.gd's versus-mode state sync (same shape as
+## player_tank.gd's) -- the plane has no separately-aimable part (nose MG
+## fires straight, bombs drop straight down), so there's nothing to report.
+func get_aim_yaw_pitch() -> Vector2:
+	return Vector2.ZERO
+
 func fire_primary() -> void:
 	mg_held = true
 	get_tree().create_timer(0.5).timeout.connect(func(): mg_held = false)

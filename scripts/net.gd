@@ -60,13 +60,15 @@ var _reconnect_left := 0                   # attempts remaining
 var _relay_want_open := false              # true while we intend to stay connected
 var _relay_cfg := {}                       # {mode,level,diff} chosen at connect time
 
-var tank: PlayerTank = null          # coop tank (both sides) / my tank (versus)
+var tank: Node3D = null              # coop tank (both sides, always PlayerTank) / my vehicle (versus, any type exposing get_aim_yaw_pitch())
 var replicas: ReplicaPool = null     # client: enemy visuals
-var remote_tank: RemoteTank = null   # versus: opponent replica
+var remote_vehicle: RemoteVehicle = null  # versus: opponent replica (any vehicle type)
+var _versus_world: Node3D = null     # stashed by setup_versus() for _ensure_remote_vehicle()'s lazy build
 var projectiles: Projectiles = null
 var fx: FxPool = null
 var terrain: Terrain = null
 var gunner_input := Vector2.ZERO     # host: last gunner aim from client
+var gunner_mg_held := false          # host: last coax-MG button state from a client-gunner
 var driver_input := Vector2.ZERO     # host: last drive stick from a client-driver (post seat-swap)
 
 # co-op seat assignment: which peer id currently drives (the other gunners).
@@ -90,7 +92,15 @@ func _on_connected_to_server() -> void:
 func _send_hello() -> void:
 	if Game.display_name == "":
 		Game.display_name = Game.default_name()
-	v_hello.rpc(Game.display_name, Game.my_team, Game.team_mode)
+	# v_hello.rpc() only dispatches over the ENet transport (it needs
+	# multiplayer.multiplayer_peer set); the relay has no such peer, so route
+	# through the same generic typed-message channel _relay_recv()'s "hello"
+	# case unpacks back into a direct v_hello(...) call.
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "hello", "name": Game.display_name, "team": Game.my_team,
+			"tmode": Game.team_mode, "vehicle": Game.vehicle})
+	else:
+		v_hello.rpc(Game.display_name, Game.my_team, Game.team_mode, Game.vehicle)
 
 func my_id() -> int:
 	return AvatarCosmetics.PlayerId.HOST if hosting else AvatarCosmetics.PlayerId.CLIENT
@@ -165,10 +175,14 @@ func leave() -> void:
 		_listen = null
 	tank = null
 	replicas = null
-	remote_tank = null
+	if remote_vehicle:
+		remote_vehicle.queue_free()
+	remote_vehicle = null
+	_versus_world = null
 	driver_is_host = true
 	Game.round_active = false
 	Game.peer_name = ""
+	Game.peer_vehicle = ""
 	_name_billboards.clear()
 
 func host() -> void:
@@ -196,6 +210,7 @@ func _on_peer_connected(id: int) -> void:
 	_peer_up = true
 	_snap_seen = false
 	gunner_input = Vector2.ZERO
+	gunner_mg_held = false
 	print("[net] peer %d connected" % id)
 	_send_hello()
 
@@ -303,20 +318,26 @@ func _process(delta: float) -> void:
 			if Game.mode == Game.Mode.COOP and tank:
 				_send_coop_snap()
 			elif Game.mode == Game.Mode.VERSUS and tank:
-				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
+				var aim: Vector2 = tank.get_aim_yaw_pitch()
+				s_versus_state.rpc(tank.global_transform, aim.x, aim.y,
 					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 		elif client and tank:
 			if Game.mode == Game.Mode.COOP:
+				# co-op is invariantly tank-only (setup_coop() only ever accepts a
+				# PlayerTank) even though `tank` is now typed generically Node3D
+				# to also cover versus-mode's other vehicle types -- cast is safe.
+				var co_tank: PlayerTank = tank
 				# stream whichever station this client currently holds; the host
 				# routes it to the turret (gunner) or the tracks (driver)
 				if i_am_driver():
-					c_driver.rpc_id(1, tank.stick_drive, _my_head_rel(),
+					c_driver.rpc_id(1, co_tank.stick_drive, _my_head_rel(),
 						_my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 				else:
-					c_gunner.rpc_id(1, tank.turret_input, _my_head_rel(),
-						_my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
+					c_gunner.rpc_id(1, co_tank.effective_turret_input(), _my_head_rel(),
+						_my_hand_rel(true), _my_hand_rel(false), _my_move_flags(), co_tank.mg_held)
 			elif Game.mode == Game.Mode.VERSUS:
-				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
+				var aim: Vector2 = tank.get_aim_yaw_pitch()
+				s_versus_state.rpc(tank.global_transform, aim.x, aim.y,
 					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 
 # --------------------------------------------------------------- relay per-frame
@@ -374,6 +395,10 @@ func _relay_recv(bytes: PackedByteArray) -> void:
 			client = not _relay_host
 			print("[net] relay welcome id=%s host=%s roster=%d" % [_relay_id, _relay_host, _relay_roster.size()])
 			relay_status.emit("connected (%s)" % ("host" if _relay_host else "guest"))
+			# Declare ourselves (name/team/vehicle) on every (re)connect -- the
+			# ENet path gets this for free via connected_to_server/peer_connected
+			# signals, but the relay's "welcome" is the only equivalent moment.
+			_send_hello()
 			# first connect: hand main.gd a level cfg the same way join_found does
 			if not _relay_cfg.get("_emitted", false):
 				_relay_cfg["_emitted"] = true
@@ -390,6 +415,9 @@ func _relay_recv(bytes: PackedByteArray) -> void:
 		"leave":
 			_relay_roster.erase(str(env.get("id", "")))
 			relay_status.emit("player left")
+		"hello":
+			v_hello(str(env.get("name", "")), int(env.get("team", 0)),
+				bool(env.get("tmode", false)), str(env.get("vehicle", "tank")))
 		"state":
 			_relay_apply_state(env.get("s", {}))
 		# one-off typed messages (stamped byId/byColor/byHost by the worker)
@@ -407,18 +435,23 @@ func _relay_send_snapshot() -> void:
 			_relay_send({"type": "state", "s": _versus_state_dict()})
 	elif client and tank:
 		if Game.mode == Game.Mode.COOP:
+			# co-op is invariantly tank-only -- see the matching cast note in _process().
+			var co_tank: PlayerTank = tank
 			_relay_send({"type": "state", "s": {
 				"k": "gunner",
-				"in": _v2(tank.turret_input),
+				"in": _v2(co_tank.effective_turret_input()),
 				"head": _t3(_my_head_rel()),
 				"hl": _t3(_my_hand_rel(true)),
 				"hr": _t3(_my_hand_rel(false)),
 				"mf": _my_move_flags(),
+				"mg": co_tank.mg_held,
 			}})
 		elif Game.mode == Game.Mode.VERSUS:
 			_relay_send({"type": "state", "s": _versus_state_dict()})
 
 func _coop_snap_dict() -> Dictionary:
+	# co-op is invariantly tank-only -- see the matching cast note in _process().
+	var co_tank: PlayerTank = tank
 	var enemies: Array = []
 	for grp in ["enemies", "planes"]:
 		for n in get_tree().get_nodes_in_group(grp):
@@ -440,17 +473,18 @@ func _coop_snap_dict() -> Dictionary:
 			enemies.append([type, n.get_instance_id(), _t3(n.global_transform), aux])
 	return {
 		"k": "coop",
-		"t": _t3(tank.global_transform), "ty": tank.turret.rotation.y, "ge": tank.gun_elev,
-		"hp": Game.hp, "ammo": tank.ammo, "rk": tank.rockets_left, "ld": tank.loaded,
-		"eng": tank.engine_on, "wave": Game.wave, "score": Game.score, "en": enemies,
+		"t": _t3(co_tank.global_transform), "ty": co_tank.turret.rotation.y, "ge": co_tank.gun_elev,
+		"hp": Game.hp, "ammo": co_tank.ammo, "rk": co_tank.rockets_left, "ld": co_tank.loaded,
+		"eng": co_tank.engine_on, "wave": Game.wave, "score": Game.score, "en": enemies,
 		"head": _t3(_my_head_rel()), "hl": _t3(_my_hand_rel(true)), "hr": _t3(_my_hand_rel(false)),
 		"mf": _my_move_flags(),
 	}
 
 func _versus_state_dict() -> Dictionary:
+	var aim: Vector2 = tank.get_aim_yaw_pitch()
 	return {
 		"k": "versus",
-		"t": _t3(tank.global_transform), "ty": tank.turret.rotation.y, "ge": tank.gun_elev,
+		"t": _t3(tank.global_transform), "ty": aim.x, "ge": aim.y,
 		"head": _t3(_my_head_rel()), "hl": _t3(_my_hand_rel(true)), "hr": _t3(_my_hand_rel(false)),
 		"mf": _my_move_flags(),
 	}
@@ -466,7 +500,8 @@ func _relay_apply_state(s: Dictionary) -> void:
 				int(s["rk"]), s["ld"], s["eng"], int(s["wave"]), int(s["score"]), enemies)
 			s_driver_head(_un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
 		"gunner":
-			c_gunner(_un_v2(s["in"]), _un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
+			c_gunner(_un_v2(s["in"]), _un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]),
+				int(s["mf"]), s.get("mg", false))
 		"versus":
 			s_versus_state(_un_t3(s["t"]), s["ty"], s["ge"], _un_t3(s["head"]),
 				_un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
@@ -528,7 +563,9 @@ func setup_coop(t: PlayerTank) -> void:
 func _apply_seat_roles() -> void:
 	if tank == null:
 		return
-	var c: Dictionary = tank.cockpit["controls"]
+	# co-op is invariantly tank-only -- see the matching cast note in _process().
+	var co_tank: PlayerTank = tank
+	var c: Dictionary = co_tank.cockpit["controls"]
 	var i_drive := hosting == driver_is_host
 	# driver owns the tillers/engine; gunner owns the turret grip
 	for k in _DRIVE_CONTROLS:
@@ -543,6 +580,8 @@ func make_replica_pool(t: Terrain) -> ReplicaPool:
 	return replicas
 
 func _send_coop_snap() -> void:
+	# co-op is invariantly tank-only -- see the matching cast note in _process().
+	var co_tank: PlayerTank = tank
 	var head := _my_head_rel()
 	if head != Transform3D():
 		s_driver_head.rpc(head, _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
@@ -565,13 +604,14 @@ func _send_coop_snap() -> void:
 			elif n is EnemyLight.Mortar:
 				type = 4
 			enemies.append([type, n.get_instance_id(), n.global_transform, aux])
-	s_coop_snap.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
-		Game.hp, tank.ammo, tank.rockets_left, tank.loaded, tank.engine_on, Game.wave, Game.score, enemies)
+	s_coop_snap.rpc(co_tank.global_transform, co_tank.turret.rotation.y, co_tank.gun_elev,
+		Game.hp, co_tank.ammo, co_tank.rockets_left, co_tank.loaded, co_tank.engine_on, Game.wave, Game.score, enemies)
 
 @rpc("any_peer", "unreliable_ordered")
 func c_gunner(input: Vector2, head_rel := Transform3D(), hand_l_rel := Transform3D(),
-		hand_r_rel := Transform3D(), move_flags := 0) -> void:
+		hand_r_rel := Transform3D(), move_flags := 0, mg_held := false) -> void:
 	gunner_input = input
+	gunner_mg_held = mg_held
 	if head_rel != Transform3D():
 		_apply_crew_avatar(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
@@ -586,18 +626,20 @@ func c_driver(drive: Vector2, head_rel := Transform3D(), hand_l_rel := Transform
 
 @rpc("any_peer", "reliable")
 func c_event(kind: String) -> void:
-	# gunner actions applied on the host's authoritative tank
+	# gunner actions applied on the host's authoritative tank (co-op only --
+	# see the matching cast note in _process())
 	if not hosting or tank == null:
 		return
+	var co_tank: PlayerTank = tank
 	match kind:
 		"fire":
-			tank.fire_cannon(false)
+			co_tank.fire_cannon(false)
 		"breech":
-			if not tank.loaded and tank.ammo > 0:
-				tank._chamber()
+			if not co_tank.loaded and co_tank.ammo > 0:
+				co_tank._chamber()
 		"rockets":
-			tank.rockets_armed = true
-			tank.fire_rockets()
+			co_tank.rockets_armed = true
+			co_tank.fire_rockets()
 
 var _snap_seen := false
 
@@ -609,7 +651,9 @@ func s_coop_snap(tank_t: Transform3D, turret_y: float, gun_e: float, hp: float,
 		print("[net] first coop snapshot applied (%d enemies)" % enemies.size())
 	if tank == null:
 		return
-	tank.net_apply(tank_t, turret_y, gun_e, ammo, rkts, loaded, engine)
+	# co-op is invariantly tank-only -- see the matching cast note in _process().
+	var co_tank: PlayerTank = tank
+	co_tank.net_apply(tank_t, turret_y, gun_e, ammo, rkts, loaded, engine)
 	Game.hp = hp
 	Game.hp_changed.emit(hp)
 	if wave != Game.wave:
@@ -654,29 +698,51 @@ func send_client_event(kind: String) -> void:
 		c_event.rpc_id(1, kind)
 
 # ================================================================ VERSUS
-func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank: PlayerTank) -> void:
+func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank: Node3D) -> void:
 	tank = my_tank
 	terrain = t
 	projectiles = p
 	fx = f
+	_versus_world = world
 	# spawn placement: host south, client north
 	var s := t.spawn
 	if client:
 		my_tank.global_position = Vector3(-s.x, 0, -s.y)
-		my_tank.yaw = 0.0
+		my_tank.set("yaw", 0.0)   # dynamic: not every vehicle has a `yaw` var (plane orients via basis directly)
 	my_tank.global_position.y = t.height(my_tank.global_position.x, my_tank.global_position.z) + 0.04
-	remote_tank = RemoteTank.new()
-	world.add_child(remote_tank)
 	Sfx.vo("robot_versus_2", 3, 20.0)  # "Round begin. Fight!"
-	remote_tank.global_position = Vector3(-s.x, t.height(-s.x, -s.y) + 0.04, -s.y) if not client \
-		else Vector3(s.x, t.height(s.x, s.y) + 0.04, s.y)
 	Game.game_over.connect(_on_versus_death)
 	# host arms the shared round clock; the client mirrors it via s_round()
 	if hosting:
 		Game.start_round(Game.round_len)
 		s_round.rpc(Game.round_left, true, Game.team_mode, 0, 0)
-	# opponent's name floats over their turret (billboard, energy_drink idiom)
-	_spawn_name_billboard(remote_tank, their_id(), Vector3(0, 2.4, 0))
+	# Opponent's replica is built lazily once we know their vehicle type (see
+	# v_hello/_ensure_remote_vehicle) -- each peer can pick a DIFFERENT vehicle
+	# in versus, so there's nothing correct to build synchronously here.
+	_ensure_remote_vehicle()
+
+# Builds the opponent's replica once both (a) setup_versus() has run (so we
+# have `terrain`/`_versus_world`) and (b) their v_hello has told us their
+# vehicle type -- called from both places, whichever lands second actually
+# builds it. A brief pop-in before the opponent appears is the acceptable
+# cost (same idiom as _ensure_crew_avatar()'s lazy co-op build).
+func _ensure_remote_vehicle() -> void:
+	if remote_vehicle != null or Game.mode != Game.Mode.VERSUS or not (hosting or client):
+		return
+	if _versus_world == null or terrain == null:
+		return
+	var vtype: int
+	match Game.peer_vehicle:
+		"jeep": vtype = RemoteVehicle.VehicleType.JEEP
+		"boat": vtype = RemoteVehicle.VehicleType.BOAT
+		"plane", "biplane": vtype = RemoteVehicle.VehicleType.PLANE
+		_: vtype = RemoteVehicle.VehicleType.TANK   # default/safety: also covers "tank" and an empty pre-handshake value
+	remote_vehicle = RemoteVehicle.new(vtype)
+	_versus_world.add_child(remote_vehicle)
+	var s := terrain.spawn
+	remote_vehicle.global_position = Vector3(-s.x, terrain.height(-s.x, -s.y) + 0.04, -s.y) if not client \
+		else Vector3(s.x, terrain.height(s.x, s.y) + 0.04, s.y)
+	_spawn_name_billboard(remote_vehicle, their_id(), Vector3(0, 2.4, 0))
 
 func _on_versus_death() -> void:
 	if Game.mode != Game.Mode.VERSUS or not active():
@@ -702,14 +768,14 @@ func v_i_died() -> void:
 		Game.add_team_score(Game.my_team, 1)
 	Game.kills_changed.emit()
 	Sfx.vo("vo_kill", 2, 5.0)
-	if fx and remote_tank:
-		fx.explosion(remote_tank.global_position + Vector3(0, 1.5, 0), true, tank.global_position if tank else Vector3.ZERO)
+	if fx and remote_vehicle:
+		fx.explosion(remote_vehicle.global_position + Vector3(0, 1.5, 0), true, tank.global_position if tank else Vector3.ZERO)
 
 @rpc("any_peer", "unreliable_ordered")
-func s_versus_state(t: Transform3D, turret_y: float, gun_e: float, head_rel := Transform3D(),
+func s_versus_state(t: Transform3D, aim_yaw: float, aim_pitch: float, head_rel := Transform3D(),
 		hand_l_rel := Transform3D(), hand_r_rel := Transform3D(), move_flags := 0) -> void:
-	if remote_tank:
-		remote_tank.net_target(t, turret_y, gun_e, head_rel, hand_l_rel, hand_r_rel, move_flags)
+	if remote_vehicle:
+		remote_vehicle.net_target(t, aim_yaw, aim_pitch, head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 @rpc("any_peer", "reliable")
 func v_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
@@ -724,7 +790,7 @@ func versus_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
 	else:
 		v_shot.rpc(kind, pos, vel)
 
-# Symmetric pvp damage sent to the victim (from RemoteTank.take_damage).
+# Symmetric pvp damage sent to the victim (from RemoteVehicle.take_damage).
 func send_damage(amount: float) -> void:
 	if _transport == Transport.RELAY:
 		_relay_send({"type": "evt", "e": "v_damage", "amount": amount, "echo": false})
@@ -871,14 +937,19 @@ func s_seats(host_drives: bool) -> void:
 
 # ================================================================ names + teams
 @rpc("any_peer", "reliable")
-func v_hello(pname: String, _team: int, tmode: bool) -> void:
+func v_hello(pname: String, _team: int, tmode: bool, p_vehicle := "tank") -> void:
 	Game.peer_name = pname
+	Game.peer_vehicle = p_vehicle
 	Game.team_mode = tmode
 	# assign fixed teams once team mode is on: host RED, client BLUE
 	if tmode:
 		Game.my_team = Game.Team.RED if hosting else Game.Team.BLUE
 	_refresh_name_billboards()
 	Game.round_state_changed.emit()
+	# versus: now that we know the peer's vehicle, build (or rebuild, if they
+	# picked something else on a reconnect) their replica.
+	if Game.mode == Game.Mode.VERSUS:
+		_ensure_remote_vehicle()
 
 # Label3D billboard over a peer's head/turret — same idiom as
 # energy_drink.gd's brand label (Label3D, billboard-enabled, no depth cull).
@@ -963,49 +1034,90 @@ func _apply_crew_avatar(head_rel: Transform3D, hand_l_rel: Transform3D, hand_r_r
 		_crew_avatar.set_net_target(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
 # ================================================================ replicas
-class RemoteTank:
+class RemoteVehicle:
 	extends CharacterBody3D
 
-	var turret: Node3D
+	# Local to versus-mode replication -- deliberately NOT ReplicaPool's enemy-
+	# type ints (co-op's "type 3" means gunner infantry there; reusing that
+	# numbering here would be a confusing coincidence, not a shared meaning).
+	enum VehicleType { TANK, JEEP, BOAT, PLANE }
+
+	# Tank-sized box was the only option pre-refactor; a jeep/boat/plane
+	# replica with a tank hitbox is an immediately-visible correctness bug,
+	# not a cosmetic one -- kept as a small per-type table instead.
+	const _HITBOX_SIZE := {
+		VehicleType.TANK: Vector3(3.2, 1.4, 6.2),
+		VehicleType.JEEP: Vector3(1.8, 1.6, 3.4),
+		VehicleType.BOAT: Vector3(2.0, 1.4, 5.0),
+		VehicleType.PLANE: Vector3(6.0, 1.6, 6.0),
+	}
+
+	var type: int
+	var turret: Node3D          # only tank has a genuinely separate turret mesh to spin (see _ready())
 	var _avatar: AvatarRig
 	var _target := Transform3D()
 	var _turret_y := 0.0
 	var _has_target := false
 
-	func _init() -> void:
+	func _init(p_type: int) -> void:
+		type = p_type
 		collision_layer = 4
 		collision_mask = 0
 		add_to_group("enemies")
 
 	func _ready() -> void:
-		EnemyTank._build_meshes()
-		var hull := MeshInstance3D.new()
-		hull.mesh = EnemyTank._hull_mesh
-		add_child(hull)
-		turret = Node3D.new()
-		turret.position = Vector3(0, 1.45, -0.2)
-		add_child(turret)
-		var tm := MeshInstance3D.new()
-		tm.mesh = EnemyTank._turret_mesh
-		turret.add_child(tm)
-		# the other kid, peeking out of the hatch
+		match type:
+			VehicleType.JEEP:
+				EnemyLight.Jeep._build()
+				var m := MeshInstance3D.new()
+				m.mesh = EnemyLight.Jeep._mesh
+				add_child(m)
+			VehicleType.BOAT:
+				EnemyShip._build()
+				var m := MeshInstance3D.new()
+				m.mesh = EnemyShip._mesh
+				add_child(m)
+			VehicleType.PLANE:
+				EnemyPlane._build_mesh()
+				var m := MeshInstance3D.new()
+				m.mesh = EnemyPlane._mesh
+				add_child(m)
+			_:  # TANK -- the only type with a real separate turret node, so it's
+				# the only one that visually shows the opponent's aim (see
+				# net_target()/_physics_process()). Jeep/boat meshes are single
+				# unified ArrayMesh blobs (gun built into the hull mesh, not a
+				# separable sub-mesh) -- splitting those is real extra scope
+				# (touches enemy_light.gd/enemy_ship.gd), so v1 replicates their
+				# position only; their gun doesn't visibly track aim yet.
+				EnemyTank._build_meshes()
+				var hull := MeshInstance3D.new()
+				hull.mesh = EnemyTank._hull_mesh
+				add_child(hull)
+				turret = Node3D.new()
+				turret.position = Vector3(0, 1.45, -0.2)
+				add_child(turret)
+				var tm := MeshInstance3D.new()
+				tm.mesh = EnemyTank._turret_mesh
+				turret.add_child(tm)
+		# the other kid, peeking out of the hatch/cockpit -- rides on the
+		# turret when there is one (tank), else on the hull root directly.
 		_avatar = AvatarRig.new()
 		_avatar.position = Vector3(-0.28, 1.15, 0.25)
-		turret.add_child(_avatar)
+		(turret if turret else self).add_child(_avatar)
 		_avatar.configure(AvatarRig.Mode.SEATED, NetManager._avatar_tint(NetManager.their_id()))
 		if Game.mutator == "balloon":
 			Game.balloonize(self)
 		var shape := CollisionShape3D.new()
 		var box := BoxShape3D.new()
-		box.size = Vector3(3.2, 1.4, 6.2)
+		box.size = _HITBOX_SIZE.get(type, _HITBOX_SIZE[VehicleType.TANK])
 		shape.shape = box
 		shape.position = Vector3(0, 1.0, 0)
 		add_child(shape)
 
-	func net_target(t: Transform3D, ty: float, _ge: float, head_rel := Transform3D(),
+	func net_target(t: Transform3D, aim_yaw: float, _aim_pitch: float, head_rel := Transform3D(),
 			hand_l_rel := Transform3D(), hand_r_rel := Transform3D(), move_flags := 0) -> void:
 		_target = t
-		_turret_y = ty
+		_turret_y = aim_yaw
 		_has_target = true
 		if _avatar and head_rel != Transform3D():
 			_avatar.set_net_target(head_rel, hand_l_rel, hand_r_rel, move_flags)
@@ -1014,7 +1126,8 @@ class RemoteTank:
 		if not _has_target:
 			return
 		global_transform = global_transform.interpolate_with(_target, clampf(10.0 * delta, 0, 1))
-		turret.rotation.y = lerp_angle(turret.rotation.y, _turret_y, clampf(10.0 * delta, 0, 1))
+		if turret:
+			turret.rotation.y = lerp_angle(turret.rotation.y, _turret_y, clampf(10.0 * delta, 0, 1))
 
 	func take_damage(amount: float, at: Vector3) -> void:
 		Sfx.play_at("hit", at, -4.0)

@@ -183,6 +183,11 @@ func _physics_process(delta: float) -> void:
 			Game.make_noise()
 	cannon_cool = maxf(cannon_cool - delta, 0.0)
 
+## Generic accessor read by net.gd's versus-mode state sync -- same shape as
+## player_tank.gd's, so net.gd never needs to branch per vehicle type.
+func get_aim_yaw_pitch() -> Vector2:
+	return Vector2(gun_yaw, gun_pitch)
+
 func fire_primary() -> void:
 	if cannon_cool > 0.0 or not Game.alive:
 		return

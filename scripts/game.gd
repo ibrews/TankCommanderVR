@@ -145,6 +145,7 @@ var my_team: int = Team.NONE
 var team_score := {Team.RED: 0, Team.BLUE: 0}
 var display_name := ""        # self-reported, sent at connect (see net.gd)
 var peer_name := ""           # the other player's reported name
+var peer_vehicle := ""        # the other player's reported vehicle (versus mode; see net.gd v_hello)
 
 # fun default the player can keep or edit in the lobby
 func default_name() -> String:

@@ -144,8 +144,16 @@ func _ready() -> void:
 					cam.look_at(p + Vector3(0, 1.5, 0))
 					_shot(cam, "rain_storm")
 					get_tree().quit(0))))
+	# --vs-vehicle=<name> is a shared modifier for both --mp-host/--mp-join
+	# below: switches the host to VERSUS (client inherits it via the beacon
+	# handshake automatically) and sets this instance's own Game.vehicle --
+	# lets a two-desktop-instance run smoke-test versus mode with mixed
+	# vehicles (e.g. host=jeep, client=tank) without needing two headsets.
+	for a in args:
+		if a.begins_with("--vs-vehicle="):
+			Game.vehicle = a.substr("--vs-vehicle=".length())
 	if "--mp-host" in args:
-		Game.mode = Game.Mode.COOP
+		Game.mode = Game.Mode.VERSUS if "--versus" in args else Game.Mode.COOP
 		Game.level_id = "outdoor"
 		NetManager.host()
 		start_game()
@@ -770,19 +778,23 @@ func start_game() -> void:
 	NetManager.projectiles = projectiles
 	NetManager.fx = fx
 	var veh := Game.vehicle
-	if Game.mode == Game.Mode.COOP or Game.mode == Game.Mode.VERSUS:
-		# MP is tank-only ON PURPOSE, not a dropped selection: the whole net
-		# layer is tank-shaped — coop is one shared tank (host drives, client
-		# is the turret gunner puppet), and versus replicates turret.rotation.y
-		# / gun_elev and draws the opponent as a RemoteTank. Only PlayerTank
-		# exposes turret/gun_elev; plane/boat/heli have no gunner seat and no
-		# replica body, so picking them here would spawn a vehicle setup_coop/
-		# setup_versus (typed `PlayerTank`) can't drive. Force tank until a
-		# non-tank MP replication path exists. Respecting the menu's non-tank
-		# pick is a feature, not a bug fix — tracked separately.
+	if Game.mode == Game.Mode.COOP:
+		# Co-op is tank-only ON PURPOSE, not a dropped selection: it's one
+		# shared tank (host drives, client is the turret gunner puppet) —
+		# jeep/boat have no multi-seat driver/gunner infrastructure, and plane
+		# has no second control surface at all. Force tank until that
+		# infrastructure exists for more vehicles.
 		if veh != "tank":
-			push_warning("[main] %s not supported in MP yet — using tank" % veh)
+			push_warning("[main] %s not supported in co-op yet — using tank" % veh)
 		veh = "tank"
+	elif Game.mode == Game.Mode.VERSUS:
+		# Versus is one-vehicle-per-peer (no shared driver/gunner seat), so it
+		# supports whichever vehicle exposes get_aim_yaw_pitch() -- currently
+		# tank/jeep/boat/plane (see net.gd's RemoteVehicle). Heli/runner/
+		# biplane don't have a versus replica type yet.
+		if veh not in ["tank", "jeep", "boat", "plane"]:
+			push_warning("[main] %s not supported in versus yet — using tank" % veh)
+			veh = "tank"
 	if Game.mode == Game.Mode.PLANE:
 		veh = "plane"  # legacy path
 	# Sphere-world bonus level: the whole point is walking around the
@@ -839,7 +851,9 @@ func start_game() -> void:
 		enemy_manager = EnemyManager.new(terrain, projectiles, fx, vehicle)
 		world.add_child(enemy_manager)
 	if Game.mode == Game.Mode.VERSUS:
-		NetManager.setup_versus(world, terrain, projectiles, fx, player)
+		# `vehicle` (not `player`) -- `player` is only ever assigned in the tank
+		# branch of the match above, so it's null for jeep/boat/plane versus.
+		NetManager.setup_versus(world, terrain, projectiles, fx, vehicle)
 	elif Game.mode == Game.Mode.COOP:
 		NetManager.setup_coop(player)
 	if not on_foot:

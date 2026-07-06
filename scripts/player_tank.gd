@@ -506,9 +506,7 @@ func _physics_process(delta: float) -> void:
 func _puppet_update(delta: float) -> void:
 	if _net_has:
 		global_transform = global_transform.interpolate_with(_net_target, clampf(8.0 * delta, 0.0, 1.0))
-	var inp := turret_input
-	if inp.length() < 0.05 and stick_turret.length() > 0.08:
-		inp = stick_turret
+	var inp := effective_turret_input()
 	turret.rotation.y += -inp.x * Tune.v("turret_slew") * delta
 	turret.rotation.y = lerp_angle(turret.rotation.y, _net_turret_y, clampf(1.5 * delta, 0.0, 1.0))
 	gun_elev = clampf(gun_elev + inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
@@ -681,18 +679,34 @@ func _align(delta: float) -> void:
 	# Basis columns: x=right(+X), y=up, z=back(+Z). fwd here = -Z direction.
 	basis = basis.slerp(target, clampf(5.0 * delta, 0.0, 1.0)).orthonormalized()
 
+## Generic accessor read by net.gd's versus-mode state sync -- jeep/boat
+## expose the same shape (yaw, pitch) for their own aimable gun; the plane
+## returns Vector2.ZERO since it has none. Lets net.gd sync any vehicle
+## type's aim state without branching on which one it is.
+func get_aim_yaw_pitch() -> Vector2:
+	return Vector2(turret.rotation.y, gun_elev)
+
+## My own local turret-aim intent: physical grip input, falling back to the
+## thumbstick when the grip isn't in use (mirrors effective_drive()'s
+## physical-vs-stick merge, including animating the grip pivot to match a
+## stick-driven aim, same as effective_drive() animates the tillers). Read by
+## _update_turret()/_puppet_update() (LOCAL aim) and net.gd's c_gunner RPC
+## send (NETWORK aim) so both paths share one merge instead of two copies.
+func effective_turret_input() -> Vector2:
+	if turret_input.length() >= 0.05 or stick_turret.length() <= 0.08:
+		return turret_input
+	var grip: VRControl.TwoAxisGrip = cockpit["controls"]["grip"]
+	grip.pivot.rotation = Vector3(stick_turret.y * 0.28, 0, -stick_turret.x * 0.28)
+	return stick_turret
+
 func _update_turret(delta: float) -> void:
-	var inp := turret_input
+	var inp := effective_turret_input()
 	# Host is physics authority; the turret is driven by whoever holds the
 	# GUNNER seat. Default coop: gunner is the client, so use the input it
 	# streams up (gunner_input). After a seat swap the host itself is the
-	# gunner — fall through to its own local grip/stick below.
+	# gunner — fall through to its own local grip/stick (effective_turret_input()).
 	if NetManager.hosting and Game.mode == Game.Mode.COOP and not NetManager.i_am_gunner():
 		inp = NetManager.gunner_input   # the gunner (client) owns the turret
-	elif inp.length() < 0.05 and stick_turret.length() > 0.08:
-		inp = stick_turret
-		var grip: VRControl.TwoAxisGrip = cockpit["controls"]["grip"]
-		grip.pivot.rotation = Vector3(inp.y * 0.28, 0, -inp.x * 0.28)
 	if not battery_on or not Game.alive:
 		inp = Vector2.ZERO
 	turret.rotation.y += -inp.x * Tune.v("turret_slew") * delta
@@ -704,8 +718,18 @@ func _update_turret(delta: float) -> void:
 func _update_weapons(delta: float) -> void:
 	rocket_cool -= delta
 	mg_timer -= delta
-	var mg_btn_down: bool = cockpit["controls"]["mg_btn"].is_down
-	if (mg_held or mg_btn_down) and mg_timer <= 0.0 and Game.alive:
+	# This only ever runs on the physics-authoritative (non-puppet) tank, so
+	# mg_held/mg_btn_down here are MY OWN local grip state -- meaningless in
+	# the default coop arrangement where the CLIENT holds the gunner seat and
+	# grips the coax-MG button on ITS OWN puppet instance, which never runs
+	# this function at all. Same fallthrough as _update_turret(): use the
+	# networked gunner_mg_held whenever I'm hosting but NOT currently the
+	# gunner myself (post seat-swap, I AM the gunner, so my own local state
+	# below is already correct and this branch is skipped).
+	var mg_active: bool = mg_held or cockpit["controls"]["mg_btn"].is_down
+	if NetManager.hosting and Game.mode == Game.Mode.COOP and not NetManager.i_am_gunner():
+		mg_active = NetManager.gunner_mg_held
+	if mg_active and mg_timer <= 0.0 and Game.alive:
 		mg_timer = MG_PERIOD
 		_fire_mg()
 	if auto_reload and not loaded:
