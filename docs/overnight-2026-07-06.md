@@ -1,63 +1,68 @@
 # Overnight session — 2026-07-06
 
-Running ledger. Morning summary will be written at the top once everything lands.
+## MORNING SUMMARY (read this first)
 
-## Status: IN PROGRESS (session started ~05:45 UTC)
+Session ran ~05:45 UTC onward. 3 verified APK builds installed+launched on the connected Quest 3S this session — all clean, no crashes, stable 72fps, no script errors in logcat. Two-headset multiplayer testing was NOT possible (only one physical Quest connected all session) — everything network-related is code-reviewed + single-peer-verified only. See "Needs a live two-headset test" below before considering MP solid.
+
+### DONE (landed on master, on-device smoke-tested at least once)
+- **Energy drink crash** — root cause + fix, verified stable in 3 builds.
+- **MP join crash** — host was firing authority RPCs into a half-open ENet peer mid-handshake; now gated on the `peer_connected` signal. **Not two-headset tested.**
+- **Spider-Man rework** — grapple/climb genuinely gated behind finding the pickups now (was always-on); climbable surfaces extended to terrain/buildings/rocks/trees/castle walls via a shared collision layer; grapple anchors any solid surface.
+- **Coffee pickup** — didn't exist at all despite being expected; built from scratch (reflex/reload boost, steam FX, distinct from energy drink).
+- **Energy drink polish** — gulp/fizz/crush FX sequence added.
+- **Wi-Fi gate bug** — investigated thoroughly, **no blocking gate found in code**. Single-player never touches `NetManager`. If Alex still sees this on-device, it's very likely a Quest OS-level dialog, not this codebase — flagging for him to describe exactly when/where he sees it if it recurs.
+- **Weather fog** — new condition in `weather.gd`, Mobile-renderer fixed-function fog.
+- **Volcano level** — real selectable level (not just the disaster easter egg) now has scrolling lava shader + lethal telegraphed eruptions + forced basalt/ash palette (no grass).
+- **Baby-room boss** — was unkillable (bare `Node3D`, no collider); now has an HP pool, takes damage, topples and dies.
+- **Lobby diorama fix** — several levels (gym/volcano/babyroom/moon/debug/island) were rendering the preview model scaled 1.2–2.2x past the pedestal; root cause was scaling against the wrong radius constant. Fixed for all 13 levels, `--previewtest` now asserts this class of bug can't silently return.
+- **Pre-lobby splash screen** — added, plus a small "14 Fake Awards" comedic badge.
+- **Store cubemap fix** — 4 of 6 store cubemap faces had wrong orientation (GL slot-convention bug in the capture script, not a literal face-name mixup). Regenerated and verified with a seamless-sampling simulation. **Needs Alex to re-upload the regenerated jpg to the Meta dashboard** (see Blocked below).
+- **Round timer + live scoring + end-of-round tally** for VERSUS (RPC-broadcast, perspective-correct on each peer).
+- **Host god-mode** — two-hand-grip gestures let the host change map/mode/difficulty and spawn bots mid-session, propagated to peers.
+- **Co-op seat-swap hotkey** between driver/gunner. Solo-in-vehicle already had full both-seat control (verified unaffected).
+- **Player display names** — self-reported ("Tanker_NNN", editable), shown above each peer's vehicle, exchanged at connect.
+- **Team-color mode** alongside free-for-all.
+- **"Four arms" avatar bug** — actual root cause was the licensed controller model AND the godot-xr-tools glove both rendering at the same hand point (not the AvatarRig/ControllerVisual overlap originally hypothesized — this codebase has no local on-foot AvatarRig). Fixed.
+- **Vehicle controls**: right-trigger now drives every vehicle forward (fire moved to grip when hand's empty); jeep got a real procedural steering wheel; player-plane spawn facing fixed (was pointing out of the map on every level); on-foot runner got right-stick turning (SNAP/SMOOTH toggle) and a stick-sprint option, composing correctly with existing arm-swing/energy-drink speed boosts.
+- **Cloudflare persistent-host relay client** — a parallel session already deployed the server (`multiplayer/worker.js`, live at `tank-commander.alexcoulombe.workers.dev`); this session built the missing piece, the Godot `WebSocketPeer` client with reconnect/backoff, wired as an automatic fallback when `NetManager.search()` finds no LAN host within 4s. **Verified against the real live endpoint** (a headless probe connected and received a real `welcome` message) — full two-peer relay gameplay is code-reviewed only.
+- **Upload Logs button** — menu button POSTs `user://logs/godot.log` to the relay's `/logs` endpoint, so future headsets can ship logs without ever being plugged in (`tools/pull_logs.sh`/adb remains the local-network path).
+
+### PARTIAL / needs follow-up
+- **Fire-button routing after a co-op seat-swap** isn't fully rewired — a host who swaps into the gunner seat can aim/drive via the swap, but firing the cannon locally as gunner is a flagged gap.
+- **Pre-existing limitation, not touched**: a client-gunner using the thumbstick instead of the physical grip doesn't network turret input.
+- **MP is intentionally tank-only** — co-op/versus force `Game.vehicle = "tank"` regardless of the menu pick, because the whole net layer (turret sync, RemoteTank replica) is tank-shaped. This was a deliberate scope decision this session (see commit history), not an oversight — now documented + warns instead of silently overriding.
+
+### STILL RUNNING at time of writing
+- **2-3 new procedural weapons** (Fable agent) — has been running a long time, not yet merged. Will land as a followup commit once it completes; check `git log` for a `feat(weapons):`-style commit after this session if you're reading this later and it's not mentioned as done above.
+
+### BLOCKED / needs Alex
+- **Store cubemap re-upload**: `docs/store-art/cubestrip_12288x2048.jpg` was regenerated with corrected face orientation — needs manual re-upload to the Meta Quest Developer Dashboard store listing (I have no access to that). Also worth deciding whether to delete the now-superseded `cubestrip_alt*.jpg`/`cubestrip_final_*.jpg` variants in `docs/store-art/` (left untouched, ambiguous provenance).
+- **Two-headset live test** needed for everything MP-related above marked "not tested" — I only had one physical Quest connected all session.
+- **Cloudflare Worker security note**: `multiplayer/wrangler.toml`'s `LOG_TOKEN` is a plaintext shared secret already committed to the repo (pre-existing design, not something I introduced) — fine for a low-stakes indie project, but worth knowing it's there if the repo ever goes more public.
+
+---
 
 ## Deliverable 0 — wireless log gathering
-- DONE: `adb tcpip 5555` + `adb connect 192.168.86.142:5555` — Quest 3S now reachable wirelessly (serial `4597C10H3N01KG`, also visible as `192.168.86.142:5555`).
-- DONE: [tools/pull_logs.sh](../tools/pull_logs.sh) — pulls logcat (full + filtered), tombstones, Godot user:// log dir, device info for every `adb devices` entry into `docs/logs/<timestamp>/<serial>/`.
-- DONE: first pull ran — `docs/logs/20260706-054556/`. No godot/tankcommander logcat lines found (game hasn't been run recently on this boot) and no tombstones. Godot user:// log dir was empty because **file logging wasn't enabled in the project** — fixed: added `[debug]` section to [project.godot](../project.godot) (`file_logging/enable_file_logging=true`, `log_path="user://logs/godot.log"`). This needs a rebuild+reinstall before it takes effect — future runs will have persistent on-device logs even without a live adb session.
-- DONE: [tools/WIRELESS_ADB.md](../tools/WIRELESS_ADB.md) runbook (gemini-drafted, cleaned up by me).
-- DONE (free): gemma triage of pre-existing `mp_join.log`/`mp_host.log` (desktop smoke-test logs already in repo root) → `docs/logs/gemma_triage_mp.md`. gemma changelog draft → `docs/logs/gemma_changelog.md`. gemma targeted crash-pattern scan (self-free-during-signal bugs like the energy drink one) → `docs/logs/gemma_crash_scan.md`.
-- NOTE: only ONE physical Quest was connected this session — the real two-headset MP join crash could not be live-reproduced. Root-caused via code review instead (see below); needs a real two-headset verification pass.
+- `adb tcpip 5555` + `adb connect` — Quest 3S reachable wirelessly (also has USB fallback, serial `4597C10H3N01KG`).
+- [tools/pull_logs.sh](../tools/pull_logs.sh) — pulls logcat, tombstones, Godot user:// log dir, device info for every `adb devices` entry into `docs/logs/<timestamp>/<serial>/`.
+- [tools/WIRELESS_ADB.md](../tools/WIRELESS_ADB.md) runbook.
+- File logging enabled in `project.godot` so `user://logs/godot.log` now actually exists for both the adb-pull path and the new in-game Upload Logs button.
+- Free background work: gemma triaged the pre-existing `mp_join.log`/`mp_host.log` smoke-test logs (`docs/logs/gemma_triage_mp.md`), drafted a changelog from `git log` (`docs/logs/gemma_changelog.md`), and scanned for repeats of the energy-drink self-free crash pattern across `scripts/pickables/*.gd` (`docs/logs/gemma_crash_scan.md` — one plausible-looking false positive in `cabbage_grenade.gd`, checked by hand and confirmed NOT the same bug, it detonates after being thrown/released, not synchronously inside the pickup's own button-press callback).
+- gemini researched: Oculus username API feasibility (verdict: no Godot GDExtension exists yet, self-reporting is the pragmatic choice — used for the display-name feature), Godot splash-screen patterns (used for the splash screen work), and drafted this session's low-cost creative brainstorm (`docs/logs/gemini_creative_ideas.md` — only 1 of 9 ideas implemented so far, the "fake awards" splash badge; the rest need `avatar_cosmetics.gd`/`weather.gd`/`levels.gd`/`player_jeep.gd`, all busy with real feature work this session — good backlog for later).
 
-## Crash fixes
-- DONE (me, verified by code reading, not yet on-device tested): **energy drink crash** — [scripts/pickables/energy_drink.gd](../scripts/pickables/energy_drink.gd) `_on_action_pressed` was calling `drop_and_free()` synchronously from inside the `action_pressed` signal handler. `drop_and_free()` → `drop()` → `function_pickup.gd`'s `drop_object()` sets `picked_up_object = null` *before* returning control to `function_pickup.gd`'s `_on_button_pressed()`, which immediately re-reads `picked_up_object.has_method("controller_action")` right after calling `action()` — a null-deref crash on device (addon bug, triggered by any pickable that self-frees synchronously from `action_pressed`). Fixed by deferring: `call_deferred("drop_and_free")`. Flagged this exact pattern to gemma to scan the rest of `scripts/pickables/*.gd` for repeats.
-- DONE: **MP join crash** — `has_player()` used to gate on `multiplayer.get_peers().size() > 0`, which ticks up mid-ENet-handshake; the host then fired 15Hz authority RPCs (`s_coop_snap`/`s_driver_head`) into a peer whose channel wasn't ready, matching the "multiplayer peer which is not connected" error and, on-device, the reported crash. Now gated on a `_peer_up` flag set only by the `peer_connected` signal. Not live-tested with two headsets — verify next session that host logs show `[net] peer N connected` before any snapshot goes out.
+## IMPORTANT: agent worktree staleness bug (confirmed persistent all session, not a race)
 
-## Landed on master (merged, most rebased+conflict-resolved by hand — see the staleness note below)
-| # | Task | Notes |
-|---|---|---|
-| 1 | Wireless adb + pull_logs.sh + WIRELESS_ADB.md | done |
-| 2 | MP join crash + MP vehicle-choice-ignored | host now gates authority RPCs on `peer_connected`, not `get_peers().size()` |
-| 5 | Spider-Man pickup-gated powers + climb-anything | reconciled with an independent near-duplicate already on master |
-| 6/7/8 | Energy drink polish + coffee (created from scratch) + wifi-gate investigated | no wifi gate found in code |
-| 9/12/13 | Lobby diorama fix + weather fog + volcano lava/eruptions + killable baby boss | |
-| 16 | Pre-lobby splash screen (+ fake-award badge easter egg) | |
-| 18 | Store cubemap face-orientation fix | **needs Alex to re-upload to the Meta dashboard** |
-| 3/14/15 | Round timer/scoring/tally, host god-mode, seat-switch, names+teams, "four arms" fix | see known gaps below |
+**Every** `isolation:"worktree"` agent branched from `4f19e66` — a commit that was already 51+ commits behind master at session start, and progressively further behind as the session's own work landed. Confirmed repeatedly by checking a freshly-launched agent's worktree base immediately after creation. **Standing workflow used all session: `git rebase --onto master 4f19e66 <branch>` before every merge, no exceptions**, resolve conflicts by hand, then `git merge --no-ff`.
 
-**Still running:** #17 (weapons, fable), #10/11 (vehicle enter/exit + right-trigger + jeep wheel + plane facing + runner turn/sprint, sonnet).
-
-**Queued next** (net.gd is now stable and ahead of every agent's stale base — safe to start):
-- #4: Cloudflare Durable Object persistent-host fallback client (Godot `WebSocketPeer` + reconnect/backoff) + "Upload Logs" menu button. The worker itself is already deployed live (see below) — this is client-only work now.
-- A verified APK build + smoke test on the connected Quest, now that a large batch has landed.
-
-### Known gaps in the netcode work (#3), need a live two-headset test
-- Round countdown sync, tally screen, and team-color/name billboards across two real peers (all wired, none live-tested — only one Quest was connected this session).
-- Seat-swap: aim/drive swap is wired; fire-button routing for a host-turned-gunner after a swap is a flagged followup, not yet done.
-- A client-gunner using the thumbstick (vs. the physical grip) doesn't network turret input — pre-existing limitation, not introduced or fixed this session.
-
-## Merge/build plan
-Each agent commits in its own isolated worktree (no version bump — that's centralized here to avoid every agent racing on `build_info.gd`/`export_presets.cfg`). As each lands: review diff → merge into this branch → batch up a few landed features → bump version (`export_presets.cfg` + `build_info.gd` via `tools/build_apk.sh`'s existing stamp step) → build APK → install+launch on the connected Quest → smoke-test → commit.
-
-## IMPORTANT: agent worktree staleness bug (confirmed persistent, not a race)
-
-**Every** `isolation:"worktree"` agent this session branches from `4f19e66` — a fixed commit that was already 51+ commits behind master when the session started, and now even further behind as master advances. Confirmed by checking a freshly-launched agent's worktree base immediately after creation (still `4f19e66`, not current tip) — this rules out a launch-order race; it looks like the harness snapshots one base ref for the whole session's worktree-isolation feature rather than reading live HEAD each time. **Standing workflow going forward: every agent branch gets `git rebase --onto master 4f19e66 <branch>` before merging, no exceptions**, resolving conflicts by hand, then `git merge --no-ff`. Successfully done for: splash screen (1 conflict in main.gd), Spider-Man rework (3 conflicts — terrain.gd/world_dressing.gd/xr_rig.gd all had *independently converged* on nearly the same "make the world climbable" idea as a commit already on master, since the agent's stale base predated that commit; reconciled by hand), coffee/energy-drink/wifi (1 conflict, plus had to un-stage `docs/logs/` and a stray store-art jpg that `git add -A` swept in during conflict resolution — watch for that every time), MP join-crash fix (0 conflicts, clean).
+**One real defect this caused, caught by hand**: a rebase can apply two independent branches' edits to the *same function name* without git flagging a conflict, if the two edits land on textually-distant lines (e.g. adding a whole new function body vs. adding a differently-named one nearby). This happened once — two full `_on_peer_connected()` definitions coexisted silently after a rebase (invalid GDScript, would not have parsed). **Added a standing check after every rebase since then**: grep every touched file for duplicate top-level `func`/`var`/`const`/`signal` names before committing. Caught nothing else this session, but it's now part of the merge routine — worth keeping as a habit for any future multi-agent session against this repo.
 
 ## Live Cloudflare Worker (deployed by a parallel session, not me)
 
-Alex/a parallel session already deployed the persistent-host relay + log sink: **`https://tank-commander.alexcoulombe.workers.dev`**
-- Relay: `wss://tank-commander.alexcoulombe.workers.dev/ws` (or `/ws/<roomcode>`) — default room `main` is the always-on fallback when no LAN host is found. First socket into a fresh room gets `host:true` — feeds host-god-mode.
-- Log upload (no auth): `POST .../logs?device=<name>&kind=<crash|session|manual>`, raw log text body.
-- Log retrieval (token-gated): `GET .../logs/list?token=tc-fort-logs-8b41c2a9`, `GET .../logs/get?token=...&key=<key>`.
-- Source of truth: `multiplayer/worker.js` / `multiplayer/README.md` in this repo. **I do not need to run `wrangler deploy` myself** — just build the Godot `WebSocketPeer` client + reconnect/backoff, and add an "Upload Logs" menu button that POSTs to `/logs` (this is now the PRIMARY log-gathering path for headsets that aren't on-site/on the same LAN — wireless-adb via `tools/pull_logs.sh` is the secondary/local-network path). This unblocks Task #4 fully.
+`https://tank-commander.alexcoulombe.workers.dev` — persistent-host relay (`/ws[/room]`, default room `main`) + log sink (`POST /logs`, token-gated `GET /logs/list|get`). Source: `multiplayer/worker.js`/`multiplayer/README.md`, now committed to this repo (was untracked). This session built the missing Godot client half (see DONE above). I did not touch the deployment itself.
 
 ## Discoveries worth flagging
+- **"Four arms" root cause was NOT what it first looked like.** Early hypothesis (a local `AvatarRig` overlapping `ControllerVisual`) turned out to be wrong — this codebase has no local on-foot `AvatarRig` at all. Actual cause: the licensed controller GLB model and the godot-xr-tools lowpoly glove both rendering at the same hand point whenever a controller was tracked. Fixed by making the GLB win, glove as a defensive fallback only.
+- **Excess `git add -A` risk during conflict resolution**: caught it sweeping unrelated untracked files (a stray store-art jpg, the whole `docs/logs/` dir) into a feature commit mid-rebase more than once. Always `git status --short` before committing a resolved conflict, don't reflexively `git add -A`.
 
-- **`multiplayer/` Cloudflare Worker scaffold already exists, untracked, uncommitted.** Someone (a prior session, per KB `intelligence/techniques/cloudflare-durable-object-multiplayer-relay-pattern.md`) already built [multiplayer/worker.js](../multiplayer/worker.js) + [wrangler.toml](../multiplayer/wrangler.toml): a generalized Durable-Object relay (`/ws[/room]`, generic message stamping instead of hardcoded attacker/victim types — cleaner than the KB reference) **plus a log-upload/download sink** (`POST /logs`, `GET /logs/list`, `GET /logs/get`) that would let headsets ship crash/session logs over the internet with zero cabling — directly serves the "future headsets don't need plugging in" goal. `wrangler` CLI is installed and already authenticated (`npx wrangler whoami` succeeds) on this machine. wrangler.toml already has a real KV namespace id + a `LOG_TOKEN` filled in (not a placeholder) — unclear if this was ever actually deployed; needs checking. This massively narrows Task #4's scope down to: Godot `WebSocketPeer` client + reconnect/backoff (client-side, doesn't exist yet) + wiring the fallback into `NetManager.search()`, and optionally wiring the `/logs` upload endpoint into the game as a "always available" log channel. **I (orchestrator) will do the actual `wrangler deploy` myself** rather than delegate it — it's the one truly external, hard-to-reverse action in this whole session (creates a public internet-reachable endpoint under Alex's Cloudflare account). Will call it out clearly here once done so Alex can rotate the token or tear it down if unwanted.
-- **"Four arms" avatar bug — likely root cause found.** [scripts/controller_visual.gd](../scripts/controller_visual.gd) attaches a realistic MIT-licensed Touch-Plus controller **glb model** (imported asset — this one pre-existing exception predates this session, not something I added) directly to each hand's XR transform. [scripts/avatar_rig.gd](../scripts/avatar_rig.gd) *separately* builds a full procedural arm+forearm+hand per side reaching for that same hand position. Nothing found so far hides one when the other is showing for the on-foot local player — likely both render simultaneously, reading as "four arms" (two controller models + two procedural arm/hand meshes, all near the same points). Queued for the next work round (task 14) once the current xr_rig.gd-touching agents (Spider-Man, vehicle/runner) land, to avoid stacking a third concurrent editor on that file.
-
-## Blocked / needs Alex
-- **Store cubemap**: `docs/store-art/cubestrip_12288x2048.jpg` was regenerated with the fixed face orientation (root cause: `tools/cubestrip_capture.gd` treated GL cubemap slot names literally instead of per the actual sampling convention — see commit history). Needs a manual re-upload to the Meta Quest Developer Dashboard store listing; I can't do that step. Also worth deciding whether to delete the now-superseded `cubestrip_alt*.jpg` variants in `docs/store-art/` (all share the same wrong-orientation root cause).
+## Merge/build plan (how this session actually worked)
+Every agent committed in its own isolated worktree (never bumped `build_info.gd`/`export_presets.cfg` — kept that centralized to avoid every agent racing on it). As each landed: rebase onto current master → resolve conflicts → duplicate-symbol safety check → `git merge --no-ff` → batch a few landed features → build APK → install+launch on the connected Quest → check logcat for crashes/errors → screenshot when useful. Did this 3 times this session, all clean. Version was NOT bumped this session (still v0.6.17/27) — recommend bumping once the weapons work lands too, in one clean "ship the overnight batch" version bump rather than mid-session.
