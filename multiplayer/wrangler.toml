@@ -19,6 +19,7 @@ binding = "LOGS"
 id = "fe6637b9033d40299eda04da7bb878c6"
 
 # Token gating log READS (list/get). Uploads are open (low-stakes crash text
-# from our own app). Rotate by editing here + redeploy, or move to a secret.
-[vars]
-LOG_TOKEN = "tc-fort-logs-8b41c2a9"
+# from our own app). NOT stored here (this repo is public) -- set via
+# `npx wrangler secret put LOG_TOKEN` from the multiplayer/ dir, one time per
+# machine that deploys. Rotate the same way; env.LOG_TOKEN in worker.js reads
+# secrets and [vars] identically, so no code change either way.
