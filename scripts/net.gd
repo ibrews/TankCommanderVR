@@ -44,15 +44,11 @@ var _round_bcast_t := 0.0            # host: throttle s_round to ~4 Hz
 
 func _ready() -> void:
 	# Name/team handshake — one-shot per side right after the link is up. The
-	# host fires as soon as a peer connects; the client fires once it's fully
-	# connected to the server. Both send v_hello (any_peer, reliable) so each
-	# side learns the other's display name and current team assignment.
-	multiplayer.peer_connected.connect(_on_peer_connected)
+	# host's half lives in _on_peer_connected (connected only while host() is
+	# active, see host()/leave()); the client fires once it's fully connected
+	# to the server. Both send v_hello (any_peer, reliable) so each side learns
+	# the other's display name and current team assignment.
 	multiplayer.connected_to_server.connect(_on_connected_to_server)
-
-func _on_peer_connected(_id: int) -> void:
-	if hosting:
-		_send_hello()
 
 func _on_connected_to_server() -> void:
 	if client:
@@ -152,6 +148,7 @@ func _on_peer_connected(id: int) -> void:
 	_snap_seen = false
 	gunner_input = Vector2.ZERO
 	print("[net] peer %d connected" % id)
+	_send_hello()
 
 func _on_peer_disconnected(id: int) -> void:
 	_peer_up = false
