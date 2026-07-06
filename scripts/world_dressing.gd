@@ -125,6 +125,17 @@ func _scatter_trees(count: int) -> void:
 		var prop := DestructibleProp.new(DestructibleProp.Kind.TREE, 12.0, scales[i], mm, i)
 		prop.position = placed[i].origin
 		add_child(prop)
+	# Trees are drawn as a MultiMesh (one draw call) with no per-instance
+	# collision — vehicles drive through them, which is fine (the DestructibleProp
+	# hitboxes above are separate hurtboxes, not solid colliders). But climbing
+	# needs a real body, so give each trunk a thin climbable box too (the trunk
+	# only, ~2.2m tall — you scale the tree, not the canopy). CLIMB_LAYER-only
+	# via add_static_climb_box so it stays a grab handle, not a new solid
+	# wall traffic would slam into.
+	for xf in placed:
+		var s: float = xf.basis.get_scale().x
+		MeshKit.add_static_climb_box(self, xf.origin + Vector3(0, 1.1 * s, 0),
+			Vector3(0.4, 2.2, 0.4) * s, xf.basis.get_euler().y)
 
 func _rock_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()
@@ -514,6 +525,13 @@ func _scatter_palms(count: int) -> void:
 	mmi.multimesh = mm
 	mmi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 	add_child(mmi)
+	# Climbable trunk per palm (see _scatter_trees) — a straight box up the
+	# middle approximates the bent trunk closely enough to shimmy up. Taller
+	# (~5m) than the forest tree since palms are lankier.
+	for xf in placed:
+		var s: float = xf.basis.get_scale().x
+		MeshKit.add_static_climb_box(self, xf.origin + Vector3(0, 2.6 * s, 0),
+			Vector3(0.4, 5.0, 0.4) * s, xf.basis.get_euler().y)
 
 func _build_sea() -> void:
 	if OS.get_environment("TC_NO_SEA") != "":

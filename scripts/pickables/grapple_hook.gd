@@ -1,8 +1,11 @@
 # Grappling hook prop: pure XRToolsPickable, MeshKit-built (no imported
-# assets, matching every other prop in this game). Holding it — in either
-# hand — enables both of the rig's XRToolsMovementGrapple providers; dropping
-# it disables them. "Holding it is the inventory" per the on-foot-mode plan,
-# so no separate inventory system exists.
+# assets, matching every other prop in this game). The player must physically
+# find and grab it in the world; the FIRST grab permanently unlocks the rig's
+# two XRToolsMovementGrapple providers for the rest of the playthrough
+# (rig.acquire_grapple()). Powers used to be always-on regardless of pickup —
+# Alex's complaint — so this is the gate. Drop it and you keep the ability
+# (Spider-Man doesn't lose his webs by setting the can down); it re-clears only
+# on a level restart, which rebuilds the rig.
 class_name GrappleHookPickable
 extends XRToolsPickable
 
@@ -23,10 +26,10 @@ func _ready() -> void:
 	add_child(shape)
 	super._ready()
 	picked_up.connect(func(_p):
-		_set_grapple_enabled(true)
+		_acquire_grapple()
 		Sfx.play_at("click", global_position, -4.0, 1.15)
 		_pulse_holder(0.4, 0.06))
-	dropped.connect(func(_p): _set_grapple_enabled(false))
+	# no dropped handler: acquisition is permanent for the playthrough
 
 func _build_mesh() -> void:
 	var st := MeshKit.begin()
@@ -47,9 +50,7 @@ func _pulse_holder(amp: float, dur: float) -> void:
 	if ctrl and ctrl.has_method("pulse"):
 		ctrl.pulse(amp, dur)
 
-func _set_grapple_enabled(on: bool) -> void:
+func _acquire_grapple() -> void:
 	var m := get_tree().get_first_node_in_group("main")
 	if m and m.rig is XRRig:
-		var r: XRRig = m.rig
-		r._grapple_l.enabled = on
-		r._grapple_r.enabled = on
+		(m.rig as XRRig).acquire_grapple()

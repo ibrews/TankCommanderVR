@@ -4,6 +4,13 @@
 class_name MeshKit
 extends Object
 
+# Shared "climbable / grab handle" collision layer (bit 18 = layer 19). Matches
+# godot-xr-tools' function_pickup DEFAULT_GRAB_MASK handle bit, so any body on
+# this layer that also carries the XRToolsClimbable script is grabbable by the
+# on-foot climb hands. Kept here (not per-script magic numbers) so terrain.gd,
+# add_static_box_collider(), castle_wall.gd and xr_rig.gd all agree on it.
+const CLIMB_LAYER := 1 << 18
+
 static var _mat_cache := {}
 
 static func begin() -> SurfaceTool:
@@ -178,10 +185,40 @@ static func set_layer_recursive(node: Node, layer_mask: int) -> void:
 	for c in node.get_children():
 		set_layer_recursive(c, layer_mask)
 
-static func add_static_box_collider(parent: Node3D, pos: Vector3, size: Vector3, yaw := 0.0) -> void:
+# climbable: false for props that shouldn't be scalable (none currently opt
+# out, but the flag keeps the door open). When true the body also gets the
+# XRToolsClimbable script + CLIMB_LAYER so the on-foot climb hands can latch
+# onto it — this is what makes buildings, big rocks, wells and castle rubble
+# (all of which route through here) climbable in one place instead of tagging
+# each generated mesh.
+static func add_static_box_collider(parent: Node3D, pos: Vector3, size: Vector3, yaw := 0.0, climbable := true) -> void:
 	var body := StaticBody3D.new()
-	body.collision_layer = 1
+	body.collision_layer = (1 | CLIMB_LAYER) if climbable else 1
 	body.collision_mask = 0
+	var cs := CollisionShape3D.new()
+	var shape := BoxShape3D.new()
+	shape.size = size
+	cs.shape = shape
+	body.add_child(cs)
+	body.position = pos
+	body.rotation.y = yaw
+	if climbable:
+		# script goes on the StaticBody itself — movement_climb casts the
+		# grabbed collider to XRToolsClimbable. Set after add_child of the shape
+		# so climbable.gd's _ready() (scans children for grab points) still runs.
+		body.set_script(load("res://addons/godot-xr-tools/objects/climbable.gd"))
+	parent.add_child(body)
+
+# Climb-HANDLE-only box: on CLIMB_LAYER but NOT layer 1, so it's a graspable
+# surface for the on-foot climb hands without adding a solid wall that vehicles
+# or projectiles would collide with. Used for trees/palms, whose canopies are
+# draw-call-merged MultiMeshes with no real collision — this hangs a climbable
+# trunk on each without turning the forest into a driving hazard.
+static func add_static_climb_box(parent: Node3D, pos: Vector3, size: Vector3, yaw := 0.0) -> void:
+	var body := StaticBody3D.new()
+	body.collision_layer = CLIMB_LAYER
+	body.collision_mask = 0
+	body.set_script(load("res://addons/godot-xr-tools/objects/climbable.gd"))
 	var cs := CollisionShape3D.new()
 	var shape := BoxShape3D.new()
 	shape.size = size
