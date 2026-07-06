@@ -45,6 +45,7 @@ const DEFAULTS := {
 	"noise_reveal_time": 6.0,     # seconds enemies stay alerted after you fire
 	# --- weather / events
 	"storm_chance": 0.22,
+	"fog_chance": 0.15,   # rolled right after the storm check on the same CLEAR-state timer, so the two never overlap
 	"disaster_cooldown": 180.0,
 	"baby_step_dmg": 30.0,
 	"baby_speed": 3.0,

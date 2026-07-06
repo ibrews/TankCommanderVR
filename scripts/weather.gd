@@ -1,10 +1,11 @@
 # Weather + sky events: random rainstorms (rain particles follow the player,
-# thunder + lightning flashes, wind gusts, darkened ambience) and the
-# natural-disaster easter egg payloads (tornado / volcano / hurricane).
+# thunder + lightning flashes, wind gusts, darkened ambience), fog banks
+# (reduced-visibility Environment fog, no rain/wind) and the natural-disaster
+# easter egg payloads (tornado / volcano / hurricane).
 class_name Weather
 extends Node3D
 
-enum SkyState { CLEAR, BUILDING, STORM, CLEARING }
+enum SkyState { CLEAR, BUILDING, STORM, CLEARING, FOG_BUILDING, FOG_HOLD, FOG_CLEARING }
 
 var terrain: Terrain
 var fx: FxPool
@@ -24,6 +25,16 @@ var rain_p: AudioStreamPlayer
 var _thunder_t := 8.0
 var _gust_t := 15.0
 var wind_push := Vector3.ZERO   # sampled by the tank
+
+# fog bank state — Mobile renderer has no volumetric fog (see project.godot's
+# [rendering] renderer_method="mobile"), so "reduced visibility" is Godot's
+# fixed-function Environment.fog_enabled/fog_density/fog_light_color, the
+# same knobs _apply_gloom() already drives for storms. Kept as its own
+# BUILDING/HOLD/CLEARING trio (mutually exclusive with STORM's, chosen the
+# same way off the CLEAR periodic roll) because fog reads completely
+# differently from a storm: pale/bright, no rain, no wind, no darkened
+# ambient — just visibility dropping to near nothing at distance.
+var _fog_len := 45.0
 
 # disaster state
 var disaster := ""            # "", "tornado", "volcano", "hurricane"
@@ -87,6 +98,12 @@ func force_storm(intensity: float, dur: float) -> void:
 	state = SkyState.BUILDING
 	_t = 0.0
 
+func force_fog(dur: float) -> void:
+	_fog_len = dur
+	_forced = true
+	state = SkyState.FOG_BUILDING
+	_t = 0.0
+
 func _process(delta: float) -> void:
 	_t += delta
 	match state:
@@ -95,10 +112,15 @@ func _process(delta: float) -> void:
 			if _t > _next_check:
 				_t = 0.0
 				_next_check = Game.rng.randf_range(20.0, 45.0)
-				if Game.rng.randf() < 0.22:
+				var roll := Game.rng.randf()
+				if roll < 0.22:
 					_intensity = 1.0
 					_storm_len = Game.rng.randf_range(55.0, 110.0)
 					state = SkyState.BUILDING
+					_t = 0.0
+				elif roll < 0.22 + Tune.v("fog_chance"):
+					_fog_len = Game.rng.randf_range(35.0, 75.0)
+					state = SkyState.FOG_BUILDING
 					_t = 0.0
 		SkyState.BUILDING:
 			var k := clampf(_t / 12.0, 0.0, 1.0)
@@ -136,6 +158,23 @@ func _process(delta: float) -> void:
 				state = SkyState.CLEAR
 				_t = 0.0
 				_forced = false
+		SkyState.FOG_BUILDING:
+			_apply_fog(clampf(_t / 10.0, 0.0, 1.0))
+			if _t > 10.0:
+				state = SkyState.FOG_HOLD
+				_t = 0.0
+		SkyState.FOG_HOLD:
+			_apply_fog(1.0)
+			if _t > _fog_len:
+				state = SkyState.FOG_CLEARING
+				_t = 0.0
+		SkyState.FOG_CLEARING:
+			_apply_fog(1.0 - clampf(_t / 10.0, 0.0, 1.0))
+			if _t > 10.0:
+				_apply_fog(0.0)
+				state = SkyState.CLEAR
+				_t = 0.0
+				_forced = false
 	_update_disaster(delta)
 
 func _gusts(delta: float) -> void:
@@ -152,6 +191,26 @@ func _apply_gloom(k: float) -> void:
 	sun.light_energy = base * (1.0 - 0.72 * clampf(k, 0.0, 1.0))
 	env.ambient_light_energy = base_amb * (1.0 - 0.45 * clampf(k, 0.0, 1.0))
 	env.fog_density = 0.0005 + 0.0022 * clampf(k, 0.0, 1.0)
+
+# Reduced-visibility fog bank. Mobile renderer only has Environment's
+# fixed-function fog (fog_enabled/fog_density/fog_light_color/fog_sky_affect)
+# — no volumetric fog on this render path (project.godot's
+# renderer/rendering_method="mobile") — so "fog weather" is just pushing
+# those same knobs _apply_gloom() already uses for storms much further, with
+# a pale/bright color instead of a storm's dark one, no rain/wind/thunder,
+# and only a light dimming (fog reads as "can't see far", not "dark out").
+# fog_sky_affect ramped up alongside density so the murk actually blends into
+# the horizon instead of reading as a flat grey wall past the density falloff.
+func _apply_fog(k: float) -> void:
+	if env == null or sun == null:
+		return
+	k = clampf(k, 0.0, 1.0)
+	var base: float = 0.09 if Game.time_night else Levels.current.get("sun_energy", 1.25)
+	sun.light_energy = lerpf(base, base * 0.55, k)
+	env.ambient_light_energy = lerpf(0.10 if Game.time_night else 0.85, 0.55, k)
+	env.fog_density = lerpf(0.0005, 0.05, k)
+	env.fog_light_color = Color(0.78, 0.72, 0.62).lerp(Color(0.80, 0.81, 0.80), k)
+	env.fog_sky_affect = lerpf(0.0, 0.85, k)
 
 func _lightning() -> void:
 	if sun == null:
