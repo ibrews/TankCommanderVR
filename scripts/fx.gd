@@ -12,6 +12,8 @@ var _rings: Array = []
 var _dusts: Array = []
 var _splats: Array = []
 var _confetti: Array = []
+var _steams: Array = []
+var _sparkles: Array = []
 
 func _init() -> void:
 	name = "Fx"
@@ -34,6 +36,10 @@ func _ready() -> void:
 		_splats.append(_make_splat())
 	for i in 4:
 		_confetti.append(_make_confetti())
+	for i in 3:
+		_steams.append(_make_steam())
+	for i in 3:
+		_sparkles.append(_make_sparkle())
 
 func _smoke_mat(tex_path: String, additive := false) -> StandardMaterial3D:
 	var m := StandardMaterial3D.new()
@@ -200,6 +206,22 @@ func _make_confetti() -> Dictionary:
 	add_child(p)
 	return {"p": p, "t": 99.0}
 
+# coffee's rising wisp — same smoke billboard as dust()/smoke_column() but
+# white/upward instead of ground-hugging brown, so it doesn't read as dirt.
+func _make_steam() -> Dictionary:
+	var p := _particles(10, 1.1, 0.4, 1.0, 0.5, 1.0, Vector3(0, 0.5, 0),
+		"res://assets/tex/smoke.png", Color(1.0, 1.0, 1.0, 0.55), Color(0.9, 0.9, 0.9, 0.0))
+	add_child(p)
+	return {"p": p, "t": 99.0}
+
+# energy drink's carbonation fizz — small bright additive burst, distinct
+# from muzzle_flash's bigger/orange one (this one is white/cyan and short).
+func _make_sparkle() -> Dictionary:
+	var p := _particles(14, 0.4, 0.3, 1.1, 0.06, 0.14, Vector3(0, 0.4, 0),
+		"res://assets/tex/flash.png", Color(0.85, 0.95, 1.0, 1.0), Color(0.6, 0.9, 1.0, 0.0), true)
+	add_child(p)
+	return {"p": p, "t": 99.0}
+
 # ---------------- public API
 func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
 	if Game.mutator == "balloon":
@@ -324,6 +346,26 @@ func muzzle_flash(pos: Vector3, scale := 1.0) -> void:
 	best.root.scale = Vector3.ONE * scale
 	best.light.light_energy = 4.0 * scale
 
+func steam_puff(pos: Vector3, s := 1.0) -> void:
+	var best: Dictionary = _steams[0]
+	for st in _steams:
+		if st.t > best.t:
+			best = st
+	best.t = 0.0
+	best.p.global_position = pos
+	best.p.scale = Vector3.ONE * s
+	best.p.restart()
+
+func sparkle_burst(pos: Vector3, s := 1.0) -> void:
+	var best: Dictionary = _sparkles[0]
+	for sk in _sparkles:
+		if sk.t > best.t:
+			best = sk
+	best.t = 0.0
+	best.p.global_position = pos
+	best.p.scale = Vector3.ONE * s
+	best.p.restart()
+
 func smoke_column(pos: Vector3, duration := 18.0) -> void:
 	var best: Dictionary = _columns[0]
 	for c in _columns:
@@ -385,6 +427,16 @@ func _process(delta: float) -> void:
 			du.t += delta
 			if du.t > 1.6:
 				du.t = 99.0
+	for st in _steams:
+		if st.t < 10.0:
+			st.t += delta
+			if st.t > 1.6:
+				st.t = 99.0
+	for sk in _sparkles:
+		if sk.t < 10.0:
+			sk.t += delta
+			if sk.t > 1.0:
+				sk.t = 99.0
 	for sp in _splats:
 		if sp.t < 990.0:
 			sp.t += delta

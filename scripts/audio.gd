@@ -17,6 +17,7 @@ const NAMES := [
 	"music_mudpit", "music_mudpit_b", "music_castle", "music_castle_b",
 	"music_gym", "music_gym_b", "music_island", "music_island_b",
 	"music_volcano", "music_volcano_b",
+	"gulp", "fizz", "can_crush", "sip", "steam",
 ]
 const VO_NAMES := [
 	"vo_title", "vo_welcome", "vo_menu_pick", "vo_howto1", "vo_howto2",

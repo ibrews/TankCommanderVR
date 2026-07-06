@@ -24,6 +24,13 @@ var _direct_r: Node = null
 var _base_speed := 0.0
 var _boost_end_t := 0.0
 
+# Coffee pickup: sharper reflexes, not more speed (see scripts/pickables/
+# coffee.gd) — halves weapon cooldowns (pistol semi-auto + bazooka reload)
+# for a short window instead of energy_drink's longer sprint-speed boost, so
+# the two pickups feel distinct rather than one being a strict upgrade.
+var _coffee_end_t := 0.0
+var coffee_cooldown_mult := 1.0
+
 func _init(t: Terrain, p: Projectiles, f: FxPool) -> void:
 	terrain = t
 	projectiles = p
@@ -57,6 +64,10 @@ func _physics_process(delta: float) -> void:
 		_boost_end_t -= delta
 		if _boost_end_t <= 0.0:
 			_set_speed_multiplier(1.0)
+	if _coffee_end_t > 0.0:
+		_coffee_end_t -= delta
+		if _coffee_end_t <= 0.0:
+			coffee_cooldown_mult = 1.0
 	var spd := Vector2(velocity.x, velocity.z).length()
 	_step_t -= delta * spd
 	if _step_t <= 0.0 and spd > 2.0:
@@ -88,10 +99,17 @@ func drink_energy(duration: float, multiplier: float = 1.8) -> void:
 	_boost_end_t = duration
 	_set_speed_multiplier(multiplier)
 
+# Coffee pickup: temporary weapon-cooldown cut (faster pistol semi-auto +
+# bazooka reload), not a permanent toggle — same one-shot-timer idiom as
+# drink_energy() above (see scripts/pickables/coffee.gd).
+func drink_coffee(duration: float, cooldown_mult: float = 0.5) -> void:
+	_coffee_end_t = duration
+	coffee_cooldown_mult = cooldown_mult
+
 func fire_bazooka() -> void:
 	if rocket_cool > 0.0 or not Game.alive:
 		return
-	rocket_cool = 1.6
+	rocket_cool = 1.6 * coffee_cooldown_mult
 	Game.make_noise()
 	var cam: Node3D = _rig.get("camera") if _rig else self
 	var dir := -cam.global_transform.basis.z

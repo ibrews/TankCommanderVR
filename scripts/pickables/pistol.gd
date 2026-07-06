@@ -50,10 +50,15 @@ func _build_mesh() -> void:
 func _on_action_pressed(_p) -> void:
 	if _cool > 0.0:
 		return
-	_cool = COOLDOWN
 	var m := get_tree().get_first_node_in_group("main")
 	if m == null or m.projectiles == null:
 		return
+	# coffee pickup (scripts/pickables/coffee.gd): sharper reflexes cut the
+	# semi-auto cooldown, same multiplier that speeds up the bazooka reload.
+	var cooldown_mult := 1.0
+	if m.rig is XRRig and m.rig.on_foot_body and is_instance_valid(m.rig.on_foot_body):
+		cooldown_mult = m.rig.on_foot_body.coffee_cooldown_mult
+	_cool = COOLDOWN * cooldown_mult
 	var dir := -_muzzle.global_transform.basis.z
 	var exclude := []
 	if m.rig is XRRig and m.rig.on_foot_body and is_instance_valid(m.rig.on_foot_body):
