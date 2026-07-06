@@ -50,6 +50,8 @@ const DEFAULTS := {
 	"baby_step_dmg": 30.0,
 	"baby_speed": 3.0,
 	"baby_hp": 400.0,   # big damage sponge — one boss, not a wave regular
+	"volcano_eruption_dmg": 85.0,   # heavy/lethal — most of a full-hp tank in one geyser
+	"volcano_eruption_radius": 6.5,
 	# --- silly modes
 	"lowg_gravity": 2.4,
 	"bounce_restitution": 0.5,

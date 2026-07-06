@@ -227,6 +227,14 @@ func _splat(x: float, z: float, h: float) -> Color:
 	var slope := 1.0 - normal(x, z).y
 	var rock: float = clampf((slope - 0.18) * 5.0, 0.0, 1.0) + clampf((h - 14.0) / 20.0, 0.0, 1.0)
 	rock = clampf(rock, 0.0, 1.0)
+	if cfg.get("volcano", false):
+		# black/grey/brown/ash only — no grass weight at any height or slope
+		# (flat caldera floor + spoke bridges would otherwise splat green
+		# tex_grass same as any other low-slope ground). tex_sand carries the
+		# ash/cinder floor instead, darkened by the level's own grey-brown
+		# "tint" (levels.gd volcano.tint); tex_rock still reads as basalt.
+		var ash: float = clampf(1.0 - rock, 0.0, 1.0)
+		return Color(ash, 0.0, rock)
 	var sand: float
 	if cfg.get("dunes", false):
 		var dune_mask: float = clampf((z - 40.0) / 90.0, 0.0, 1.0)
