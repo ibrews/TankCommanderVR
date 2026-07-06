@@ -1,5 +1,6 @@
 # Autoload "NetManager": LAN multiplayer over ENet with UDP-broadcast
-# discovery (same Wi-Fi, zero config).
+# discovery (same Wi-Fi, zero config), plus a Cloudflare WebSocket relay
+# fallback for when the two headsets aren't on the same LAN.
 #
 # CO-OP: host simulates everything. Host station = driver + MG; client is the
 # gunner (turret, cannon, breech, rockets) in a puppet tank that mirrors host
@@ -8,13 +9,34 @@
 #
 # VERSUS: each peer simulates its own tank; opponents appear as a replica
 # body. Shooter detects hits on the replica and RPCs damage to the victim.
+#
+# TWO TRANSPORTS, kept deliberately un-intertwined:
+#   ENET  — Godot's own multiplayer_peer + @rpc. LAN only. _peer holds it.
+#   RELAY — a WebSocketPeer talking JSON to the deployed worker's broadcast
+#           relay. _relay holds it. RPCs don't exist here; every send is a
+#           manual put_packet and every receive is dispatched by _relay_recv.
+# _transport says which one is live. The rest of the codebase only ever calls
+# host()/search()/leave() + the same s_*/c_*/v_* senders; those fan out to the
+# right transport internally so callers never learn there are two.
 extends Node
 
 signal join_found(cfg: Dictionary)
+# Relay-only lifecycle for the menu to surface ("reconnecting...", "lost").
+signal relay_status(text: String)
 
 const PORT := 40123
 const BCAST := 40124
 const SNAP_HZ := 15.0
+
+# --- relay ---
+const RELAY_URL := "wss://tank-commander.alexcoulombe.workers.dev/ws"
+const RELAY_ROOM := "main"                 # always-on fallback room
+const LAN_SEARCH_TIMEOUT := 4.0            # give the LAN beacon this long, then relay
+const RECONNECT_MAX := 6                   # attempts before giving up
+const RECONNECT_CAP := 15.0                # backoff ceiling (s)
+
+enum Transport { NONE, ENET, RELAY }
+var _transport := Transport.NONE
 
 var hosting := false
 var client := false
@@ -26,6 +48,17 @@ var _beacon: PacketPeerUDP
 var _listen: PacketPeerUDP
 var _beacon_t := 0.0
 var _snap_t := 0.0
+
+# --- relay state ---
+var _relay: WebSocketPeer = null
+var _relay_id := ""                        # our id from 'welcome'
+var _relay_host := false                   # are WE the relay room's host?
+var _relay_roster := {}                    # id -> color, for has_player()
+var _search_t := 0.0                       # LAN-beacon countdown before relay
+var _reconnect_at := 0.0                   # seconds until next reconnect try
+var _reconnect_left := 0                   # attempts remaining
+var _relay_want_open := false              # true while we intend to stay connected
+var _relay_cfg := {}                       # {mode,level,diff} chosen at connect time
 
 var tank: PlayerTank = null          # coop tank (both sides) / my tank (versus)
 var replicas: ReplicaPool = null     # client: enemy visuals
@@ -83,13 +116,18 @@ func i_am_gunner() -> bool:
 		return true
 	return hosting != driver_is_host
 
+# "someone else is here." ENet: gate on the peer_connected signal via
+# _peer_up, not just get_peers().size() -- the host used to start blasting
+# authority-RPCs (s_coop_snap/s_driver_head, 15 Hz, with the enemy Array
+# payload) the instant the peer count ticked up, which on-device is
+# mid-ENet-handshake -- the peer's channel isn't ready and the host would
+# push into a half-open connection ("multiplayer peer which is not
+# connected"). _peer_up only flips true once ENet confirms the link. RELAY:
+# the room roster has anyone besides us. Both gate the same snapshot-send
+# logic in _process().
 func has_player() -> bool:
-	# Gate on the peer_connected signal, not just get_peers().size(): the host
-	# used to start blasting authority-RPCs (s_coop_snap/s_driver_head, 15 Hz,
-	# with the enemy Array payload) the instant the peer count ticked up, which
-	# on-device is mid-ENet-handshake — the peer's channel isn't ready and the
-	# host would push into a half-open connection ("multiplayer peer which is
-	# not connected"). _peer_up only flips true once ENet confirms the link.
+	if _transport == Transport.RELAY:
+		return _relay_roster.size() > 0
 	return _peer_up
 
 func leave() -> void:
@@ -104,6 +142,16 @@ func leave() -> void:
 		_peer.close()
 		_peer = null
 	multiplayer.multiplayer_peer = null
+	_relay_want_open = false
+	if _relay:
+		_relay.close()
+		_relay = null
+	_relay_id = ""
+	_relay_host = false
+	_relay_roster.clear()
+	_reconnect_left = 0
+	_relay_cfg = {}
+	_transport = Transport.NONE
 	hosting = false
 	client = false
 	searching = false
@@ -125,6 +173,7 @@ func leave() -> void:
 
 func host() -> void:
 	leave()
+	_transport = Transport.ENET
 	_peer = ENetMultiplayerPeer.new()
 	_peer.create_server(PORT, 1)
 	multiplayer.multiplayer_peer = _peer
@@ -159,11 +208,59 @@ func search() -> void:
 	_listen = PacketPeerUDP.new()
 	_listen.bind(BCAST)
 	searching = true
-	print("[net] searching for host beacon...")
+	_search_t = LAN_SEARCH_TIMEOUT     # ...then fall through to the relay
+	print("[net] searching for host beacon (relay fallback in %ds)..." % int(LAN_SEARCH_TIMEOUT))
+
+# =============================================================== RELAY FALLBACK
+# Reached when search()'s LAN beacon-listen window elapses with no host found.
+# We join the shared room; the worker's 'welcome' tells us if we're host.
+func _start_relay(cfg := {}) -> void:
+	# tear the LAN listen down but keep the join_found contract alive
+	if _listen:
+		_listen.close()
+		_listen = null
+	searching = false
+	_transport = Transport.RELAY
+	_relay_cfg = cfg
+	_relay_want_open = true
+	_reconnect_left = RECONNECT_MAX
+	relay_status.emit("connecting to online room...")
+	_relay_open()
+
+func _relay_open() -> void:
+	_relay = WebSocketPeer.new()
+	var url := "%s/%s" % [RELAY_URL, RELAY_ROOM]
+	var err := _relay.connect_to_url(url)
+	if err != OK:
+		push_warning("[net] relay connect_to_url failed: %s" % err)
+		_relay_schedule_reconnect()
+		return
+	print("[net] relay connecting to ", url)
+
+# Exponential backoff: 1,2,4,8,15,15... capped, give up after RECONNECT_MAX.
+func _relay_schedule_reconnect() -> void:
+	if not _relay_want_open:
+		return
+	if _reconnect_left <= 0:
+		relay_status.emit("connection lost")
+		print("[net] relay gave up after reconnects")
+		leave()
+		return
+	var attempt := RECONNECT_MAX - _reconnect_left
+	_reconnect_at = minf(RECONNECT_CAP, pow(2.0, attempt))
+	_reconnect_left -= 1
+	_relay = null
+	relay_status.emit("reconnecting in %ds..." % int(ceil(_reconnect_at)))
+	print("[net] relay reconnect in %.0fs (%d left)" % [_reconnect_at, _reconnect_left])
+
+func _relay_send(msg: Dictionary) -> void:
+	if _relay == null or _relay.get_ready_state() != WebSocketPeer.STATE_OPEN:
+		return
+	_relay.put_packet(JSON.stringify(msg).to_utf8_buffer())
 
 func _process(delta: float) -> void:
 	# host beacon (until someone joins)
-	if hosting and _beacon and not has_player():
+	if hosting and _transport == Transport.ENET and _beacon and not has_player():
 		_beacon_t -= delta
 		if _beacon_t <= 0.0:
 			_beacon_t = 1.0
@@ -186,7 +283,17 @@ func _process(delta: float) -> void:
 			multiplayer.connected_to_server.connect(func():
 				join_found.emit({"mode": int(parts[1]), "level": parts[2], "diff": int(parts[3])}),
 				CONNECT_ONE_SHOT)
-	# snapshots
+	# no LAN host within the window -> fall through to the online relay room
+	if searching:
+		_search_t -= delta
+		if _search_t <= 0.0:
+			print("[net] no LAN host; falling back to relay room '%s'" % RELAY_ROOM)
+			_start_relay()
+	# relay pump: reconnect countdown + poll + snapshots handled below
+	if _transport == Transport.RELAY:
+		_relay_process(delta)
+		return
+	# snapshots (ENet)
 	if Game.state != Game.GState.PLAYING or not active():
 		return
 	_snap_t -= delta
@@ -211,6 +318,190 @@ func _process(delta: float) -> void:
 			elif Game.mode == Game.Mode.VERSUS:
 				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
 					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
+
+# --------------------------------------------------------------- relay per-frame
+func _relay_process(delta: float) -> void:
+	# waiting on a scheduled reconnect
+	if _relay == null:
+		if not _relay_want_open:
+			return
+		_reconnect_at -= delta
+		if _reconnect_at <= 0.0:
+			_relay_open()
+		return
+	_relay.poll()
+	var st := _relay.get_ready_state()
+	if st == WebSocketPeer.STATE_OPEN:
+		while _relay.get_available_packet_count() > 0:
+			_relay_recv(_relay.get_packet())
+	elif st == WebSocketPeer.STATE_CLOSED:
+		# unexpected drop while we still want to be connected -> backoff retry
+		if _relay_want_open:
+			_relay_roster.clear()
+			push_warning("[net] relay closed (code %d); reconnecting" % _relay.get_close_code())
+			_relay_schedule_reconnect()
+		return
+	# STATE_CONNECTING / STATE_CLOSING: just keep polling next frame
+	# snapshots over the relay (only once OPEN and playing)
+	if st != WebSocketPeer.STATE_OPEN or Game.state != Game.GState.PLAYING or not active():
+		return
+	_snap_t -= delta
+	if _snap_t <= 0.0:
+		_snap_t = 1.0 / SNAP_HZ
+		_relay_send_snapshot()
+
+# ------------------------------------------------------------- relay: receive
+# The worker hands us: welcome/join/leave (roster), verbatim 'state' from other
+# peers, and byId/byColor/byHost-stamped one-off typed messages. We map those
+# back onto the same s_*/c_*/v_* handlers the ENet path already uses.
+func _relay_recv(bytes: PackedByteArray) -> void:
+	var env = JSON.parse_string(bytes.get_string_from_utf8())
+	if typeof(env) != TYPE_DICTIONARY:
+		return
+	match env.get("type", ""):
+		"welcome":
+			_relay_id = str(env.get("id", ""))
+			_relay_host = bool(env.get("host", false))
+			_relay_roster.clear()
+			for r in env.get("roster", []):
+				var rid := str(r.get("id", ""))
+				if rid != _relay_id:
+					_relay_roster[rid] = r.get("color", "")
+			# reconnect succeeded: refresh the budget for next time
+			_reconnect_left = RECONNECT_MAX
+			# host drives coop sim; everyone else is a client (gunner/opponent)
+			hosting = _relay_host
+			client = not _relay_host
+			print("[net] relay welcome id=%s host=%s roster=%d" % [_relay_id, _relay_host, _relay_roster.size()])
+			relay_status.emit("connected (%s)" % ("host" if _relay_host else "guest"))
+			# first connect: hand main.gd a level cfg the same way join_found does
+			if not _relay_cfg.get("_emitted", false):
+				_relay_cfg["_emitted"] = true
+				join_found.emit({
+					"mode": _relay_cfg.get("mode", Game.mode),
+					"level": _relay_cfg.get("level", Game.level_id),
+					"diff": _relay_cfg.get("diff", Game.difficulty),
+				})
+		"join":
+			var jid := str(env.get("id", ""))
+			if jid != _relay_id:
+				_relay_roster[jid] = env.get("color", "")
+			relay_status.emit("player joined")
+		"leave":
+			_relay_roster.erase(str(env.get("id", "")))
+			relay_status.emit("player left")
+		"state":
+			_relay_apply_state(env.get("s", {}))
+		# one-off typed messages (stamped byId/byColor/byHost by the worker)
+		"evt":
+			_relay_apply_evt(env)
+		_:
+			pass
+
+# high-frequency snapshot, shaped per role/mode, sent as {type:'state', s:{...}}
+func _relay_send_snapshot() -> void:
+	if hosting and has_player():
+		if Game.mode == Game.Mode.COOP and tank:
+			_relay_send({"type": "state", "s": _coop_snap_dict()})
+		elif Game.mode == Game.Mode.VERSUS and tank:
+			_relay_send({"type": "state", "s": _versus_state_dict()})
+	elif client and tank:
+		if Game.mode == Game.Mode.COOP:
+			_relay_send({"type": "state", "s": {
+				"k": "gunner",
+				"in": _v2(tank.turret_input),
+				"head": _t3(_my_head_rel()),
+				"hl": _t3(_my_hand_rel(true)),
+				"hr": _t3(_my_hand_rel(false)),
+				"mf": _my_move_flags(),
+			}})
+		elif Game.mode == Game.Mode.VERSUS:
+			_relay_send({"type": "state", "s": _versus_state_dict()})
+
+func _coop_snap_dict() -> Dictionary:
+	var enemies: Array = []
+	for grp in ["enemies", "planes"]:
+		for n in get_tree().get_nodes_in_group(grp):
+			if not n is Node3D:
+				continue
+			var type := 0
+			var aux := 0.0
+			if n is EnemyTank:
+				type = 0
+				aux = n.turret.rotation.y
+			elif n is EnemyPlane:
+				type = 1
+			elif n is EnemyLight.Jeep:
+				type = 2
+			elif n is EnemyLight.Gunner:
+				type = 3
+			elif n is EnemyLight.Mortar:
+				type = 4
+			enemies.append([type, n.get_instance_id(), _t3(n.global_transform), aux])
+	return {
+		"k": "coop",
+		"t": _t3(tank.global_transform), "ty": tank.turret.rotation.y, "ge": tank.gun_elev,
+		"hp": Game.hp, "ammo": tank.ammo, "rk": tank.rockets_left, "ld": tank.loaded,
+		"eng": tank.engine_on, "wave": Game.wave, "score": Game.score, "en": enemies,
+		"head": _t3(_my_head_rel()), "hl": _t3(_my_hand_rel(true)), "hr": _t3(_my_hand_rel(false)),
+		"mf": _my_move_flags(),
+	}
+
+func _versus_state_dict() -> Dictionary:
+	return {
+		"k": "versus",
+		"t": _t3(tank.global_transform), "ty": tank.turret.rotation.y, "ge": tank.gun_elev,
+		"head": _t3(_my_head_rel()), "hl": _t3(_my_hand_rel(true)), "hr": _t3(_my_hand_rel(false)),
+		"mf": _my_move_flags(),
+	}
+
+# apply an incoming state dict from the other peer (reuses ENet-path handlers)
+func _relay_apply_state(s: Dictionary) -> void:
+	match s.get("k", ""):
+		"coop":
+			var enemies: Array = []
+			for e in s.get("en", []):
+				enemies.append([int(e[0]), int(e[1]), _un_t3(e[2]), float(e[3])])
+			s_coop_snap(_un_t3(s["t"]), s["ty"], s["ge"], s["hp"], int(s["ammo"]),
+				int(s["rk"]), s["ld"], s["eng"], int(s["wave"]), int(s["score"]), enemies)
+			s_driver_head(_un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
+		"gunner":
+			c_gunner(_un_v2(s["in"]), _un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
+		"versus":
+			s_versus_state(_un_t3(s["t"]), s["ty"], s["ge"], _un_t3(s["head"]),
+				_un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
+
+# apply a one-off typed event {type:'evt', e:<name>, ...}
+func _relay_apply_evt(env: Dictionary) -> void:
+	match env.get("e", ""):
+		"c_event": c_event(env.get("kind", ""))
+		"s_shot":
+			if projectiles:
+				projectiles.fire(int(env["kind"]), _un_v3(env["pos"]), _un_v3(env["vel"]), [], true)
+		"v_i_died": v_i_died()
+		"v_shot":
+			if projectiles:
+				projectiles.fire(int(env["kind"]), _un_v3(env["pos"]), _un_v3(env["vel"]), [], true, true)
+		"v_damage": v_damage(float(env.get("amount", 0.0)))
+
+# ---- (de)serialization helpers: JSON only carries floats/arrays, so pack
+# Transform3D/Vector2/Vector3 into plain number arrays and back.
+func _t3(t: Transform3D) -> Array:
+	var b := t.basis
+	var o := t.origin
+	return [b.x.x, b.x.y, b.x.z, b.y.x, b.y.y, b.y.z, b.z.x, b.z.y, b.z.z, o.x, o.y, o.z]
+
+func _un_t3(a) -> Transform3D:
+	if typeof(a) != TYPE_ARRAY or a.size() < 12:
+		return Transform3D()
+	return Transform3D(
+		Basis(Vector3(a[0], a[1], a[2]), Vector3(a[3], a[4], a[5]), Vector3(a[6], a[7], a[8])),
+		Vector3(a[9], a[10], a[11]))
+
+func _v2(v: Vector2) -> Array: return [v.x, v.y]
+func _un_v2(a) -> Vector2: return Vector2(a[0], a[1]) if typeof(a) == TYPE_ARRAY else Vector2.ZERO
+func _v3(v: Vector3) -> Array: return [v.x, v.y, v.z]
+func _un_v3(a) -> Vector3: return Vector3(a[0], a[1], a[2]) if typeof(a) == TYPE_ARRAY else Vector3.ZERO
 
 # ================================================================ CO-OP
 # Driving/engine controls that belong to whoever holds the DRIVER seat.
@@ -347,8 +638,20 @@ func s_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
 		projectiles.fire(kind, pos, vel, [], true)
 
 func broadcast_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
-	if hosting and has_player():
+	if not (hosting and has_player()):
+		return
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "s_shot", "kind": kind, "pos": _v3(pos), "vel": _v3(vel), "echo": false})
+	else:
 		s_shot.rpc(kind, pos, vel)
+
+# Client gunner -> host, applied to the authoritative tank (fire/breech/rockets).
+# Wrapper so player_tank.gd stays transport-agnostic (was c_event.rpc_id(1,...)).
+func send_client_event(kind: String) -> void:
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "c_event", "kind": kind, "echo": false})
+	else:
+		c_event.rpc_id(1, kind)
 
 # ================================================================ VERSUS
 func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank: PlayerTank) -> void:
@@ -378,7 +681,10 @@ func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank:
 func _on_versus_death() -> void:
 	if Game.mode != Game.Mode.VERSUS or not active():
 		return
-	v_i_died.rpc()
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "v_i_died", "echo": false})
+	else:
+		v_i_died.rpc()
 	Game.their_kills += 1
 	# team mode: my death is a point for the OTHER team (the killer's)
 	if Game.team_mode:
@@ -411,8 +717,19 @@ func v_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
 		projectiles.fire(kind, pos, vel, [], true, true)  # visual only
 
 func versus_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
-	if active() and Game.mode == Game.Mode.VERSUS:
+	if not (active() and Game.mode == Game.Mode.VERSUS):
+		return
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "v_shot", "kind": kind, "pos": _v3(pos), "vel": _v3(vel), "echo": false})
+	else:
 		v_shot.rpc(kind, pos, vel)
+
+# Symmetric pvp damage sent to the victim (from RemoteTank.take_damage).
+func send_damage(amount: float) -> void:
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "v_damage", "amount": amount, "echo": false})
+	else:
+		v_damage.rpc(amount)
 
 @rpc("any_peer", "reliable")
 func v_damage(amount: float) -> void:
@@ -701,7 +1018,7 @@ class RemoteTank:
 
 	func take_damage(amount: float, at: Vector3) -> void:
 		Sfx.play_at("hit", at, -4.0)
-		NetManager.v_damage.rpc(amount)
+		NetManager.send_damage(amount)   # routes to ENet rpc or relay
 
 
 class ReplicaPool:

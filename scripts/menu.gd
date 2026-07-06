@@ -35,6 +35,15 @@ var _buttons: Array[Dictionary] = []
 var _labels_to_clear: Array[Node] = []
 var _hovered: Dictionary = {}
 
+# persistent status line (join/relay progress) — survives page rebuilds so it
+# doesn't leak a fresh Label3D on every relay_status tick.
+var _status: Label3D = null
+# log upload plumbing
+const LOG_URL := "https://tank-commander.alexcoulombe.workers.dev/logs"
+const LOG_PATH := "user://logs/godot.log"
+var _http: HTTPRequest = null
+var _upload_btn: Dictionary = {}
+
 const HOWTO := [
 	"",  # page 0 unused
 	"STARTING THE TANK\n\n1. Flip BATTERY (left console)\n2. Open FUEL PUMP cover, flip switch\n3. HOLD green STARTER until the engine catches\n4. Shift GEAR to D (right pedestal)\n\nOr press X / click left stick for auto-start.",
@@ -51,6 +60,9 @@ var is_pause_overlay := false
 
 func _ready() -> void:
 	add_to_group("menu")
+	_http = HTTPRequest.new()
+	add_child(_http)
+	_http.request_completed.connect(_on_log_uploaded)
 	_build_board()
 	_show_main()
 	if is_pause_overlay:
@@ -161,13 +173,16 @@ func _show_main() -> void:
 	_button("turntoggle", "TURN: SMOOTH" if Game.smooth_turn else "TURN: SNAP", Vector2(-0.78, -0.58), Vector2(0.5, 0.13), 12)
 	_button("sprinttoggle", "STICK SPRINT: ON" if Game.sprint_stick else "STICK SPRINT: OFF", Vector2(-0.19, -0.58), Vector2(0.62, 0.13), 12)
 	_button("start", "START!", Vector2(0.62, -0.58), Vector2(0.58, 0.19), 26)
-	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.74), 11, Color(0.55, 0.6, 0.55))
-	_text("secret: squeeze EVERYTHING + A...", Vector2(0.55, -0.855), 10, Color(0.45, 0.5, 0.45))
+	# help/support: ship this session's log to the relay for triage
+	_button("uploadlog", "UPLOAD LOG", Vector2(-0.85, -0.70), Vector2(0.42, 0.11), 11)
+	_upload_btn = _buttons.back()
+	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.15, -0.70), 11, Color(0.55, 0.6, 0.55))
+	_text("secret: squeeze EVERYTHING + A...", Vector2(0.55, -0.80), 10, Color(0.45, 0.5, 0.45))
 	# Alex: "we need to list the build number and date on the lobby menu" --
 	# this line already existed but at font size 9 in near-invisible dim
 	# gray, easy to miss entirely. Made it actually readable.
 	_text("BUILD v%s (%d) · %s" % [BuildInfo.VERSION, BuildInfo.CODE, BuildInfo.BUILT],
-		Vector2(-1.02, -0.855), 13, Color(0.75, 0.78, 0.72), true)
+		Vector2(-1.02, -0.80), 13, Color(0.75, 0.78, 0.72), true)
 	_refresh_selection()
 
 func _show_howto(p: int) -> void:
@@ -209,6 +224,48 @@ func _mode_id() -> String:
 		Game.Mode.VERSUS: return "mode:versus"
 		Game.Mode.PLANE: return "mode:plane"
 		_: return "mode:solo"
+
+# ---------------- status line (join / relay progress)
+# One reusable label near the board's foot; safe to call from signals.
+func set_status(txt: String) -> void:
+	if _status == null or not is_instance_valid(_status):
+		_status = Label3D.new()
+		_status.font_size = 14 * 4
+		_status.pixel_size = 0.0004
+		_status.modulate = Color(1.0, 0.85, 0.55)
+		_status.position = Vector3(0, -0.80, 0.014)
+		add_child(_status)
+	_status.text = txt
+
+# ---------------- log upload (plain HTTP POST, not the websocket relay)
+func _upload_log() -> void:
+	_set_upload_label("Uploading...")
+	if not FileAccess.file_exists(LOG_PATH):
+		_set_upload_label("No log yet")
+		return
+	var f := FileAccess.open(LOG_PATH, FileAccess.READ)
+	if f == null:
+		_set_upload_label("Read failed")
+		return
+	var body := f.get_as_text()
+	f.close()
+	var dev := OS.get_unique_id()
+	if dev.is_empty():
+		dev = OS.get_model_name()
+	var url := "%s?device=%s&kind=manual" % [LOG_URL, dev.uri_encode()]
+	var err := _http.request(url, ["Content-Type: text/plain"], HTTPClient.METHOD_POST, body)
+	if err != OK:
+		_set_upload_label("Failed")
+
+func _on_log_uploaded(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
+	if result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300:
+		_set_upload_label("Uploaded!")
+	else:
+		_set_upload_label("Failed (%d)" % code)
+
+func _set_upload_label(txt: String) -> void:
+	if _upload_btn.has("label") and is_instance_valid(_upload_btn["label"]):
+		_upload_btn["label"].text = txt
 
 # ---------------- pointer interface (called by the rigs)
 # Returns true if the ray hits the panel (for laser length/visuals).
@@ -273,6 +330,8 @@ func _press(id: String) -> void:
 			Game.sprint_stick = not Game.sprint_stick
 			Game.save_prefs()
 			_show_main()
+		"uploadlog":
+			_upload_log()
 		"vehcycle":
 			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()
 			vehicle_changed.emit(VEHICLES[sel_vehicle][0])
