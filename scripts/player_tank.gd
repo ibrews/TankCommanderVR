@@ -111,6 +111,9 @@ func _ready() -> void:
 	Game.game_restarted.connect(_on_restart)
 	Game.score_changed.connect(func(_s): _update_plaque())
 	Game.wave_changed.connect(func(_w): _update_plaque())
+	Game.kills_changed.connect(_update_plaque)
+	Game.round_state_changed.connect(_update_plaque)
+	Game.round_ended.connect(_on_round_ended)
 	# spawn placement
 	global_position = Vector3(Terrain.SPAWN_CENTER.x, 0, Terrain.SPAWN_CENTER.y)
 	global_position.y = terrain.height(global_position.x, global_position.z) + 0.04
@@ -447,13 +450,43 @@ func _set_lamp(name_: String, on: bool) -> void:
 		lamp["mat"].emission_energy_multiplier = 1.5
 
 func _update_plaque() -> void:
+	var clock := ""
+	if Game.round_active:
+		clock = "  %d:%02d" % [int(Game.round_left) / 60, int(Game.round_left) % 60]
 	if Game.mode == Game.Mode.VERSUS:
-		cockpit["labels"]["plaque"].text = "YOU %d    THEM %d" % [Game.my_kills, Game.their_kills]
+		if Game.team_mode:
+			cockpit["labels"]["plaque"].text = "RED %d   BLUE %d%s" % [
+				int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0)), clock]
+		else:
+			cockpit["labels"]["plaque"].text = "YOU %d    THEM %d%s" % [Game.my_kills, Game.their_kills, clock]
 	else:
-		cockpit["labels"]["plaque"].text = "WAVE %d   SCORE %d   %s" % [maxi(Game.wave, 1), Game.score, Game.diff_name()]
+		cockpit["labels"]["plaque"].text = "WAVE %d   SCORE %d   %s%s" % [maxi(Game.wave, 1), Game.score, Game.diff_name(), clock]
+
+# End-of-round tally, shown on the cockpit plaque + a big centered hint. Both
+# peers land here (host detects expiry in NetManager.tick_round and RPCs
+# s_round_end to the client), so the screen is identical on both headsets.
+func _on_round_ended(summary: Dictionary) -> void:
+	var win: String = summary.get("winner", "TIE")
+	var line := ""
+	if summary.get("team_mode", false):
+		line = "RED %d  BLUE %d\nWINNER: %s" % [summary.get("red", 0), summary.get("blue", 0), win]
+	else:
+		line = "YOU %d  THEM %d\nWINNER: %s" % [summary.get("you", 0), summary.get("them", 0), win]
+	cockpit["labels"]["plaque"].text = "ROUND OVER"
+	cockpit["labels"]["hint"].text = "ROUND OVER\n" + line
+	Sfx.sting("sting_over")
 
 # ------------------------------------------------------------------ per-frame
+var _plaque_t := 0.0
+
 func _physics_process(delta: float) -> void:
+	# tick the cockpit clock ~1 Hz while a round runs (round_state_changed only
+	# fires on score/state changes, not every second)
+	if Game.round_active:
+		_plaque_t -= delta
+		if _plaque_t <= 0.0:
+			_plaque_t = 1.0
+			_update_plaque()
 	if puppet:
 		_puppet_update(delta)
 		return
@@ -558,6 +591,10 @@ func effective_drive() -> Vector2:
 			return Vector2(l, r)
 
 func _update_drive(delta: float) -> void:
+	# Seat-swapped coop: the host is physics authority but the CLIENT holds the
+	# driver seat, so its streamed stick vector (driver_input) feeds our drive.
+	if NetManager.hosting and Game.mode == Game.Mode.COOP and not NetManager.i_am_driver():
+		stick_drive = NetManager.driver_input
 	var cmd := effective_drive() if (engine_on and Game.alive) else Vector2.ZERO
 	var mud: float = lerpf(Tune.v("mud_slow"), 1.0, 1.0 if Levels.mud_factor(global_position) >= 1.0 else 0.0)
 	var target_fwd := (cmd.x + cmd.y) * 0.5 * Tune.v("tank_max_speed") * mud * Game.speed_scale()
@@ -646,7 +683,11 @@ func _align(delta: float) -> void:
 
 func _update_turret(delta: float) -> void:
 	var inp := turret_input
-	if NetManager.hosting and Game.mode == Game.Mode.COOP:
+	# Host is physics authority; the turret is driven by whoever holds the
+	# GUNNER seat. Default coop: gunner is the client, so use the input it
+	# streams up (gunner_input). After a seat swap the host itself is the
+	# gunner — fall through to its own local grip/stick below.
+	if NetManager.hosting and Game.mode == Game.Mode.COOP and not NetManager.i_am_gunner():
 		inp = NetManager.gunner_input   # the gunner (client) owns the turret
 	elif inp.length() < 0.05 and stick_turret.length() > 0.08:
 		inp = stick_turret
