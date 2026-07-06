@@ -132,7 +132,7 @@ func _build() -> void:
 	root.add_child(speed_label)
 	if Game.help_on:
 		var hint := Label3D.new()
-		hint.text = "THROTTLE LEFT · GRAB WHEEL TO STEER · STICK AIMS GUN · RED = ROCKETS"
+		hint.text = "THROTTLE OR RIGHT TRIGGER · GRAB WHEEL TO STEER · STICK AIMS GUN · RED = ROCKETS"
 		hint.font_size = 44
 		hint.pixel_size = 0.0003
 		hint.modulate = Color(1.0, 0.8, 0.35)

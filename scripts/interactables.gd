@@ -190,6 +190,101 @@ class TwoAxisGrip:
 		deflection_changed.emit(deflection)
 
 
+# ============================================================ SteeringWheel
+# A real wheel prop (rim + spokes + hub, faces the driver along local -Z) —
+# grab the rim and turn it like a car wheel, unlike TwoAxisGrip's pistol-grip
+# stick (which the jeep used to reuse for steering — no wheel to visually
+# grab/turn, per Alex). Tracks the grabbing hand's angle around the wheel's
+# own forward axis rather than a linear offset, so twisting your wrist all
+# the way around actually spins the rim. `value` -1..1 (left..right lock),
+# springs back toward center like a real unweighted wheel when released.
+class SteeringWheel:
+	extends VRControl
+
+	const RIM_RADIUS := 0.16
+	const MAX_TURN := deg_to_rad(120.0)   # lock-to-lock authority either way
+
+	var wheel_mesh: Node3D
+	var value := 0.0
+	var auto_center := true
+	var center_rate := 1.6
+	var _grab_ang := 0.0
+	var _grab_value := 0.0
+
+	static func create(rim_col := Color(0.16, 0.16, 0.17)) -> SteeringWheel:
+		var w := SteeringWheel.new()
+		w.grab_radius = RIM_RADIUS + 0.05
+		w.wheel_mesh = Node3D.new()
+		w.add_child(w.wheel_mesh)
+		var st := MeshKit.begin()
+		# rim: ring of short angled cylinder segments (same technique as the
+		# parachute's suspension lines) — no torus primitive in MeshKit
+		var segs := 16
+		var tube_r := 0.014
+		for i in segs:
+			var a0 := TAU * i / segs
+			var a1 := TAU * (i + 1) / segs
+			var p0 := Vector3(cos(a0), sin(a0), 0) * RIM_RADIUS
+			var p1 := Vector3(cos(a1), sin(a1), 0) * RIM_RADIUS
+			var mid := (p0 + p1) * 0.5
+			var seg_len: float = p0.distance_to(p1)
+			var tf := Transform3D(Basis(Vector3.FORWARD, (a0 + a1) * 0.5 + PI / 2.0), mid)
+			MeshKit.cyl(st, tf, tube_r, tube_r, seg_len * 1.05, 6, rim_col)
+		# 3 spokes, hub
+		for i in 3:
+			var a := TAU * i / 3.0 + PI / 2.0
+			var mid_s := Vector3(cos(a), sin(a), 0) * RIM_RADIUS * 0.52
+			var tf_s := Transform3D(Basis(Vector3.FORWARD, a + PI / 2.0), mid_s)
+			MeshKit.cyl(st, tf_s, 0.012, 0.012, RIM_RADIUS * 0.9, 6, rim_col * 0.9)
+		MeshKit.cyl(st, Transform3D(Basis(Vector3.RIGHT, PI / 2.0)), 0.05, 0.045, 0.05, 10, rim_col * 0.85)
+		var mesh := MeshInstance3D.new()
+		mesh.mesh = MeshKit.commit(st, w._make_handle_mat(rim_col))
+		mesh.material_override = w._handle_mat
+		w.wheel_mesh.add_child(mesh)
+		w.handle = mesh
+		return w
+
+	# Grabbable anywhere on the rim, not just dead-center top — same "rim, not
+	# hub" feel as a real wheel. Rig picks the nearest control by grab_point()
+	# distance; the rim-top point is close enough for that check everywhere a
+	# hand would plausibly reach for it.
+	func grab_point() -> Vector3:
+		return to_global(Vector3(0, RIM_RADIUS, 0))
+
+	func on_grab(hand: Node) -> void:
+		super.on_grab(hand)
+		var local := to_local(hand.global_position)
+		_grab_ang = atan2(local.y, local.x)
+		_grab_value = value
+		_haptic(0.4, 0.02)
+
+	func on_hand_update(hand_pos: Vector3) -> void:
+		var local := to_local(hand_pos)
+		var ang := atan2(local.y, local.x)
+		# Negated: atan2 winds counter-clockwise in the wheel's own local
+		# frame, but the wheel FACES the driver (its local +Z looks back at
+		# them) — so a physically clockwise turn (right hand pulls down, as
+		# in a real car turning right) is a DECREASING raw angle. Flipping
+		# here makes `value` positive for a driver-clockwise/right turn,
+		# matching every other steer signal in this game (positive = right).
+		var d := -wrapf(ang - _grab_ang, -PI, PI)
+		var nv := clampf(_grab_value + d / MAX_TURN, -1.0, 1.0)
+		if absf(nv - value) > 0.001:
+			value = nv
+			wheel_mesh.rotation.z = -value * MAX_TURN
+			value_changed.emit(value)
+
+	func release() -> void:
+		super.release()
+		_haptic(0.2, 0.02)
+
+	func _process(delta: float) -> void:
+		if auto_center and grabbed_by == null and absf(value) > 0.001:
+			value = move_toward(value, 0.0, center_rate * delta)
+			wheel_mesh.rotation.z = -value * MAX_TURN
+			value_changed.emit(value)
+
+
 # ============================================================ PushButton
 # Poke or grab to press. Fires `pressed` once per press; hold detected via is_down.
 class PushButton:

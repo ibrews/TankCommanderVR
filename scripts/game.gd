@@ -36,6 +36,11 @@ var endless := false       # cycle to a random new level every few waves
 var travel_carry := {}     # score/hp/wave preserved across an endless travel
 var help_on := true        # coaching VO + written hints (menu-toggleable)
 var third_person := false  # false = in-cockpit first person (default), true = chase cam
+# On-foot (Runner) locomotion prefs — menu-toggleable, see menu.gd's
+# "turntoggle"/"sprinttoggle" buttons and xr_rig.gd's on-foot movement setup.
+var smooth_turn := false   # false = SNAP turn (default, matches the game's prior no-turn-provider
+                           # feel most closely — discrete steps, not a continuous sweep), true = SMOOTH
+var sprint_stick := true   # stick-forward-past-threshold sprint, layered alongside arm-swing sprint
 var player_mode: int = PlayerMode.SEATED  # SEATED = in a vehicle cockpit, ON_FOOT = walking around
 var paused := false  # mid-mission pause (menu button) — world/level stays alive, unlike GState.MENU
 
@@ -192,10 +197,14 @@ func _ready() -> void:
 	var cf := ConfigFile.new()
 	if cf.load("user://prefs.cfg") == OK:
 		help_on = cf.get_value("prefs", "help_on", true)
+		smooth_turn = cf.get_value("prefs", "smooth_turn", false)
+		sprint_stick = cf.get_value("prefs", "sprint_stick", true)
 
 func save_prefs() -> void:
 	var cf := ConfigFile.new()
 	cf.set_value("prefs", "help_on", help_on)
+	cf.set_value("prefs", "smooth_turn", smooth_turn)
+	cf.set_value("prefs", "sprint_stick", sprint_stick)
 	cf.save("user://prefs.cfg")
 
 func diff(easy: float, med: float, hard: float) -> float:

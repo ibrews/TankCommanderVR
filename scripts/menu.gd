@@ -38,8 +38,8 @@ var _hovered: Dictionary = {}
 const HOWTO := [
 	"",  # page 0 unused
 	"STARTING THE TANK\n\n1. Flip BATTERY (left console)\n2. Open FUEL PUMP cover, flip switch\n3. HOLD green STARTER until the engine catches\n4. Shift GEAR to D (right pedestal)\n\nOr press X / click left stick for auto-start.",
-	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr just use the LEFT STICK.\nWatch the mud — it slows you down.\n\nGETTING OUT: hold the LEFT TRIGGER for one\nsecond (or pull the yellow HATCH lever).\nTo climb back in, walk up to your vehicle\nand squeeze a grip (or hold LEFT TRIGGER).",
-	"FIGHTING\n\nGrab the turret STICK (right pedestal).\nMove it to aim. TRIGGER = cannon.\nAfter each shot pull the red BREECH LEVER to reload.\nA (while gripping) = machine gun.\n\nROCKETS: left console — open the red cover,\nflip ARM, press the big red button.",
+	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr use the LEFT STICK to steer and hold the\nRIGHT TRIGGER for throttle — works in every\nvehicle (tank, jeep, boat, plane).\nWatch the mud — it slows you down.\n\nGETTING OUT: hold the LEFT TRIGGER for one\nsecond (or pull the yellow HATCH lever).\nTo climb back in, walk up to your vehicle\nand squeeze a grip (or hold LEFT TRIGGER).",
+	"FIGHTING\n\nGrab the turret STICK (right pedestal).\nMove it to aim. TRIGGER (while gripping) = cannon.\nEmpty-handed, squeeze GRIP to fire instead —\nthe trigger is busy driving.\nAfter each shot pull the red BREECH LEVER to reload.\nA (while gripping) = machine gun.\n\nROCKETS: left console — open the red cover,\nflip ARM, press the big red button.",
 	"CO-OP + VERSUS (same Wi-Fi)\n\nCO-OP: one headset hosts, the other joins.\nHost DRIVES + machine gun. Friend runs the\nTURRET: cannon, breech, and the heavy rockets.\n\nVERSUS: tank vs tank duel. First to 5 wins.\n\nPLANE MODE: stick + throttle. Bombs away!",
 ]
 
@@ -154,9 +154,15 @@ func _show_main() -> void:
 	_button("namereroll", Game.display_name, Vector2(0.88, 0.63), Vector2(0.5, 0.11), 11)
 	_button("helptoggle", "HELP: ON" if Game.help_on else "HELP: OFF", Vector2(0.72, -0.42), Vector2(0.42, 0.14), 12)
 	_button("viewtoggle", "VIEW: 3RD" if Game.third_person else "VIEW: 1ST", Vector2(1.14, -0.42), Vector2(0.42, 0.14), 12)
-	_button("start", "START!", Vector2(0.55, -0.62), Vector2(0.9, 0.20), 28)
-	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.62), 11, Color(0.55, 0.6, 0.55))
-	_text("secret: squeeze EVERYTHING + A...", Vector2(0, -0.78), 11, Color(0.45, 0.5, 0.45))
+	# Runner (on-foot) locomotion prefs — only meaningful once you're walking,
+	# but kept on the main page (not buried in HOWTO, which is read-only text)
+	# same as help/view above so they're reachable without a dedicated menu.
+	_text("RUNNER", Vector2(-1.0, -0.545), 13, Color(0.7, 0.75, 0.7))
+	_button("turntoggle", "TURN: SMOOTH" if Game.smooth_turn else "TURN: SNAP", Vector2(-0.78, -0.58), Vector2(0.5, 0.13), 12)
+	_button("sprinttoggle", "STICK SPRINT: ON" if Game.sprint_stick else "STICK SPRINT: OFF", Vector2(-0.19, -0.58), Vector2(0.62, 0.13), 12)
+	_button("start", "START!", Vector2(0.62, -0.58), Vector2(0.58, 0.19), 26)
+	_text("point + trigger · hands work too: pinch = trigger, squeeze = grab", Vector2(-0.45, -0.74), 11, Color(0.55, 0.6, 0.55))
+	_text("secret: squeeze EVERYTHING + A...", Vector2(0.55, -0.855), 10, Color(0.45, 0.5, 0.45))
 	# Alex: "we need to list the build number and date on the lobby menu" --
 	# this line already existed but at font size 9 in near-invisible dim
 	# gray, easy to miss entirely. Made it actually readable.
@@ -258,6 +264,14 @@ func _press(id: String) -> void:
 			_show_main()
 		"viewtoggle":
 			Game.toggle_camera_mode()
+			_show_main()
+		"turntoggle":
+			Game.smooth_turn = not Game.smooth_turn
+			Game.save_prefs()
+			_show_main()
+		"sprinttoggle":
+			Game.sprint_stick = not Game.sprint_stick
+			Game.save_prefs()
 			_show_main()
 		"vehcycle":
 			sel_vehicle = (sel_vehicle + 1) % VEHICLES.size()

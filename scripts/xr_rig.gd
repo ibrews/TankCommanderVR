@@ -28,6 +28,7 @@ var _pickup_r: XRToolsFunctionPickup
 var _direct_l: XRToolsMovementDirect
 var _direct_r: XRToolsMovementDirect
 var _sprint: XRToolsMovementSprint
+var _turn: XRToolsMovementTurn
 var _climb: XRToolsMovementClimb
 var _grapple_l: XRToolsMovementGrapple
 var _grapple_r: XRToolsMovementGrapple
@@ -617,8 +618,13 @@ func _build_on_foot_nodes() -> void:
 	_direct_l.enabled = false
 	hand_l.add_child(_direct_l)
 	_direct_l.owner = self
+	# Right stick is turning's slot (see _turn below), not movement — strafe
+	# left OFF here so both axes are free. Was strafe=true on both hands,
+	# meaning right-stick X did double duty (strafe AND, if a turn provider
+	# were ever added, turn) with no way to add snap/smooth turning without
+	# the two fighting over the same input.
 	_direct_r = direct_scene.instantiate()
-	_direct_r.strafe = true
+	_direct_r.strafe = false
 	_direct_r.enabled = false
 	hand_r.add_child(_direct_r)
 	_direct_r.owner = self
@@ -628,6 +634,20 @@ func _build_on_foot_nodes() -> void:
 	_sprint.enabled = false
 	add_child(_sprint)
 	_sprint.owner = self
+
+	# Snap/smooth turning (Alex: on-foot needs both as selectable options) —
+	# the addon ships XRToolsMovementTurn already, just never wired up: on
+	# foot previously had no turn binding at all beyond physically rotating
+	# in place, since both direct-movement nodes claimed the full stick on
+	# each hand for translation. Right stick X, mirroring the seated rigs'
+	# left-stick-drives/right-stick-aims split. turn_mode is read fresh each
+	# time on-foot goes active (_set_on_foot_active) so the pause-menu
+	# toggle takes effect immediately without needing a fresh session.
+	var turn_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_turn.tscn")
+	_turn = turn_scene.instantiate()
+	_turn.enabled = false
+	hand_r.add_child(_turn)
+	_turn.owner = self
 
 	var climb_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_climb.tscn")
 	_climb = climb_scene.instantiate()
@@ -667,7 +687,7 @@ func _build_on_foot_nodes() -> void:
 	# ALWAYS down to every child, letting sprint/climb/grapple/pickup keep
 	# reading grip input and moving the player mid-pause. Pin them back to
 	# the normal pausable behavior explicitly.
-	for n in [_pickup_l, _pickup_r, _direct_l, _direct_r, _sprint, _climb, _grapple_l, _grapple_r]:
+	for n in [_pickup_l, _pickup_r, _direct_l, _direct_r, _sprint, _turn, _climb, _grapple_l, _grapple_r]:
 		n.process_mode = Node.PROCESS_MODE_PAUSABLE
 
 	_wire_on_foot_haptics()
@@ -707,6 +727,13 @@ func _set_on_foot_active(active: bool) -> void:
 	_direct_l.enabled = active
 	_direct_r.enabled = active
 	_sprint.enabled = active
+	_turn.enabled = active
+	if active:
+		# Re-read the menu preference on every on-foot entry rather than once
+		# at build time, so picking SNAP vs SMOOTH in the pause menu takes
+		# effect the next time you're on foot without needing a fresh session.
+		_turn.turn_mode = XRToolsMovementTurn.TurnMode.SMOOTH if Game.smooth_turn \
+			else XRToolsMovementTurn.TurnMode.SNAP
 	# Climb/grapple are gated by pickups: even on foot they stay off until the
 	# player has found the gloves / hook. _refresh_power_gates() (also called
 	# by acquire_*() the instant a pickable is grabbed) is the single place
@@ -919,6 +946,7 @@ func _physics_process(delta: float) -> void:
 	_mp_hotkeys(delta)
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_feed_arm_swing(delta)
+		_feed_stick_sprint()
 		_check_reentry()
 		return
 	if tank == null:
@@ -956,10 +984,28 @@ func _physics_process(delta: float) -> void:
 	# drives backward") — i.e. the negation itself was the bug, not the
 	# fix. Reverted to raw. Turret Y stays as the (separately confirmed
 	# correct) non-negated value from the previous round.
-	tank.call("set_stick_drive", Vector2(-_dz(ls.x), _dz(ls.y)))
+	# RIGHT TRIGGER = throttle/forward, standardized across every ground/water/
+	# air vehicle (Alex: right trigger should drive every vehicle forward) —
+	# folded additively into the stick's Y so the left stick still reverses
+	# (trigger only ever pushes forward) and still steers via its X axis.
+	# Heli and the parachute keep their own distinct schemes (collective/
+	# cyclic, drift) where "forward throttle" doesn't apply.
+	var drive_y := _dz(ls.y)
+	if not (tank is PlayerAlt.Heli or tank is PlayerParachute):
+		drive_y = maxf(drive_y, hand_r.effective_trigger())
+	tank.call("set_stick_drive", Vector2(-_dz(ls.x), drive_y))
 	tank.call("set_stick_turret", Vector2(_dz(rs.x), _dz(rs.y)))
+	# Firing moved off the bare right trigger (now throttle) onto the grip
+	# button — squeezing empty-handed fires, same "empty hand" guard the
+	# exit-vehicle hold uses, so grabbing the wheel/turret stick/tillers to
+	# actually steer never fires by accident. Grabbing a TwoAxisGrip control
+	# still fires on trigger while held (unchanged — that hand is already
+	# committed to aiming, not throttling). Parachute is the one exception:
+	# it has no throttle at all, so its trigger keeps its documented
+	# "pull to deploy" behavior instead of moving to the grip.
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
-		var trig := hand_r.effective_trigger() > 0.6
+		var trig := (hand_r.effective_trigger() > 0.6 if tank is PlayerParachute \
+			else hand_r.is_button_pressed("grip_click")) and hand_r.holding == null
 		if trig and not get_meta("rtrig_was", false):
 			tank.call("stick_fire")
 		set_meta("rtrig_was", trig)
@@ -1021,6 +1067,18 @@ func _feed_arm_swing(delta: float) -> void:
 	_prev_hr = hand_r.position
 	_swing = lerpf(_swing, (vl + vr) * 0.5, 6.0 * delta)
 	target.call("set_arm_swing", _swing)
+
+# Stick-based sprint option (Alex: alongside the existing arm-swing sprint) —
+# hold the LEFT stick forward (the same stick that drives on-foot movement,
+# via _direct_l) past SPRINT_THRESHOLD. Menu-toggleable (Game.sprint_stick);
+# purely additive with arm-swing, since OnFootBody composes the two through
+# separate multiplier/velocity paths (see on_foot_body.gd).
+const SPRINT_STICK_THRESHOLD := 0.85
+func _feed_stick_sprint() -> void:
+	if on_foot_body == null or not is_instance_valid(on_foot_body):
+		return
+	var active := Game.sprint_stick and hand_l.get_vector2("primary").y > SPRINT_STICK_THRESHOLD
+	on_foot_body.call("set_stick_sprint", active)
 
 # Re-entry: walk within ~0.6m of the abandoned vehicle's seat anchor and
 # squeeze either grip to climb back in. main.gd tracks current_vehicle across

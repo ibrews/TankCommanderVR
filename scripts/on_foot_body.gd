@@ -23,6 +23,13 @@ var _direct_l: Node = null
 var _direct_r: Node = null
 var _base_speed := 0.0
 var _boost_end_t := 0.0
+# Two independent multiplier sources (energy-drink pickup, stick sprint) —
+# tracked separately and combined multiplicatively in _apply_speed_multiplier()
+# rather than one clobbering max_speed outright, so drinking an energy drink
+# mid-sprint (or sprinting while already boosted) stacks instead of one
+# silently overwriting the other's speed.
+var _drink_mult := 1.0
+var _sprint_mult := 1.0
 
 # Coffee pickup: sharper reflexes, not more speed (see scripts/pickables/
 # coffee.gd) — halves weapon cooldowns (pistol semi-auto + bazooka reload)
@@ -63,7 +70,8 @@ func _physics_process(delta: float) -> void:
 	if _boost_end_t > 0.0:
 		_boost_end_t -= delta
 		if _boost_end_t <= 0.0:
-			_set_speed_multiplier(1.0)
+			_drink_mult = 1.0
+			_apply_speed_multiplier()
 	if _coffee_end_t > 0.0:
 		_coffee_end_t -= delta
 		if _coffee_end_t <= 0.0:
@@ -87,7 +95,8 @@ func register_direct_movement(direct_l: Node, direct_r: Node) -> void:
 	_direct_r = direct_r
 	_base_speed = direct_l.max_speed if direct_l else 3.0
 
-func _set_speed_multiplier(mult: float) -> void:
+func _apply_speed_multiplier() -> void:
+	var mult := _drink_mult * _sprint_mult
 	if _direct_l:
 		_direct_l.max_speed = _base_speed * mult
 	if _direct_r:
@@ -97,7 +106,20 @@ func _set_speed_multiplier(mult: float) -> void:
 # (see scripts/pickables/energy_drink.gd).
 func drink_energy(duration: float, multiplier: float = 1.8) -> void:
 	_boost_end_t = duration
-	_set_speed_multiplier(multiplier)
+	_drink_mult = multiplier
+	_apply_speed_multiplier()
+
+# Stick-based sprint (Alex: add a stick option alongside the existing
+# arm-swing sprint) — hold the left stick forward past a threshold, fed each
+# frame from xr_rig.gd's _feed_stick_sprint(). Menu-toggleable
+# (Game.sprint_stick); layered the same multiplicative way as the energy
+# drink rather than replacing it outright.
+const SPRINT_STICK_MULT := 1.7
+func set_stick_sprint(active: bool) -> void:
+	var want := SPRINT_STICK_MULT if active else 1.0
+	if not is_equal_approx(want, _sprint_mult):
+		_sprint_mult = want
+		_apply_speed_multiplier()
 
 # Coffee pickup: temporary weapon-cooldown cut (faster pistol semi-auto +
 # bazooka reload), not a permanent toggle — same one-shot-timer idiom as
