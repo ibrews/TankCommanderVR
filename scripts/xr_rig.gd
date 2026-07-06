@@ -953,6 +953,21 @@ func _physics_process(delta: float) -> void:
 		else:
 			Game.restart()
 	set_meta("lsc2_was", l_click)
+	# Respawn (left Y) + UI toggle (right B) — Alex: "let's have a respawn
+	# button if all the buttons on the controllers aren't being used" — these
+	# two were completely free (by_button only otherwise gated behind the
+	# both-grips MP-hotkey chord below, never as a bare single press) in
+	# every mode, seated or on-foot.
+	var respawn_pressed := hand_l.is_button_pressed("by_button")
+	if respawn_pressed and not get_meta("respawn_was", false) and Game.alive:
+		Game.restart()
+		hand_l.pulse(0.5, 0.05)
+	set_meta("respawn_was", respawn_pressed)
+	var ui_toggle_pressed := hand_r.is_button_pressed("by_button")
+	if ui_toggle_pressed and not get_meta("ui_toggle_was", false):
+		Game.toggle_ui()
+		hand_r.pulse(0.25, 0.03)
+	set_meta("ui_toggle_was", ui_toggle_pressed)
 	_mp_hotkeys(delta)
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_feed_arm_swing(delta)

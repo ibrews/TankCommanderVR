@@ -317,6 +317,7 @@ func _setup_rig() -> void:
 	rig.process_mode = Node.PROCESS_MODE_ALWAYS
 	add_child(rig)
 	Game.pause_changed.connect(_on_pause_changed)
+	Game.ui_visibility_changed.connect(_on_ui_visibility_changed)
 
 # ---------------------------------------------------------------- pause
 # Alex: "pause menu still doesn't allow me to do anything because it's
@@ -338,6 +339,27 @@ func _setup_rig() -> void:
 # Picking a vehicle-only change while everything else matches routes to
 # _swap_vehicle() (keeps wave/score/terrain); an actual level/mode/diff/
 # mutator change routes to the normal full start_game() teardown.
+# Right-B toggle (Game.ui_visible) — hides the cockpit HUD (ammo/score/
+# plaque/hint labels + gauge needles) for a clean-screenshot / immersion
+# option, per Alex's ask alongside the respawn button. Every vehicle's
+# CockpitBuilder output stores these under uniform dict keys regardless of
+# vehicle type, so one generic pass covers tank/jeep/boat/plane/heli instead
+# of touching each vehicle script individually.
+func _on_ui_visibility_changed(visible_: bool) -> void:
+	_apply_ui_visibility(visible_)
+
+func _apply_ui_visibility(visible_: bool) -> void:
+	if not (rig is XRRig) or rig.tank == null or not is_instance_valid(rig.tank):
+		return
+	var ck: Dictionary = rig.tank.get("cockpit")
+	if ck.is_empty():
+		return
+	for group_key in ["labels", "needles", "lamps"]:
+		var group: Dictionary = ck.get(group_key, {})
+		for v in group.values():
+			if v is Node3D:
+				v.visible = visible_
+
 func _on_pause_changed(is_paused: bool) -> void:
 	if is_paused:
 		_pause_lobby = MainMenu.new()
@@ -1159,6 +1181,7 @@ func enter_vehicle(v: Node3D) -> void:
 	print("[vehicle] entering ", v.name, " at ", at)
 	rig.call("attach_to_vehicle", v)
 	_auto_start_if_third_person(v)
+	_apply_ui_visibility(Game.ui_visible)   # fresh cockpit defaults labels visible; respect a prior toggle
 	# climbing-in clank + seat click, same haptic language as exit_vehicle()
 	Sfx.play_at("switch", at, -2.0, 1.05)
 	Sfx.play_at("click", at, -4.0)

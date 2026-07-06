@@ -223,6 +223,7 @@ class GiantBaby:
 	var _legs: Array = []
 	var _phase := 0.0
 	var _dead := false
+	var _contact_cd := 0.0
 
 	static func spawn(parent: Node3D, t: Terrain, pl: Node3D) -> GiantBaby:
 		var b := GiantBaby.new()
@@ -305,6 +306,28 @@ class GiantBaby:
 				_step_t = 1.45
 				_stomp()
 		global_position.y = terrain.height(global_position.x, global_position.z)
+		_check_contact_damage(delta)
+
+	# Simply standing next to/under the baby between stomp ticks (every
+	# ~1.45s) never dealt any damage — only the scheduled footfall's own
+	# distance check did (Alex, live playtest 2026-07-06: "the baby in the
+	# baby room can't seem to crush me"). This adds real body-contact damage,
+	# independent of the stomp cadence, on its own short cooldown so it reads
+	# as continuous crushing rather than one more timed event.
+	const CONTACT_RADIUS := 11.0   # capsule radius (9.0) + a small margin
+	const CONTACT_PERIOD := 0.6
+	func _check_contact_damage(delta: float) -> void:
+		_contact_cd = maxf(0.0, _contact_cd - delta)
+		if _contact_cd > 0.0 or not player.has_method("take_damage"):
+			return
+		var d := Vector2(global_position.x, global_position.z).distance_to(
+			Vector2(player.global_position.x, player.global_position.z))
+		if d < CONTACT_RADIUS:
+			_contact_cd = CONTACT_PERIOD
+			player.take_damage(Tune.v("baby_contact_dmg"), global_position)
+			if player.has_method("_rumble"):
+				player._rumble(0.4, 0.1)
+			print("[baby] contact damage, dist=", d)
 
 	func _stomp() -> void:
 		var gp := global_position

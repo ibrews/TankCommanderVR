@@ -48,6 +48,7 @@ const DEFAULTS := {
 	"fog_chance": 0.15,   # rolled right after the storm check on the same CLEAR-state timer, so the two never overlap
 	"disaster_cooldown": 180.0,
 	"baby_step_dmg": 30.0,
+	"baby_contact_dmg": 10.0,   # continuous body-contact tick (see _contact_cd in npc.gd) — smaller/more frequent than a stomp, since simply standing next to/under the baby between stomps dealt no damage at all
 	"baby_speed": 3.0,
 	"baby_hp": 400.0,   # big damage sponge — one boss, not a wave regular
 	"volcano_eruption_dmg": 85.0,   # heavy/lethal — most of a full-hp tank in one geyser

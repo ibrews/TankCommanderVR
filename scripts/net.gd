@@ -55,6 +55,7 @@ var _relay_id := ""                        # our id from 'welcome'
 var _relay_host := false                   # are WE the relay room's host?
 var _relay_roster := {}                    # id -> color, for has_player()
 var _search_t := 0.0                       # LAN-beacon countdown before relay
+var _host_relay_t := 0.0                   # host: LAN-wait countdown before ALSO opening the relay
 var _reconnect_at := 0.0                   # seconds until next reconnect try
 var _reconnect_left := 0                   # attempts remaining
 var _relay_want_open := false              # true while we intend to stay connected
@@ -203,6 +204,15 @@ func host() -> void:
 	_beacon.set_broadcast_enabled(true)
 	_beacon.set_dest_address("255.255.255.255", BCAST)
 	print("[net] hosting on :%d, beaconing" % PORT)
+	# If nobody joins over LAN within the window, ALSO open the relay as
+	# host — previously host() was ENet/LAN-only with no relay fallback of
+	# its own (only search()/join had one), so a host + a remote joiner on a
+	# different network could never actually meet, even via the "always-on"
+	# relay room (Alex, live report 2026-07-06: "can't get into a game...
+	# whether we both try to join the cloudflare server or one of us hosts
+	# and the other tries to join"). Mirrors search()'s own LAN-then-relay
+	# pattern. See _process() for the actual fallback trigger.
+	_host_relay_t = LAN_SEARCH_TIMEOUT
 
 func _on_peer_connected(id: int) -> void:
 	# Fresh session state so a re-joiner doesn't inherit the last gunner's
@@ -281,6 +291,27 @@ func _process(delta: float) -> void:
 			_beacon_t = 1.0
 			var msg := "TCVR|%d|%s|%d" % [Game.mode, Game.level_id, Game.difficulty]
 			_beacon.put_packet(msg.to_utf8_buffer())
+		# no LAN joiner within the window -> also become a relay host, so a
+		# remote joiner (different network, or the relay's persistent "main"
+		# room) can still find this session. Tears down the ENet-only pieces
+		# directly (NOT leave() -- that would also clear `hosting` and the
+		# rest of the session state this same call is trying to preserve).
+		_host_relay_t -= delta
+		if _host_relay_t <= 0.0:
+			print("[net] no LAN joiner; also opening relay as host")
+			if multiplayer.peer_connected.is_connected(_on_peer_connected):
+				multiplayer.peer_connected.disconnect(_on_peer_connected)
+			if multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
+				multiplayer.peer_disconnected.disconnect(_on_peer_disconnected)
+			if _peer:
+				_peer.close()
+				_peer = null
+			multiplayer.multiplayer_peer = null
+			if _beacon:
+				_beacon.close()
+				_beacon = null
+			_start_relay({"mode": Game.mode, "level": Game.level_id, "diff": Game.difficulty})
+			return
 	# join search
 	if searching and _listen and _listen.get_available_packet_count() > 0:
 		var pkt := _listen.get_packet().get_string_from_utf8()

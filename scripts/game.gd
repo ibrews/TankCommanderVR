@@ -35,6 +35,8 @@ var state: int = GState.MENU
 var endless := false       # cycle to a random new level every few waves
 var travel_carry := {}     # score/hp/wave preserved across an endless travel
 var help_on := true        # coaching VO + written hints (menu-toggleable)
+signal ui_visibility_changed(visible_: bool)
+var ui_visible := true     # cockpit HUD labels (ammo/score/plaque/hint) — left-Y button toggle
 var third_person := false  # false = in-cockpit first person (default), true = chase cam
 # On-foot (Runner) locomotion prefs — menu-toggleable, see menu.gd's
 # "turntoggle"/"sprinttoggle" buttons and xr_rig.gd's on-foot movement setup.
@@ -50,6 +52,10 @@ signal pause_changed(is_paused: bool)
 func toggle_camera_mode() -> void:
 	third_person = not third_person
 	camera_mode_changed.emit(third_person)
+
+func toggle_ui() -> void:
+	ui_visible = not ui_visible
+	ui_visibility_changed.emit(ui_visible)
 
 # Menu button while PLAYING pauses in place rather than tearing down the level
 # (Alex: "going back to the menu shouldn't kick you out of your current
