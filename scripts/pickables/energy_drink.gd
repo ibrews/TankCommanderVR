@@ -62,4 +62,8 @@ func _on_action_pressed(_p) -> void:
 		var r: XRRig = m.rig
 		if r.on_foot_body and is_instance_valid(r.on_foot_body):
 			r.on_foot_body.drink_energy(DURATION, MULTIPLIER)
-	drop_and_free()
+	# Deferred: function_pickup.gd's _on_button_pressed() calls action() then
+	# immediately re-reads its `picked_up_object` member afterward. Freeing
+	# synchronously here (via drop_object()) nulls that member mid-callback,
+	# so the addon's next line crashes calling has_method() on null.
+	call_deferred("drop_and_free")
