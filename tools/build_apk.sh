@@ -2,7 +2,7 @@
 # Export the Quest APK headless, with the Godot hang-on-exit guard
 # (kb: godot-metahuman-quest-standalone — Godot often hangs after writing the
 # APK, holding the gradle lock; poll for a stable APK then kill leftovers).
-GODOT="/d/Projects/godot-rtx-demos/godot-4.7/Godot_v4.7-beta3_win64_console.exe"
+GODOT="/d/Projects/godot-4.7-stable/Godot_v4.7-stable_win64_console.exe"
 PROJ=/d/Projects/TankCommanderVR
 APK="$PROJ/out/TankCommanderVR.apk"
 
@@ -53,8 +53,8 @@ for i in $(seq 1 200); do
 done
 
 # hang-on-exit guard: kill leftover godot + gradle daemons holding the lock
-taskkill //F //IM Godot_v4.7-beta3_win64_console.exe 2>/dev/null
-taskkill //F //IM Godot_v4.7-beta3_win64.exe 2>/dev/null
+taskkill //F //IM Godot_v4.7-stable_win64_console.exe 2>/dev/null
+taskkill //F //IM Godot_v4.7-stable_win64.exe 2>/dev/null
 powershell -NoProfile -Command "Get-CimInstance Win32_Process -Filter \"name='java.exe'\" | Where-Object { \$_.CommandLine -match 'gradle' } | ForEach-Object { Stop-Process -Id \$_.ProcessId -Force }" 2>/dev/null
 
 echo "[build] --- last log lines:"
