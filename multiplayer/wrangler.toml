@@ -1,0 +1,24 @@
+name = "tank-commander"
+main = "worker.js"
+compatibility_date = "2025-06-01"
+
+# Durable Object relay. Free plan requires the SQLite storage backend, so the
+# class is registered via new_sqlite_classes (not new_classes).
+[[durable_objects.bindings]]
+name = "ROOM"
+class_name = "Room"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["Room"]
+
+# KV namespace for uploaded headset logs / session data. `id` is filled in by
+# `wrangler kv namespace create LOGS` (run once; paste the printed id here).
+[[kv_namespaces]]
+binding = "LOGS"
+id = "fe6637b9033d40299eda04da7bb878c6"
+
+# Token gating log READS (list/get). Uploads are open (low-stakes crash text
+# from our own app). Rotate by editing here + redeploy, or move to a secret.
+[vars]
+LOG_TOKEN = "tc-fort-logs-8b41c2a9"
