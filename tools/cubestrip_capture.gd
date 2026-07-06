@@ -45,14 +45,21 @@ func _ready() -> void:
 	await get_tree().process_frame
 	await get_tree().create_timer(0.4).timeout
 
-	# Face order per Meta's spec: left, right, up, down, front, back.
-	# front = -Z / back = +Z / left = -X / right = +X, matching this
+	# Face order per Meta's spec: left, right, up, down, front, back -- but
+	# the names are GL cubemap slots (+X -X +Y -Y +Z -Z), not what's on the
+	# viewer's left/right: the store viewer samples the cube from inside,
+	# which mirrors each face, so "left" must hold the view 90-deg to the
+	# RIGHT of front (and vice versa), and up/down need image-top toward
+	# back/front. Ground truth: Meta's own OVRCubemapCapture.cs generator.
+	# Taking the names literally transposed left/right and rolled up/down
+	# 180 -- broke all 4 vertical seams on the store page (near-uniform
+	# sky/ground faces hid their half of the bug). front = -Z per this
 	# project's "seat faces -Z" forward convention (cockpit_builder.gd).
 	var dirs := [
-		{"name": "left", "look": Vector3(-1, 0, 0), "up": Vector3.UP},
-		{"name": "right", "look": Vector3(1, 0, 0), "up": Vector3.UP},
-		{"name": "up", "look": Vector3(0, 1, 0), "up": Vector3(0, 0, -1)},
-		{"name": "down", "look": Vector3(0, -1, 0), "up": Vector3(0, 0, 1)},
+		{"name": "left", "look": Vector3(1, 0, 0), "up": Vector3.UP},
+		{"name": "right", "look": Vector3(-1, 0, 0), "up": Vector3.UP},
+		{"name": "up", "look": Vector3(0, 1, 0), "up": Vector3(0, 0, 1)},
+		{"name": "down", "look": Vector3(0, -1, 0), "up": Vector3(0, 0, -1)},
 		{"name": "front", "look": Vector3(0, 0, -1), "up": Vector3.UP},
 		{"name": "back", "look": Vector3(0, 0, 1), "up": Vector3.UP},
 	]
