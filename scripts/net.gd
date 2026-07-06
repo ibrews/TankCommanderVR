@@ -19,6 +19,7 @@ const SNAP_HZ := 15.0
 var hosting := false
 var client := false
 var searching := false
+var _peer_up := false     # host: an ENet client is fully connected right now
 
 var _peer: ENetMultiplayerPeer
 var _beacon: PacketPeerUDP
@@ -47,9 +48,22 @@ func active() -> bool:
 	return hosting or client
 
 func has_player() -> bool:
-	return _peer != null and multiplayer.get_peers().size() > 0
+	# Gate on the peer_connected signal, not just get_peers().size(): the host
+	# used to start blasting authority-RPCs (s_coop_snap/s_driver_head, 15 Hz,
+	# with the enemy Array payload) the instant the peer count ticked up, which
+	# on-device is mid-ENet-handshake — the peer's channel isn't ready and the
+	# host would push into a half-open connection ("multiplayer peer which is
+	# not connected"). _peer_up only flips true once ENet confirms the link.
+	return _peer_up
 
 func leave() -> void:
+	# Drop the connect/disconnect handlers so the next host() doesn't stack a
+	# second connection (they're re-added there). connected_to_server on the
+	# client is CONNECT_ONE_SHOT, so it cleans itself up.
+	if multiplayer.peer_connected.is_connected(_on_peer_connected):
+		multiplayer.peer_connected.disconnect(_on_peer_connected)
+	if multiplayer.peer_disconnected.is_connected(_on_peer_disconnected):
+		multiplayer.peer_disconnected.disconnect(_on_peer_disconnected)
 	if _peer:
 		_peer.close()
 		_peer = null
@@ -57,6 +71,8 @@ func leave() -> void:
 	hosting = false
 	client = false
 	searching = false
+	_peer_up = false
+	_snap_seen = false
 	if _beacon:
 		_beacon.close()
 		_beacon = null
@@ -73,10 +89,29 @@ func host() -> void:
 	_peer.create_server(PORT, 1)
 	multiplayer.multiplayer_peer = _peer
 	hosting = true
+	# Own the connect/disconnect edges instead of polling get_peers() in
+	# _process: the host must NOT emit any snapshot until ENet says the peer
+	# is really up, and must stop the instant it drops (an .rpc() into a
+	# torn-down peer is the "not connected" spam and, on-device, the join-time
+	# crash). One_shot-free connect so a client can rejoin after leaving.
+	multiplayer.peer_connected.connect(_on_peer_connected)
+	multiplayer.peer_disconnected.connect(_on_peer_disconnected)
 	_beacon = PacketPeerUDP.new()
 	_beacon.set_broadcast_enabled(true)
 	_beacon.set_dest_address("255.255.255.255", BCAST)
 	print("[net] hosting on :%d, beaconing" % PORT)
+
+func _on_peer_connected(id: int) -> void:
+	# Fresh session state so a re-joiner doesn't inherit the last gunner's
+	# aim or a stale crew avatar built against the previous connection.
+	_peer_up = true
+	_snap_seen = false
+	gunner_input = Vector2.ZERO
+	print("[net] peer %d connected" % id)
+
+func _on_peer_disconnected(id: int) -> void:
+	_peer_up = false
+	print("[net] peer %d disconnected" % id)
 
 func search() -> void:
 	leave()
