@@ -48,8 +48,22 @@ func _respawn() -> void:
 	speed = 35.0
 	throttle = 0.6
 	bombs = 12
-	global_position = Vector3(terrain.spawn.x, 90.0, terrain.spawn.y + 60.0)
-	basis = Basis(Vector3.UP, PI)
+	var gp := Vector3(terrain.spawn.x, 90.0, terrain.spawn.y + 60.0)
+	global_position = gp
+	# Face the arena center (world origin), not a hardcoded PI — the old
+	# fixed Basis(UP, PI) put the nose (local -Z, same fuselage convention as
+	# enemy_plane.gd — tapered nose + prop both at -Z) pointing away from
+	# play, since every level's terrain.spawn sits on the +Z side of center:
+	# Basis(UP, PI) * (0,0,-1) = (0,0,1), straight out toward the map edge
+	# (verified via a headless Basis probe, not just derivation — Alex, live
+	# headset: "planes are still spawning right by the edge of the map
+	# facing outward"). enemy_plane.gd already fixed this for AI planes by
+	# computing heading toward a real target via atan2 instead of a
+	# constant; mirrored here with the arena center as that target so the
+	# player's nose points into the play area from the moment the mission
+	# starts, on every level regardless of where terrain.spawn sits.
+	var to_center := atan2(-(0.0 - gp.x), -(0.0 - gp.z))
+	basis = Basis(Vector3.UP, to_center)
 	visible = true
 
 func _build() -> void:
@@ -193,7 +207,7 @@ func _build() -> void:
 	alt_label = _mk_label(root, Vector3(0.05, 0.26, -0.415))
 	bomb_label = _mk_label(root, Vector3(0.25, 0.26, -0.415))
 	var hint := Label3D.new()
-	hint.text = "THROTTLE LEFT · STICK CENTER · TRIGGER = MG · RED = BOMB"
+	hint.text = "THROTTLE LEFT OR RIGHT TRIGGER · STICK CENTER · GRIP STICK+TRIGGER = MG · GRIP BTN OR RED = BOMB"
 	hint.font_size = 52
 	hint.pixel_size = 0.0003
 	hint.modulate = Color(1.0, 0.8, 0.35)
