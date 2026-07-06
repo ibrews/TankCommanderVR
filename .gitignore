@@ -3,3 +3,4 @@ out/
 android/build/
 *.log
 *.tmp
+multiplayer/.wrangler/
