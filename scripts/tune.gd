@@ -49,6 +49,7 @@ const DEFAULTS := {
 	"disaster_cooldown": 180.0,
 	"baby_step_dmg": 30.0,
 	"baby_speed": 3.0,
+	"baby_hp": 400.0,   # big damage sponge — one boss, not a wave regular
 	# --- silly modes
 	"lowg_gravity": 2.4,
 	"bounce_restitution": 0.5,

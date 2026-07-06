@@ -208,16 +208,21 @@ class Creeper:
 
 # ============================================================ Giant baby
 # The apex predator of the baby-room level. Wanders. Squashes. Giggles.
+# Attackable like any other enemy_light.gd body (hp/take_damage/"enemies"
+# group) — was pure decoration with no collider at all, so shells/rockets/MG
+# had nothing to raycast against and it never took damage.
 class GiantBaby:
-	extends Node3D
+	extends CharacterBody3D
 
 	var terrain: Terrain
 	var player: Node3D
+	var hp := 1.0
 	var _step_t := 0.0
 	var _wander := Vector2.ZERO
 	var _retarget := 6.0
 	var _legs: Array = []
 	var _phase := 0.0
+	var _dead := false
 
 	static func spawn(parent: Node3D, t: Terrain, pl: Node3D) -> GiantBaby:
 		var b := GiantBaby.new()
@@ -227,7 +232,13 @@ class GiantBaby:
 		b.global_position = Vector3(60, 0, -60)
 		return b
 
+	func _init() -> void:
+		collision_layer = 4
+		collision_mask = 1
+		add_to_group("enemies")
+
 	func _ready() -> void:
+		hp = Tune.v("baby_hp")
 		var skin := Color(0.95, 0.78, 0.65)
 		var onesie := Color(0.65, 0.8, 0.95)
 		var st := MeshKit.begin()
@@ -255,6 +266,16 @@ class GiantBaby:
 			leg.add_child(lm)
 			add_child(leg)
 			_legs.append(leg)
+		# single tall capsule for the whole body — good enough for a
+		# stationary-ish 50m target, matches the "one hitbox" idiom the
+		# other light enemies use for their whole mesh
+		var shape := CollisionShape3D.new()
+		var cap := CapsuleShape3D.new()
+		cap.radius = 9.0
+		cap.height = 44.0
+		shape.shape = cap
+		shape.position = Vector3(0, 24.0, 0)
+		add_child(shape)
 		_pick_wander()
 
 	func _pick_wander() -> void:
@@ -262,6 +283,8 @@ class GiantBaby:
 		_retarget = Game.rng.randf_range(8.0, 16.0)
 
 	func _process(delta: float) -> void:
+		if _dead:
+			return
 		_retarget -= delta
 		if _retarget <= 0.0:
 			_pick_wander()
@@ -298,3 +321,39 @@ class GiantBaby:
 			Sfx.play_at("char_baby_2", gp + Vector3(0, 40, 0), 8.0, 1.0, 400.0)
 		elif Game.rng.randf() < 0.25:
 			Sfx.play_at("char_baby_%d" % (1 + Game.rng.randi() % 3), gp + Vector3(0, 40, 0), 6.0, 1.0, 400.0)
+
+	func take_damage(amount: float, at: Vector3) -> void:
+		if _dead:
+			return
+		hp -= amount
+		Sfx.play_at("hit", at, -4.0)
+		var fx: FxPool = get_tree().get_first_node_in_group("fx")
+		if fx:
+			fx.debris_burst(at, 3, Color(0.9, 0.8, 0.7))
+		if hp <= 0.0:
+			_die()
+
+	func _die() -> void:
+		_dead = true
+		remove_from_group("enemies")
+		collision_layer = 0
+		Sfx.play_at("char_baby_1", global_position + Vector3(0, 40, 0), 8.0, 0.6, 400.0)
+		Sfx.vo("vo_kill", 1, 10.0)
+		var fx: FxPool = get_tree().get_first_node_in_group("fx")
+		if fx:
+			fx.explosion(global_position + Vector3(0, 8, 0), false, player.global_position)
+			fx.dust(global_position + Vector3(0, 2, 0), 6.0)
+			fx.shockwave(global_position, 3.0)
+		Sfx.play_at("thud", global_position, 10.0, 0.4, 600.0)
+		Game.add_score(300)
+		# topple and go still — same "one big fall" beat as the tank's
+		# turret pop, scaled to a giant: tips onto its back over ~1s, then
+		# a ground-shake thud when it lands
+		var tw := create_tween()
+		tw.tween_property(self, "rotation:x", -PI / 2.0, 1.0).set_trans(Tween.TRANS_QUAD).set_ease(Tween.EASE_IN)
+		tw.tween_callback(func():
+			var lf: FxPool = get_tree().get_first_node_in_group("fx")
+			if lf:
+				lf.shockwave(global_position, 4.0)
+				lf.dust(global_position + Vector3(0, 1, 0), 8.0)
+			Sfx.play_at("thud", global_position, 10.0, 0.3, 600.0))
