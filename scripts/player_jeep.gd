@@ -95,11 +95,15 @@ func _build() -> void:
 	var cmesh := MeshInstance3D.new()
 	cmesh.mesh = MeshKit.commit(cst, MeshKit.mat_vcol(0.8))
 	root.add_child(cmesh)
-	# steering wheel: two-axis grip, x = steer
-	var wheel := VRControl.TwoAxisGrip.create()
-	wheel.position = Vector3(0.0, 0.16, -0.3)
+	# steering wheel: real wheel prop (rim + spokes + hub), grab the rim and
+	# turn it — replaces the old pistol-grip TwoAxisGrip stand-in, which had
+	# no wheel to actually look at or turn (Alex: jeep needs a real wheel).
+	# Tilted back slightly like a car wheel column, angled toward the driver.
+	var wheel := VRControl.SteeringWheel.create(Color(0.14, 0.14, 0.15))
+	wheel.position = Vector3(0.0, 0.14, -0.34)
+	wheel.rotation.x = deg_to_rad(-25)
 	root.add_child(wheel)
-	wheel.deflection_changed.connect(func(v: Vector2) -> void: steer = clampf(v.x * 1.6, -1.0, 1.0))
+	wheel.value_changed.connect(func(v: float) -> void: steer = clampf(v, -1.0, 1.0))
 	# throttle lever
 	var thr := VRControl.Lever.create(0.22, Color(0.75, 0.2, 0.12), 40.0, false)
 	thr.position = Vector3(0.42, 0.1, -0.22)
@@ -126,7 +130,7 @@ func _build() -> void:
 	root.add_child(speed_label)
 	if Game.help_on:
 		var hint := Label3D.new()
-		hint.text = "GRAB WHEEL TO STEER · THROTTLE RIGHT · RIGHT STICK AIMS REAR GUN · TRIGGER = CANNON"
+		hint.text = "GRAB WHEEL TO STEER · THROTTLE OR RIGHT TRIGGER · RIGHT STICK AIMS REAR GUN · GRIP GUN OR GRIP BTN = CANNON"
 		hint.font_size = 44
 		hint.pixel_size = 0.0003
 		hint.modulate = Color(1.0, 0.8, 0.35)
