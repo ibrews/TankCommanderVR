@@ -8,30 +8,36 @@ Running ledger. Morning summary will be written at the top once everything lands
 - DONE: `adb tcpip 5555` + `adb connect 192.168.86.142:5555` — Quest 3S now reachable wirelessly (serial `4597C10H3N01KG`, also visible as `192.168.86.142:5555`).
 - DONE: [tools/pull_logs.sh](../tools/pull_logs.sh) — pulls logcat (full + filtered), tombstones, Godot user:// log dir, device info for every `adb devices` entry into `docs/logs/<timestamp>/<serial>/`.
 - DONE: first pull ran — `docs/logs/20260706-054556/`. No godot/tankcommander logcat lines found (game hasn't been run recently on this boot) and no tombstones. Godot user:// log dir was empty because **file logging wasn't enabled in the project** — fixed: added `[debug]` section to [project.godot](../project.godot) (`file_logging/enable_file_logging=true`, `log_path="user://logs/godot.log"`). This needs a rebuild+reinstall before it takes effect — future runs will have persistent on-device logs even without a live adb session.
-- IN PROGRESS: gemini writing `tools/WIRELESS_ADB.md` runbook.
+- DONE: [tools/WIRELESS_ADB.md](../tools/WIRELESS_ADB.md) runbook (gemini-drafted, cleaned up by me).
 - DONE (free): gemma triage of pre-existing `mp_join.log`/`mp_host.log` (desktop smoke-test logs already in repo root) → `docs/logs/gemma_triage_mp.md`. gemma changelog draft → `docs/logs/gemma_changelog.md`. gemma targeted crash-pattern scan (self-free-during-signal bugs like the energy drink one) → `docs/logs/gemma_crash_scan.md`.
 - NOTE: only ONE physical Quest was connected this session — the real two-headset MP join crash could not be live-reproduced. Root-caused via code review instead (see below); needs a real two-headset verification pass.
 
 ## Crash fixes
 - DONE (me, verified by code reading, not yet on-device tested): **energy drink crash** — [scripts/pickables/energy_drink.gd](../scripts/pickables/energy_drink.gd) `_on_action_pressed` was calling `drop_and_free()` synchronously from inside the `action_pressed` signal handler. `drop_and_free()` → `drop()` → `function_pickup.gd`'s `drop_object()` sets `picked_up_object = null` *before* returning control to `function_pickup.gd`'s `_on_button_pressed()`, which immediately re-reads `picked_up_object.has_method("controller_action")` right after calling `action()` — a null-deref crash on device (addon bug, triggered by any pickable that self-frees synchronously from `action_pressed`). Fixed by deferring: `call_deferred("drop_and_free")`. Flagged this exact pattern to gemma to scan the rest of `scripts/pickables/*.gd` for repeats.
-- IN PROGRESS (opus subagent): MP join crash root-cause in `scripts/net.gd` + peer spawn — see task list below.
+- DONE: **MP join crash** — `has_player()` used to gate on `multiplayer.get_peers().size() > 0`, which ticks up mid-ENet-handshake; the host then fired 15Hz authority RPCs (`s_coop_snap`/`s_driver_head`) into a peer whose channel wasn't ready, matching the "multiplayer peer which is not connected" error and, on-device, the reported crash. Now gated on a `_peer_up` flag set only by the `peer_connected` signal. Not live-tested with two headsets — verify next session that host logs show `[net] peer N connected` before any snapshot goes out.
 
-## Delegated work (background agents, isolated worktrees)
-| # | Owner | Task | Status |
-|---|---|---|---|
-| 2 | opus | MP join crash + MP vehicle-choice-ignored bug | running |
-| 5 | opus | Spider-Man: pickup-gated powers + climb-anything | running |
-| 6/7/8 | sonnet | energy drink polish (FX/crush-can) + coffee effect + wifi-gate bug | running |
-| 9/12/13 | sonnet | lobby diorama fix + weather fog + volcano level + baby boss | running |
-| 10/11 | sonnet | vehicle enter/exit + right-trigger-forward + jeep wheel + plane facing + runner turn/sprint | running |
-| 16 | sonnet | pre-lobby splash screen | running |
-| 17 | fable | 2-3 new procedural weapons | running |
-| 18 | fable | store cubemap face fix | running |
-| 19 | gemini | Oculus username API research, splash patterns research | running |
+## Landed on master (merged, most rebased+conflict-resolved by hand — see the staleness note below)
+| # | Task | Notes |
+|---|---|---|
+| 1 | Wireless adb + pull_logs.sh + WIRELESS_ADB.md | done |
+| 2 | MP join crash + MP vehicle-choice-ignored | host now gates authority RPCs on `peer_connected`, not `get_peers().size()` |
+| 5 | Spider-Man pickup-gated powers + climb-anything | reconciled with an independent near-duplicate already on master |
+| 6/7/8 | Energy drink polish + coffee (created from scratch) + wifi-gate investigated | no wifi gate found in code |
+| 9/12/13 | Lobby diorama fix + weather fog + volcano lava/eruptions + killable baby boss | |
+| 16 | Pre-lobby splash screen (+ fake-award badge easter egg) | |
+| 18 | Store cubemap face-orientation fix | **needs Alex to re-upload to the Meta dashboard** |
+| 3/14/15 | Round timer/scoring/tally, host god-mode, seat-switch, names+teams, "four arms" fix | see known gaps below |
 
-**Held back, sequential after #2 lands** (all touch `scripts/net.gd` heavily — running in parallel would guarantee merge conflicts):
-- #3: round timer/scoring, host god-mode (map/mode/difficulty/bots), co-op seat-switch hotkey — folding in player display names (self-reported at connect) + pause-menu player/score display + team color/team mode/avatar four-arms clarity fix, since those all touch net.gd/game.gd too.
-- #4: Cloudflare Durable Object persistent-host fallback — needs #2 and #3's net.gd state as a base. gemini will review the integration plan against `C:\Users\Sam\knowledge\intelligence\techniques\cloudflare-durable-object-multiplayer-relay-pattern.md` before implementation starts.
+**Still running:** #17 (weapons, fable), #10/11 (vehicle enter/exit + right-trigger + jeep wheel + plane facing + runner turn/sprint, sonnet).
+
+**Queued next** (net.gd is now stable and ahead of every agent's stale base — safe to start):
+- #4: Cloudflare Durable Object persistent-host fallback client (Godot `WebSocketPeer` + reconnect/backoff) + "Upload Logs" menu button. The worker itself is already deployed live (see below) — this is client-only work now.
+- A verified APK build + smoke test on the connected Quest, now that a large batch has landed.
+
+### Known gaps in the netcode work (#3), need a live two-headset test
+- Round countdown sync, tally screen, and team-color/name billboards across two real peers (all wired, none live-tested — only one Quest was connected this session).
+- Seat-swap: aim/drive swap is wired; fire-button routing for a host-turned-gunner after a swap is a flagged followup, not yet done.
+- A client-gunner using the thumbstick (vs. the physical grip) doesn't network turret input — pre-existing limitation, not introduced or fixed this session.
 
 ## Merge/build plan
 Each agent commits in its own isolated worktree (no version bump — that's centralized here to avoid every agent racing on `build_info.gd`/`export_presets.cfg`). As each lands: review diff → merge into this branch → batch up a few landed features → bump version (`export_presets.cfg` + `build_info.gd` via `tools/build_apk.sh`'s existing stamp step) → build APK → install+launch on the connected Quest → smoke-test → commit.
