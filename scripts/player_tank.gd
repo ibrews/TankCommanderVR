@@ -817,7 +817,7 @@ func _update_hints() -> void:
 			if gear != 0:
 				_hint_stage = 4
 		4:
-			hint.text = "GRAB TILLERS TO DRIVE — GRIP STICK + TRIGGER TO FIRE"
+			hint.text = "TILLERS OR RIGHT TRIGGER TO DRIVE — GRIP STICK + TRIGGER TO FIRE"
 			if absf(_spd) > 2.0:
 				_hint_stage = 5
 		5:
