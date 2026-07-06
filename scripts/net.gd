@@ -34,6 +34,30 @@ var projectiles: Projectiles = null
 var fx: FxPool = null
 var terrain: Terrain = null
 var gunner_input := Vector2.ZERO     # host: last gunner aim from client
+var driver_input := Vector2.ZERO     # host: last drive stick from a client-driver (post seat-swap)
+
+# co-op seat assignment: which peer id currently drives (the other gunners).
+# Starts as the host (peer 1); flipped by the seat-swap hotkey via s_swap_seats.
+var driver_is_host := true
+
+var _round_bcast_t := 0.0            # host: throttle s_round to ~4 Hz
+
+func _ready() -> void:
+	# Name/team handshake — one-shot per side right after the link is up. The
+	# host's half lives in _on_peer_connected (connected only while host() is
+	# active, see host()/leave()); the client fires once it's fully connected
+	# to the server. Both send v_hello (any_peer, reliable) so each side learns
+	# the other's display name and current team assignment.
+	multiplayer.connected_to_server.connect(_on_connected_to_server)
+
+func _on_connected_to_server() -> void:
+	if client:
+		_send_hello()
+
+func _send_hello() -> void:
+	if Game.display_name == "":
+		Game.display_name = Game.default_name()
+	v_hello.rpc(Game.display_name, Game.my_team, Game.team_mode)
 
 func my_id() -> int:
 	return AvatarCosmetics.PlayerId.HOST if hosting else AvatarCosmetics.PlayerId.CLIENT
@@ -46,6 +70,18 @@ func is_client() -> bool:
 
 func active() -> bool:
 	return hosting or client
+
+# co-op seat helpers: which station does THIS peer currently occupy? Solo
+# (not active) is always "both", so callers that gate on these still work.
+func i_am_driver() -> bool:
+	if not active():
+		return true
+	return hosting == driver_is_host
+
+func i_am_gunner() -> bool:
+	if not active():
+		return true
+	return hosting != driver_is_host
 
 func has_player() -> bool:
 	# Gate on the peer_connected signal, not just get_peers().size(): the host
@@ -82,6 +118,10 @@ func leave() -> void:
 	tank = null
 	replicas = null
 	remote_tank = null
+	driver_is_host = true
+	Game.round_active = false
+	Game.peer_name = ""
+	_name_billboards.clear()
 
 func host() -> void:
 	leave()
@@ -108,6 +148,7 @@ func _on_peer_connected(id: int) -> void:
 	_snap_seen = false
 	gunner_input = Vector2.ZERO
 	print("[net] peer %d connected" % id)
+	_send_hello()
 
 func _on_peer_disconnected(id: int) -> void:
 	_peer_up = false
@@ -159,27 +200,51 @@ func _process(delta: float) -> void:
 					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 		elif client and tank:
 			if Game.mode == Game.Mode.COOP:
-				c_gunner.rpc_id(1, tank.turret_input, _my_head_rel(),
-					_my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
+				# stream whichever station this client currently holds; the host
+				# routes it to the turret (gunner) or the tracks (driver)
+				if i_am_driver():
+					c_driver.rpc_id(1, tank.stick_drive, _my_head_rel(),
+						_my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
+				else:
+					c_gunner.rpc_id(1, tank.turret_input, _my_head_rel(),
+						_my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 			elif Game.mode == Game.Mode.VERSUS:
 				s_versus_state.rpc(tank.global_transform, tank.turret.rotation.y, tank.gun_elev,
 					_my_head_rel(), _my_hand_rel(true), _my_hand_rel(false), _my_move_flags())
 
 # ================================================================ CO-OP
+# Driving/engine controls that belong to whoever holds the DRIVER seat.
+const _DRIVE_CONTROLS := ["tiller_l", "tiller_r", "gear", "battery", "starter", "lights", "fuel_pump", "horn"]
+
 func setup_coop(t: PlayerTank) -> void:
 	tank = t
-	var c: Dictionary = t.cockpit["controls"]
 	if client:
 		t.puppet = true
 		if t.projectiles:
 			t.projectiles.damage_enabled = false
-		# gunner station: driving/engine controls are the host's job
-		for k in ["tiller_l", "tiller_r", "gear", "battery", "starter", "lights", "fuel_pump", "horn"]:
-			if c.has(k):
-				c[k].enabled = false
-	else:
-		# host = driver: the turret grip belongs to the gunner
-		c["grip"].enabled = false
+	driver_is_host = true
+	_apply_seat_roles()
+	# co-op wave-survival framing: host arms a round clock both sides display
+	# (coop stays wave-based; the timer is just an optional shared countdown)
+	if hosting:
+		Game.start_round(Game.round_len)
+		s_round.rpc(Game.round_left, true, Game.team_mode, 0, 0)
+	_spawn_name_billboard(t, their_id())
+
+# Enable/disable this peer's cockpit controls for its CURRENT seat. Split out
+# of setup_coop() so the seat-swap hotkey (s_swap_seats) can re-apply it live.
+# "am I the driver?" = (I'm host) == (driver is host).
+func _apply_seat_roles() -> void:
+	if tank == null:
+		return
+	var c: Dictionary = tank.cockpit["controls"]
+	var i_drive := hosting == driver_is_host
+	# driver owns the tillers/engine; gunner owns the turret grip
+	for k in _DRIVE_CONTROLS:
+		if c.has(k):
+			c[k].enabled = i_drive
+	if c.has("grip"):
+		c["grip"].enabled = not i_drive
 
 func make_replica_pool(t: Terrain) -> ReplicaPool:
 	replicas = ReplicaPool.new()
@@ -216,6 +281,15 @@ func _send_coop_snap() -> void:
 func c_gunner(input: Vector2, head_rel := Transform3D(), hand_l_rel := Transform3D(),
 		hand_r_rel := Transform3D(), move_flags := 0) -> void:
 	gunner_input = input
+	if head_rel != Transform3D():
+		_apply_crew_avatar(head_rel, hand_l_rel, hand_r_rel, move_flags)
+
+# Seat-swapped coop: a client that now holds the DRIVER seat streams its drive
+# stick here; PlayerTank._update_drive() consumes driver_input on the host.
+@rpc("any_peer", "unreliable_ordered")
+func c_driver(drive: Vector2, head_rel := Transform3D(), hand_l_rel := Transform3D(),
+		hand_r_rel := Transform3D(), move_flags := 0) -> void:
+	driver_input = drive
 	if head_rel != Transform3D():
 		_apply_crew_avatar(head_rel, hand_l_rel, hand_r_rel, move_flags)
 
@@ -294,12 +368,21 @@ func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank:
 	remote_tank.global_position = Vector3(-s.x, t.height(-s.x, -s.y) + 0.04, -s.y) if not client \
 		else Vector3(s.x, t.height(s.x, s.y) + 0.04, s.y)
 	Game.game_over.connect(_on_versus_death)
+	# host arms the shared round clock; the client mirrors it via s_round()
+	if hosting:
+		Game.start_round(Game.round_len)
+		s_round.rpc(Game.round_left, true, Game.team_mode, 0, 0)
+	# opponent's name floats over their turret (billboard, energy_drink idiom)
+	_spawn_name_billboard(remote_tank, their_id(), Vector3(0, 2.4, 0))
 
 func _on_versus_death() -> void:
 	if Game.mode != Game.Mode.VERSUS or not active():
 		return
 	v_i_died.rpc()
 	Game.their_kills += 1
+	# team mode: my death is a point for the OTHER team (the killer's)
+	if Game.team_mode:
+		Game.add_team_score(_other_team(Game.my_team), 1)
 	Game.kills_changed.emit()
 	get_tree().create_timer(4.0).timeout.connect(func():
 		if Game.state == Game.GState.PLAYING:
@@ -308,6 +391,9 @@ func _on_versus_death() -> void:
 @rpc("any_peer", "reliable")
 func v_i_died() -> void:
 	Game.my_kills += 1
+	# team mode: I killed them, my team scores
+	if Game.team_mode:
+		Game.add_team_score(Game.my_team, 1)
 	Game.kills_changed.emit()
 	Sfx.vo("vo_kill", 2, 5.0)
 	if fx and remote_tank:
@@ -332,17 +418,200 @@ func versus_shot(kind: int, pos: Vector3, vel: Vector3) -> void:
 func v_damage(amount: float) -> void:
 	Game.damage_player(amount / Game.diff(0.6, 1.0, 1.35))  # undo diff scale: pvp is symmetric
 
+func _other_team(t: int) -> int:
+	return Game.Team.BLUE if t == Game.Team.RED else Game.Team.RED
+
+# ================================================================ round + tally
+# The host owns the countdown (Game._process ticks Game.round_left locally on
+# the host, then calls tick_round() here to broadcast + detect expiry). The
+# client never counts down; it just displays the last s_round() value.
+func tick_round(_delta: float) -> void:
+	if not hosting or not has_player():
+		return
+	_round_bcast_t -= _delta
+	if _round_bcast_t <= 0.0:
+		_round_bcast_t = 0.25   # ~4 Hz is plenty for a visible clock
+		s_round.rpc(Game.round_left, Game.round_active, Game.team_mode,
+			int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0)))
+	if Game.round_active and Game.round_left <= 0.0:
+		Game.round_active = false
+		# Each peer computes its OWN tally (my_kills/their_kills are per-peer,
+		# so a pre-baked "YOU/THEM" summary would be backwards on the client).
+		# Team scores are symmetric, so we hand those over for the client to
+		# use; the client still calls round_tally() itself.
+		s_round_end.rpc(int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0)))
+		Game.round_ended.emit(Game.round_tally())
+
+# Client mirror of the authoritative round state. Never ticks down here.
+@rpc("authority", "unreliable_ordered")
+func s_round(left: float, active: bool, team_mode: bool, red: int, blue: int) -> void:
+	Game.round_left = left
+	Game.round_active = active
+	Game.team_mode = team_mode
+	Game.team_score = {Game.Team.RED: red, Game.Team.BLUE: blue}
+	Game.round_state_changed.emit()
+
+@rpc("authority", "reliable")
+func s_round_end(red: int, blue: int) -> void:
+	Game.round_active = false
+	Game.team_score = {Game.Team.RED: red, Game.Team.BLUE: blue}
+	Game.round_ended.emit(Game.round_tally())  # client's own perspective
+
+# ================================================================ host god-mode
+# One small "any_peer authority-checked" surface: only the host acts on these,
+# and only the host is allowed to SEND them (host_change_* helpers guard on
+# `hosting`). Changing map/mode/difficulty restarts the level with new params
+# on BOTH peers; add_bots spawns extra enemies into the running wave.
+
+func host_change_session(mode: int, level_id: String, diff: int, mutator: String) -> void:
+	if not hosting:
+		return
+	_apply_session_change(mode, level_id, diff, mutator)
+	if has_player():
+		s_session.rpc(mode, level_id, diff, mutator)
+
+func host_add_bots(count: int) -> void:
+	if not hosting:
+		return
+	_apply_add_bots(count)
+	if has_player():
+		s_add_bots.rpc(count)
+
+func host_set_team_mode(on: bool) -> void:
+	if not hosting:
+		return
+	Game.team_mode = on
+	# host RED, client BLUE (only meaningful once teams are on)
+	Game.my_team = Game.Team.RED if hosting else Game.Team.BLUE
+	Game.round_state_changed.emit()
+	if has_player():
+		s_team_mode.rpc(on)
+
+@rpc("authority", "reliable")
+func s_session(mode: int, level_id: String, diff: int, mutator: String) -> void:
+	_apply_session_change(mode, level_id, diff, mutator)
+
+@rpc("authority", "reliable")
+func s_add_bots(count: int) -> void:
+	_apply_add_bots(count)
+
+@rpc("authority", "reliable")
+func s_team_mode(on: bool) -> void:
+	Game.team_mode = on
+	Game.my_team = Game.Team.RED if hosting else Game.Team.BLUE
+	Game.round_state_changed.emit()
+
+# Restart the level with the host's new selection. Routes through main.gd's
+# start_game() (same path menu.gd's board uses), so nothing here re-implements
+# level construction. Difficulty/mutator apply live; mode/level rebuild.
+func _apply_session_change(mode: int, level_id: String, diff: int, mutator: String) -> void:
+	Game.mode = mode
+	Game.level_id = level_id
+	Game.difficulty = diff
+	Game.mutator = mutator
+	var m = get_tree().get_first_node_in_group("main")
+	if m:
+		m.call_deferred("start_game")
+
+# Host-only: drop `count` extra enemy tanks into the live EnemyManager. Client
+# receives them through the normal coop snapshot replica stream, so this only
+# actually spawns on the host (the sim authority).
+func _apply_add_bots(count: int) -> void:
+	if not hosting:
+		return
+	var em := get_tree().get_first_node_in_group("enemy_manager")
+	if em and em.has_method("spawn_bots"):
+		em.spawn_bots(count)
+
+# ================================================================ seat-swap
+# Co-op only: swap which peer drives vs. gunners. Either peer can request it
+# (any_peer); the host is the authority that flips driver_is_host and echoes
+# the new assignment to the client via s_seats().
+func request_seat_swap() -> void:
+	if Game.mode != Game.Mode.COOP or not active() or not has_player():
+		return
+	if hosting:
+		_do_seat_swap()
+	else:
+		c_swap_seats.rpc_id(1)
+
+@rpc("any_peer", "reliable")
+func c_swap_seats() -> void:
+	if hosting:
+		_do_seat_swap()
+
+func _do_seat_swap() -> void:
+	driver_is_host = not driver_is_host
+	_apply_seat_roles()
+	s_seats.rpc(driver_is_host)
+	Sfx.play_at("switch", tank.global_position if tank else Vector3.ZERO, -2.0)
+
+@rpc("authority", "reliable")
+func s_seats(host_drives: bool) -> void:
+	driver_is_host = host_drives
+	_apply_seat_roles()
+	Sfx.play_at("switch", tank.global_position if tank else Vector3.ZERO, -2.0)
+
+# ================================================================ names + teams
+@rpc("any_peer", "reliable")
+func v_hello(pname: String, _team: int, tmode: bool) -> void:
+	Game.peer_name = pname
+	Game.team_mode = tmode
+	# assign fixed teams once team mode is on: host RED, client BLUE
+	if tmode:
+		Game.my_team = Game.Team.RED if hosting else Game.Team.BLUE
+	_refresh_name_billboards()
+	Game.round_state_changed.emit()
+
+# Label3D billboard over a peer's head/turret — same idiom as
+# energy_drink.gd's brand label (Label3D, billboard-enabled, no depth cull).
+# Keyed by the target node so leave()/_refresh can restyle or drop them.
+var _name_billboards := {}
+
+func _spawn_name_billboard(target: Node3D, id: int, offset := Vector3(0, 1.9, 0)) -> void:
+	if target == null:
+		return
+	var l := Label3D.new()
+	l.text = Game.peer_name if Game.peer_name != "" else "Player"
+	l.font_size = 96
+	l.pixel_size = 0.0016
+	l.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	l.no_depth_test = true
+	l.modulate = Game.team_tint(_team_for(id)) if Game.team_mode else AvatarCosmetics.tint_for(id)
+	l.position = offset
+	target.add_child(l)
+	_name_billboards[target] = l
+
+func _team_for(id: int) -> int:
+	# host is RED, client is BLUE (see host_set_team_mode); `id` is that peer's
+	# AvatarCosmetics id, so map HOST->RED, CLIENT->BLUE.
+	return Game.Team.RED if id == AvatarCosmetics.PlayerId.HOST else Game.Team.BLUE
+
+func _refresh_name_billboards() -> void:
+	for target in _name_billboards.keys():
+		if not is_instance_valid(target):
+			continue
+		var l: Label3D = _name_billboards[target]
+		l.text = Game.peer_name if Game.peer_name != "" else "Player"
+		l.modulate = Game.team_tint(_team_for(their_id())) if Game.team_mode else AvatarCosmetics.tint_for(their_id())
+
 # ================================================================ avatars
 # Rec Room energy: round head, big visor body. AvatarRig (scripts/
 # avatar_rig.gd) absorbs the old hand-built mesh here — SEATED mode is the
 # same legless bean, now with arms that track the gunner's hands.
 var _crew_avatar: AvatarRig = null
 
+# Team mode recolors avatars by team (host RED, client BLUE) instead of by
+# per-player id — a single knob so crew-avatar + remote-tank + name billboard
+# all agree on the same color scheme.
+func _avatar_tint(id: int) -> Color:
+	return Game.team_tint(_team_for(id)) if Game.team_mode else AvatarCosmetics.tint_for(id)
+
 func _ensure_crew_avatar() -> void:
 	if _crew_avatar == null and tank:
 		_crew_avatar = AvatarRig.new()
 		tank.add_child(_crew_avatar)
-		_crew_avatar.configure(AvatarRig.Mode.SEATED, AvatarCosmetics.tint_for(their_id()))
+		_crew_avatar.configure(AvatarRig.Mode.SEATED, _avatar_tint(their_id()))
 		CockpitBuilder.set_interior_layer(_crew_avatar)
 
 func _my_head_rel() -> Transform3D:
@@ -406,7 +675,7 @@ class RemoteTank:
 		_avatar = AvatarRig.new()
 		_avatar.position = Vector3(-0.28, 1.15, 0.25)
 		turret.add_child(_avatar)
-		_avatar.configure(AvatarRig.Mode.SEATED, AvatarCosmetics.tint_for(NetManager.their_id()))
+		_avatar.configure(AvatarRig.Mode.SEATED, NetManager._avatar_tint(NetManager.their_id()))
 		if Game.mutator == "balloon":
 			Game.balloonize(self)
 		var shape := CollisionShape3D.new()

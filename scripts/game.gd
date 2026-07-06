@@ -8,12 +8,15 @@ signal wave_changed(wave: int)
 signal game_over
 signal game_restarted
 signal kills_changed  # versus scoreboard
+signal round_state_changed  # round timer/team-mode HUD refresh
+signal round_ended(summary: Dictionary)  # end-of-round tally screen
 
 const MAX_HP := 100.0
 
 enum Mode { SOLO, COOP, VERSUS, PLANE }
 enum GState { MENU, PLAYING }
 enum PlayerMode { SEATED, ON_FOOT }
+enum Team { NONE, RED, BLUE }  # NONE = free-for-all (no team split)
 
 var mode: int = Mode.SOLO
 var level_id := "outdoor"
@@ -124,6 +127,66 @@ var rng := RandomNumberGenerator.new()
 var my_kills := 0
 var their_kills := 0
 
+# ---- multiplayer round + teams (see net.gd for the RPC surface) ----
+# Round is a countdown (VERSUS duel / optional COOP wave-survival framing).
+# round_active + round_left are AUTHORITATIVE on the host and replicated to
+# the client via NetManager.s_round(); the client never counts down itself
+# (avoids clock drift), it just displays the last broadcast value.
+var round_len := 300.0        # 5 min default, host-configurable in-session
+var round_left := 0.0
+var round_active := false
+var team_mode := false        # false = free-for-all, true = 2-team split
+var my_team: int = Team.NONE
+var team_score := {Team.RED: 0, Team.BLUE: 0}
+var display_name := ""        # self-reported, sent at connect (see net.gd)
+var peer_name := ""           # the other player's reported name
+
+# fun default the player can keep or edit in the lobby
+func default_name() -> String:
+	return "Tanker_%03d" % (rng.randi() % 1000)
+
+func team_tint(t: int) -> Color:
+	match t:
+		Team.RED: return Color(0.9, 0.25, 0.2)
+		Team.BLUE: return Color(0.2, 0.5, 0.95)
+		_: return Color.WHITE
+
+func team_name(t: int) -> String:
+	match t:
+		Team.RED: return "RED"
+		Team.BLUE: return "BLUE"
+		_: return ""
+
+func start_round(length: float) -> void:
+	round_len = length
+	round_left = length
+	round_active = true
+	my_kills = 0
+	their_kills = 0
+	team_score = {Team.RED: 0, Team.BLUE: 0}
+	round_state_changed.emit()
+
+func add_team_score(team: int, points: int) -> void:
+	if team == Team.NONE:
+		return
+	team_score[team] = int(team_score.get(team, 0)) + points
+	round_state_changed.emit()
+
+# End-of-round tally. Winner is decided by kills (FFA) or team score.
+func round_tally() -> Dictionary:
+	var summary := {"team_mode": team_mode}
+	if team_mode:
+		var r: int = int(team_score.get(Team.RED, 0))
+		var b: int = int(team_score.get(Team.BLUE, 0))
+		summary["red"] = r
+		summary["blue"] = b
+		summary["winner"] = "TIE" if r == b else ("RED" if r > b else "BLUE")
+	else:
+		summary["you"] = my_kills
+		summary["them"] = their_kills
+		summary["winner"] = "TIE" if my_kills == their_kills else ("YOU" if my_kills > their_kills else "THEM")
+	return summary
+
 func _ready() -> void:
 	rng.seed = 20260702
 	var cf := ConfigFile.new()
@@ -148,6 +211,12 @@ func _process(delta: float) -> void:
 		if time_since_damage > 8.0 and hp < MAX_HP:
 			hp = minf(hp + diff(4.0, 3.0, 2.0) * delta, MAX_HP)
 			hp_changed.emit(hp)
+	# Round countdown ticks only on the authoritative side (host, or solo) —
+	# the client mirrors round_left from NetManager.s_round() to avoid clock
+	# drift. NetManager.tick_round() below fires round_ended when it hits 0.
+	if round_active and state == GState.PLAYING and (not NetManager.active() or NetManager.hosting):
+		round_left = maxf(0.0, round_left - delta)
+		NetManager.tick_round(delta)
 
 func damage_player(amount: float) -> void:
 	if not alive or state != GState.PLAYING:
@@ -175,6 +244,10 @@ func restart() -> void:
 	alive = true
 	time_since_damage = 999.0
 	player_mode = PlayerMode.SEATED
+	# NOTE: my_kills/their_kills/team_score are NOT cleared here — versus
+	# respawns the tank via restart() after every death, and the running
+	# scoreboard must survive that. Kills reset only at a fresh round start
+	# (start_round()), not on a respawn.
 	if not travel_carry.is_empty():
 		# endless travel: the fight continues on a new battlefield
 		score = travel_carry.score

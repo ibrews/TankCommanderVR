@@ -147,6 +147,11 @@ func _show_main() -> void:
 		_button("mut:" + MUTATORS[i][0], MUTATORS[i][1], Vector2(-0.86 + i * 0.44, -0.24), Vector2(0.41, 0.12), 14)
 	_button("vehcycle", "VEHICLE: " + VEHICLES[sel_vehicle][1], Vector2(-0.72, -0.42), Vector2(0.85, 0.14), 15)
 	_button("howto", "HOW TO PLAY", Vector2(0.22, -0.42), Vector2(0.62, 0.14), 16)
+	# self-reported display name (Meta username API needs a GDExtension that
+	# doesn't exist for Godot yet — auto-gen a fun default, click to re-roll)
+	if Game.display_name == "":
+		Game.display_name = Game.default_name()
+	_button("namereroll", Game.display_name, Vector2(0.88, 0.63), Vector2(0.5, 0.11), 11)
 	_button("helptoggle", "HELP: ON" if Game.help_on else "HELP: OFF", Vector2(0.72, -0.42), Vector2(0.42, 0.14), 12)
 	_button("viewtoggle", "VIEW: 3RD" if Game.third_person else "VIEW: 1ST", Vector2(1.14, -0.42), Vector2(0.42, 0.14), 12)
 	_button("start", "START!", Vector2(0.55, -0.62), Vector2(0.9, 0.20), 28)
@@ -242,6 +247,9 @@ func _press(id: String) -> void:
 			Game.vehicle = VEHICLES[sel_vehicle][0]
 			Game.time_of_day = sel_time
 			start_requested.emit(sel_mode, "endless" if sel_endless else sel_level, sel_diff, sel_mut)
+		"namereroll":
+			Game.display_name = Game.default_name()
+			_show_main()
 		"helptoggle":
 			Game.help_on = not Game.help_on
 			Game.save_prefs()
