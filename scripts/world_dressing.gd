@@ -635,13 +635,32 @@ func _build_lava() -> void:
 				st.add_vertex(v)
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
-	var m := StandardMaterial3D.new()
-	m.albedo_color = Color(0.9, 0.25, 0.05)
-	m.emission_enabled = true
-	m.emission = Color(1.0, 0.35, 0.05)
-	m.emission_energy_multiplier = 1.6
-	m.albedo_texture = load("res://assets/tex/rock.png")
-	m.uv1_scale = Vector3(1, 1, 1)   # UVs baked into the quad grid
+	# flowing lava: two tex_rock samples scrolling at different speeds/scales
+	# (cheap fake-turbulence — same "layer noise at two frequencies" idiom
+	# terrain.gd's macro-patchiness uses) lerped by a slow third scroll, so
+	# the surface reads as churning magma instead of a static glow texture.
+	# Godot's built-in TIME uniform drives it — Mobile renderer handles a
+	# plain scrolling-UV fragment shader fine, no vertex displacement needed.
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode cull_back, unshaded;
+uniform sampler2D tex_rock : source_color, filter_linear_mipmap;
+void fragment() {
+	vec2 flow_a = UV + vec2(TIME * 0.02, TIME * 0.014);
+	vec2 flow_b = UV * 1.7 + vec2(-TIME * 0.011, TIME * 0.023);
+	float n = texture(tex_rock, flow_a).g;
+	float n2 = texture(tex_rock, flow_b).g;
+	float mixv = mix(n, n2, 0.5 + 0.5 * sin(TIME * 0.15 + UV.x * 6.0));
+	vec3 dark = vec3(0.35, 0.06, 0.01);
+	vec3 hot = vec3(1.2, 0.55, 0.08);
+	ALBEDO = mix(dark, hot, smoothstep(0.3, 0.75, mixv));
+	EMISSION = mix(dark, hot, smoothstep(0.2, 0.8, mixv)) * 1.4;
+}
+"""
+	var m := ShaderMaterial.new()
+	m.shader = sh
+	m.set_shader_parameter("tex_rock", load("res://assets/tex/rock.png"))
 	mi.material_override = m
 	mi.position = Vector3(0, cfg.get("lava_y", -3.2) - 0.3, 0)
 	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
@@ -657,6 +676,9 @@ func _build_lava() -> void:
 	if fxp:
 		for p in [Vector3(30, -2, 20), Vector3(-35, -2, -15)]:
 			fxp.smoke_column(p, 9999.0)
+	# bubbling eruptions: periodic geysers on the walkable caldera floor/
+	# bridges, not just the lava pool itself — the level's actual hazard
+	add_child(LavaEruptions.new(terrain, fxp))
 
 func _build_babyroom() -> void:
 	var W := 118.0
@@ -795,3 +817,69 @@ func _build_wrecks(count: int) -> void:
 		mi.rotation = Vector3(rng.randf_range(-0.04, 0.04), yaw, rng.randf_range(-0.06, 0.06))
 		add_child(mi)
 		MeshKit.add_static_box_collider(self, Vector3(x, gy + 0.8, z), Vector3(3.4, 1.6, 6.6), yaw)
+
+
+# ==================================================================== volcano
+# Bubbling lava-vent geysers on the volcano level's walkable ground (caldera
+# floor / rim / spoke bridges — terrain.height()'s "volcano" branch, see
+# terrain.gd). Same area-damage idiom as weather.gd's tornado/lava-bomb
+# disaster payload: pick a spot, telegraph briefly, then a single lethal-
+# radius hit against player + enemies alike (reuses take_damage() like every
+# other hazard — no projectiles.gd changes needed).
+class LavaEruptions:
+	extends Node3D
+
+	var terrain: Terrain
+	var fx: FxPool
+	var _t := 0.0
+	var _next := 3.0
+
+	func _init(t: Terrain, f: FxPool) -> void:
+		terrain = t
+		fx = f
+		name = "LavaEruptions"
+
+	func _process(delta: float) -> void:
+		_t += delta
+		if _t < _next:
+			return
+		_t = 0.0
+		_next = Game.rng.randf_range(3.5, 7.0)
+		_erupt(_pick_spot())
+
+	# walkable ground only — anywhere within the arena that isn't already
+	# below the lava plane, so a geyser never spawns invisibly inside the
+	# magma itself
+	func _pick_spot() -> Vector3:
+		var r := terrain.arena_radius
+		var lava_y: float = terrain.cfg.get("lava_y", -3.2)
+		for i in 10:
+			var a := Game.rng.randf() * TAU
+			var d := Game.rng.randf_range(6.0, r * 0.92)
+			var p := Vector3(cos(a) * d, 0, sin(a) * d)
+			p.y = terrain.height(p.x, p.z)
+			if p.y > lava_y + 0.4:
+				return p
+		return Vector3(0, terrain.height(0, 0), 0)
+
+	func _erupt(pos: Vector3) -> void:
+		# telegraph: a beat of bubbling/hissing before the actual burst gives
+		# a driver on top of it a fighting chance to gun the throttle
+		Sfx.play_at("static_loop", pos, 0.0, 1.6, 60.0)
+		if fx:
+			fx.dust(pos + Vector3(0, 0.3, 0), 1.6)
+		get_tree().create_timer(0.65).timeout.connect(func():
+			if not is_instance_valid(self):
+				return
+			Sfx.play_at("eruption", pos + Vector3(0, 1, 0), 2.0, 1.05, 250.0)
+			if fx:
+				fx.explosion(pos + Vector3(0, 1, 0), true, pos)
+				fx.shockwave(pos, 1.8)
+			var r := Tune.v("volcano_eruption_radius")
+			var dmg := Tune.v("volcano_eruption_dmg")
+			for grp in ["player", "enemies"]:
+				for n in get_tree().get_nodes_in_group(grp):
+					if n is Node3D and n.has_method("take_damage"):
+						var d: float = n.global_position.distance_to(pos)
+						if d < r:
+							n.take_damage(dmg * clampf(1.0 - d / (r + 1.5), 0.35, 1.0), pos))

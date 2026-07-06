@@ -45,9 +45,13 @@ const DEFAULTS := {
 	"noise_reveal_time": 6.0,     # seconds enemies stay alerted after you fire
 	# --- weather / events
 	"storm_chance": 0.22,
+	"fog_chance": 0.15,   # rolled right after the storm check on the same CLEAR-state timer, so the two never overlap
 	"disaster_cooldown": 180.0,
 	"baby_step_dmg": 30.0,
 	"baby_speed": 3.0,
+	"baby_hp": 400.0,   # big damage sponge — one boss, not a wave regular
+	"volcano_eruption_dmg": 85.0,   # heavy/lethal — most of a full-hp tank in one geyser
+	"volcano_eruption_radius": 6.5,
 	# --- silly modes
 	"lowg_gravity": 2.4,
 	"bounce_restitution": 0.5,
