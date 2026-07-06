@@ -20,6 +20,7 @@ func _init(t: Terrain, p: Projectiles, f: FxPool, pl: CharacterBody3D) -> void:
 	name = "EnemyManager"
 
 func _ready() -> void:
+	add_to_group("enemy_manager")   # host god-mode "add bots" targets this
 	Game.game_over.connect(func(): _running = false)
 	Game.game_restarted.connect(_on_restart)
 	if Game.mode == Game.Mode.VERSUS:
@@ -65,6 +66,18 @@ func _process(delta: float) -> void:
 			_spawn_wave()
 	elif wave > 0:
 		_between = 8.0
+
+# Host god-mode: drop `count` extra enemy tanks into the live fight right now,
+# same construction/placement as a wave spawn (just tanks — the simplest,
+# most legible "more enemies" knob). Re-arms the spawner if the arena had
+# been cleared so the fresh bots aren't the only thing left with no follow-up.
+func spawn_bots(count: int) -> void:
+	for i in maxi(count, 1):
+		var e := EnemyTank.new(terrain, projectiles, fx, player)
+		e.hp = Tune.v("enemy_tank_hp")
+		add_child(e)
+		e.global_position = _ring_pos(120.0, 180.0)
+	_running = Game.mode != Game.Mode.VERSUS
 
 func _ring_pos(r_min: float, r_max: float, want_water := false) -> Vector3:
 	var ring: Array = Levels.current.get("spawn_ring", [])

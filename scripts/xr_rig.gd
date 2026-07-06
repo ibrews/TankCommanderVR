@@ -364,6 +364,7 @@ func _init() -> void:
 	name = "XRRig"
 
 var _debug_label: Label3D
+var _mp_board: Label3D
 
 func _ready() -> void:
 	camera = XRCamera3D.new()
@@ -392,6 +393,20 @@ func _ready() -> void:
 	_debug_label.modulate = Color(1, 1, 0.6)
 	_debug_label.visible = false
 	camera.add_child(_debug_label)
+	# Multiplayer scoreboard: a small always-on readout pinned to the top of
+	# view (the "pause menu" ask reframed for VR — a persistent lobby/score
+	# panel beats a modal you'd have to open one-handed mid-fight). Shows the
+	# other player's name + the current score/round; hidden in solo. Toggled
+	# off/on by holding the LEFT menu button isn't needed — it's unobtrusive.
+	_mp_board = Label3D.new()
+	_mp_board.font_size = 28
+	_mp_board.pixel_size = 0.0011
+	_mp_board.position = Vector3(0, 0.16, -0.55)
+	_mp_board.billboard = BaseMaterial3D.BILLBOARD_ENABLED
+	_mp_board.no_depth_test = true
+	_mp_board.modulate = Color(0.95, 0.95, 1.0)
+	_mp_board.visible = false
+	camera.add_child(_mp_board)
 	hand_l = XRHand.new("left_hand")
 	hand_l.rig = self
 	add_child(hand_l)
@@ -775,6 +790,38 @@ func local_body_pose(relative_to: Node3D) -> Dictionary:
 
 func _update_debug_label() -> void:
 	_debug_label.text = "%s\n%s" % [_hand_debug_line("L", hand_l), _hand_debug_line("R", hand_r)]
+	_update_mp_board()
+
+# Persistent MP scoreboard/lobby panel (see _ready). Names the other player,
+# shows the live score/round clock, plus host-only hints for the god-mode
+# gestures so they're discoverable without docs.
+func _update_mp_board() -> void:
+	if _mp_board == null:
+		return
+	_mp_board.visible = NetManager.active()
+	if not _mp_board.visible:
+		return
+	var me := Game.display_name if Game.display_name != "" else "You"
+	var them := Game.peer_name if Game.peer_name != "" else "(waiting for player...)"
+	var score := ""
+	if Game.mode == Game.Mode.VERSUS:
+		if Game.team_mode:
+			score = "RED %d   BLUE %d" % [int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0))]
+		else:
+			score = "YOU %d   THEM %d" % [Game.my_kills, Game.their_kills]
+	else:
+		score = "SCORE %d   WAVE %d" % [Game.score, maxi(Game.wave, 1)]
+	if Game.round_active:
+		score += "   %d:%02d" % [int(Game.round_left) / 60, int(Game.round_left) % 60]
+	var seat := ""
+	if Game.mode == Game.Mode.COOP:
+		seat = "  [%s]" % ("DRIVER" if NetManager.i_am_driver() else "GUNNER")
+	var txt := "%s  vs  %s%s\n%s" % [me, them, seat, score]
+	if NetManager.hosting:
+		txt += "\n(host: grips+B bots · grips+X diff · grips+A teams)"
+	if Game.mode == Game.Mode.COOP:
+		txt += "\n(grips+Y swap seats)"
+	_mp_board.text = txt
 
 func _hand_debug_line(tag: String, h: XRHand) -> String:
 	var ctl := "Y" if h.get_has_tracking_data() else "n"
@@ -783,6 +830,39 @@ func _hand_debug_line(tag: String, h: XRHand) -> String:
 	return "%s ctl=%s hnd=%s aim=%s grp=%.2f trg=%.2f near=%s hold=%s" % [
 		tag, ctl, hnd, aim_ok, h.effective_grip(), h.effective_trigger(),
 		"Y" if h._last_near else "n", "Y" if h.holding else "n"]
+
+# Multiplayer gesture bindings (co-op/versus only). Two-hand grip gestures so
+# they can't fire by accident during normal one-handed driving/gunning:
+#   both grips + LEFT Y      → swap driver/gunner seats (co-op, either peer)
+#   both grips + RIGHT B     → HOST god-mode: add 3 bots (host only)
+#   both grips + LEFT X      → HOST god-mode: cycle difficulty (host only)
+#   both grips + RIGHT A     → HOST god-mode: toggle 2-team mode (host only)
+# All edge-triggered with a shared cooldown so one squeeze = one action.
+var _mp_cool := 0.0
+func _mp_hotkeys(delta: float) -> void:
+	_mp_cool = maxf(0.0, _mp_cool - delta)
+	if not NetManager.active():
+		return
+	var both_grip := hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8
+	if not both_grip or _mp_cool > 0.0:
+		return
+	if hand_l.is_button_pressed("by_button") and Game.mode == Game.Mode.COOP:
+		_mp_cool = 0.6
+		NetManager.request_seat_swap()
+		_pulse_both(0.4, 0.06)
+	elif NetManager.hosting and hand_r.is_button_pressed("by_button"):
+		_mp_cool = 0.6
+		NetManager.host_add_bots(3)
+		_pulse_both(0.5, 0.08)
+	elif NetManager.hosting and hand_l.is_button_pressed("ax_button"):
+		_mp_cool = 0.6
+		var d := (Game.difficulty + 1) % 3
+		NetManager.host_change_session(Game.mode, Game.level_id, d, Game.mutator)
+		_pulse_both(0.4, 0.06)
+	elif NetManager.hosting and hand_r.is_button_pressed("ax_button"):
+		_mp_cool = 0.6
+		NetManager.host_set_team_mode(not Game.team_mode)
+		_pulse_both(0.4, 0.06)
 
 func _physics_process(delta: float) -> void:
 	_update_debug_label()
@@ -833,6 +913,7 @@ func _physics_process(delta: float) -> void:
 		else:
 			Game.restart()
 	set_meta("lsc2_was", l_click)
+	_mp_hotkeys(delta)
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_feed_arm_swing(delta)
 		_check_reentry()
