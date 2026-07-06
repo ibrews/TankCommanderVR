@@ -35,6 +35,9 @@ Session ran ~05:45 UTC onward. 3 verified APK builds installed+launched on the c
 ### STILL RUNNING at time of writing
 - **2-3 new procedural weapons** (Fable agent) — has been running a long time, not yet merged. Will land as a followup commit once it completes; check `git log` for a `feat(weapons):`-style commit after this session if you're reading this later and it's not mentioned as done above.
 
+### Bonus fix from a parallel session (not this orchestration, but landed here)
+- **Sea/lava mesh winding** — `WorldDressing._build_sea()`/`_build_lava()`'s quad-grid triangles were still wound backwards under `mesh_audit.gd`'s corrected clockwise-front convention (a follow-up to an earlier, insufficient fix). A separate session Alex ran directly fixed this properly; merged in as-is (commit `24baf0a`).
+
 ### BLOCKED / needs Alex
 - **Store cubemap re-upload**: `docs/store-art/cubestrip_12288x2048.jpg` was regenerated with corrected face orientation — needs manual re-upload to the Meta Quest Developer Dashboard store listing (I have no access to that). Also worth deciding whether to delete the now-superseded `cubestrip_alt*.jpg`/`cubestrip_final_*.jpg` variants in `docs/store-art/` (left untouched, ambiguous provenance).
 - **Two-headset live test** needed for everything MP-related above marked "not tested" — I only had one physical Quest connected all session.
