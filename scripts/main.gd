@@ -612,7 +612,16 @@ func _display_level(id: String) -> void:
 	dcfg["no_collision"] = true   # scenery — full trimesh colliders tanked lobby fps
 	dcfg["quad_div"] = 4          # site-model LOD; the full grid is mission-grade
 	var t := Terrain.new(dcfg)
-	var sc := 0.95 / maxf(t.arena_radius, 1.0)
+	# Scale against Terrain.HALF (the fixed 512m mesh half-size every level
+	# shares), NOT arena_radius (a per-level gameplay/spawn-ring radius with
+	# no relation to the mesh's actual extent). Levels with a small
+	# arena_radius (gym 105, volcano 108, babyroom 112, moon 110, debug 130,
+	# island 128) still build the same full-size rim-mountain terrain —
+	# scaling by arena_radius blew their rim ring out to 2x the pedestal
+	# radius, burying the model in mountain wall. outdoor/city/town/mudpit/
+	# beach/castle "looked right" only by coincidence: their unset
+	# arena_radius happens to default to ~HALF.
+	var sc := 0.95 / Terrain.HALF
 	t.scale = Vector3(sc, sc * 2.0, sc)  # slight vertical exaggeration reads better at this size
 	_diorama_root.add_child(t)
 
@@ -1369,10 +1378,24 @@ func _run_preview_test() -> void:
 		await get_tree().process_frame
 		await get_tree().process_frame
 		print("[preview-test] vehicle ok: ", vid)
-	for lid in ["outdoor", "city", "castle", "island", "volcano", "moon"]:
+	# every level, not a hand-picked sample — a diorama regression (e.g. the
+	# arena_radius-vs-Terrain.HALF pedestal-overflow bug) can easily hide
+	# behind a subset that happens to default to the "normal" case
+	for lid in Levels.ORDER:
 		_display_level(lid)
 		await get_tree().process_frame
-		print("[preview-test] diorama ok: ", lid)
+		var mesh_n := 0
+		for c in _diorama_root.get_children():
+			if c is Terrain:
+				# catch the pedestal-overflow class of bug directly: the
+				# scaled terrain half-extent must not exceed the pedestal disc
+				var half_extent: float = Terrain.HALF * c.scale.x
+				if half_extent > 1.1:
+					push_error("[preview-test] diorama %s OVERFLOWS pedestal: half_extent=%.2f" % [lid, half_extent])
+				for mi in c.get_children():
+					if mi is MeshInstance3D and mi.mesh:
+						mesh_n += 1
+		print("[preview-test] diorama ok: ", lid, " (meshes=", mesh_n, ")")
 	for t in [0, 1, 2]:
 		_apply_hangar_tod(t)
 		await get_tree().process_frame
