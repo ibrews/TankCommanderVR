@@ -1,5 +1,9 @@
 # Overnight session — 2026-07-06
 
+## SHIPPED
+
+**v0.6.18 (code 28) is live on App Lab alpha**, build `3312581042280632`, uploaded 2026-07-06 ~16:39 UTC. Validating on Meta's end (check `developer.oculus.com/manage/applications/3308225892716147/builds/3312581042280632/test-results/`). Alpha invite link (unchanged): `https://www.meta.com/s/6mSdrdXX6`. Tap "Update" in your App Lab library once validation finishes.
+
 ## MORNING SUMMARY (read this first)
 
 Session ran ~05:45 UTC onward. 3 verified APK builds installed+launched on the connected Quest 3S this session — all clean, no crashes, stable 72fps, no script errors in logcat. Two-headset multiplayer testing was NOT possible (only one physical Quest connected all session) — everything network-related is code-reviewed + single-peer-verified only. See "Needs a live two-headset test" below before considering MP solid.
