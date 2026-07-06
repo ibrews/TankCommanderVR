@@ -213,9 +213,19 @@ class XRHand:
 		# so get_has_tracking_data() alone can read true with no controller
 		# in hand.
 		var bare := hand_mesh != null and hand_mesh.get_has_tracking_data()
-		controller_model.visible = get_has_tracking_data() and not bare
+		var controllers := get_has_tracking_data() and not bare
+		# "four arms" fix: the licensed Touch GLB (controller_model) and the
+		# godot-xr-tools lowpoly glove BOTH used to render at the same hand
+		# point whenever a controller was tracked — two hand-props per hand,
+		# reading as four across both hands. The GLB is the intended real
+		# controller visual (it DOES render on 3S — it's a bundled asset, not
+		# XR_FB_render_model), so it wins; the glove only fills in when the GLB
+		# isn't up (defensive — should be never once loaded, but the glove was
+		# originally the fallback for exactly that case).
+		var glb_ok := controller_model.get_child_count() > 0
+		controller_model.visible = controllers
 		if glove:
-			glove.visible = get_has_tracking_data() and not bare
+			glove.visible = controllers and not glb_ok
 		# Same laser-pointer path drives both the hangar MainMenu
 		# (GState.MENU) and the mid-mission pause panel (Game.paused) --
 		# both join group "menu" and implement the same pointer()
