@@ -28,22 +28,30 @@ More in [docs/EVOLUTION.md](docs/EVOLUTION.md).
 
 ## Modes
 
-**Solo** waves on 10 battlefields (outdoor, city, town, mudpit, castle,
-gymnasium, beach, island, volcano, baby room) plus a **DEBUG: KITCHEN SINK**
-level with one of every enemy type at close range for fast smoke-testing,
-with easy/medium/hard, five vehicles (tank, plane, biplane, helicopter,
-runner), day / golden hour / night-ops stealth, and silly mutators (low-g,
-underwater, balloon, paintball). **ENDLESS TOUR** hops to a random new
-battlefield every three cleared waves and keeps your score rolling.
-**On-foot mode**: dismount your vehicle and walk, sprint (arm-swing —
-pump your arms), grapple-swing, and climb using three pickable items found
-in the world (grapple hook, climbing gloves, energy drink), then climb back
-into the seat you left. **Co-op** over LAN: one headset drives +
-machine-guns, the other runs the turret — both players render as full
-Rec-Room-style procedural avatars (hip/head/hand IK, no imported skeletal
-assets) to each other, on-foot or seated. **Versus**: tank duel, first to
-five. New players get voice coaching and cockpit hints — veterans can
-switch **HELP: OFF** in the menu and the tank computer stops repeating
+**Solo** waves on 10+ battlefields (outdoor, city, town, mudpit, castle,
+gymnasium, beach, island, volcano — flowing lava, lethal eruptions, killable
+baby-room boss) plus a **DEBUG: KITCHEN SINK** level with one of every enemy
+type at close range for fast smoke-testing, with easy/medium/hard, seven
+vehicles (tank, jeep, boat, plane, biplane, helicopter, runner), fog/rain/
+storm weather, day / golden hour / night-ops stealth, and silly mutators
+(low-g, underwater, balloon, paintball). **ENDLESS TOUR** hops to a random
+new battlefield every three cleared waves and keeps your score rolling.
+**On-foot mode**: dismount your vehicle and walk, sprint (arm-swing or a
+stick-sprint option), grapple-swing, and climb using pickable items found in
+the world (grapple hook, climbing gloves, energy drink, coffee), then climb
+back into the seat you left — climbing works on terrain, buildings, rocks,
+trees, and castle walls. Pick up one of the newer weapons (a burst SMG, a
+mini-howitzer, a close-range spread gun) alongside the pistol and cabbage
+grenade. **Co-op** over LAN or an online relay fallback: one headset drives
++ machine-guns, the other runs the turret (seat-swap hotkey to trade), with
+a shared round clock and score — both players render as full Rec-Room-style
+procedural avatars (hip/head/hand IK, no imported skeletal assets) to each
+other, on-foot or seated, with player names and team colors. **Versus**:
+tank, jeep, boat, or plane duel, first to five, with a live round timer/
+scoreboard and host god-mode (change map/mode/difficulty, spawn bots on the
+fly). No LAN host nearby? The game falls back to an online relay room
+automatically. New players get voice coaching and cockpit hints — veterans
+can switch **HELP: OFF** in the menu and the tank computer stops repeating
 itself.
 
 ## Play
@@ -75,38 +83,23 @@ This is the reliable way to play today.
 | B | Fire rocket salvo |
 | Y | Recalibrate seat height |
 
-**Physical grab/poke (in progress):** the cockpit is built entirely from
-real `VRControl` levers/switches/knobs/buttons meant to be grabbed and
-poked by hand, and the interaction logic itself is fully implemented and
-unit-tested (`tools/xr_interaction_smoke.gd`, 14/14 pass) — but a discovery
-bug currently prevents the rig from finding controls by physical proximity
-(see **Known issues** below), so reaching out and grabbing a lever doesn't
-yet register in a real headset. Follow the yellow hints on the front wall
-once this is fixed.
+**Physical grab/poke:** the cockpit is built entirely from real `VRControl`
+levers/switches/knobs/buttons meant to be grabbed and poked by hand —
+flip the battery switch, pull the starter, work the tillers, cycle the
+breech lever, grab the jeep's steering wheel. Follow the yellow hints on
+the front wall the first time through.
 
 **Hand tracking:** put the controllers down — pinch = trigger (fire), whole-
 hand squeeze = grab. There's currently no bare-hand equivalent for the
 analog thumbsticks, so **driving/turret-aim need a physical controller
-today** — hand tracking alone can fire but can't steer. Physical grab of
-cockpit controls is subject to the same in-progress fix noted above.
-(Runner/on-foot mode: pump your arms to sprint — that part works hands-free.)
+today** — hand tracking alone can fire but can't steer.
+(Runner/on-foot mode: pump your arms to sprint, or switch to stick-sprint
+in the menu — either way it works hands-free.)
 
 **Playtest tuning:** every gameplay number lives in `tuning.cfg`
 (auto-created in the app's files dir; on Quest:
 `/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg`).
 Edit, restart, report back.
-
-## Known issues
-
-- **Physical VR grab/poke never actually reaches cockpit controls.** All six
-  `VRControl` types (`scripts/interactables.gd`) work correctly in isolation,
-  but nothing in the codebase ever calls
-  `add_to_group("vrcontrols")` — the exact group `scripts/xr_rig.gd`'s
-  hand-proximity discovery loop reads from. The game still plays fully via
-  the thumbstick fallback path above; only reaching out with a hand/controller
-  to grab or poke a lever/switch/knob/button doesn't register yet. Fix is a
-  one-line `add_to_group()` call; holding off on landing it until it's been
-  verified with real hands in a headset.
 
 ## Performance (measured on Quest 3S)
 

@@ -1,3 +1,82 @@
+# Tank Commander VR v0.6.19
+
+## Multiplayer vehicle support + security fix
+- **VERSUS mode now supports tank, jeep, boat, and plane** (was silently
+  forced to tank regardless of your pick). Co-op stays tank-only for now —
+  it needs real driver/gunner seat infrastructure the other vehicles don't
+  have yet. Jeep/boat opponents replicate position correctly but their gun
+  doesn't visibly track aim yet (their meshes are one fused piece, unlike
+  the tank's separate turret — a follow-up item).
+- Fixed a real, separate co-op bug found along the way: the coax machine gun
+  never actually fired for whoever was in the gunner seat as the client.
+- Rotated a Cloudflare relay token that had been committed in plaintext.
+
+# Tank Commander VR v0.6.18
+
+## The big overnight batch
+- **MP join crash fixed** — joining a host no longer crashes the host.
+- **Spider-Man powers are earned, not free** — grapple and climb only work
+  after you find the pickups; climbing now works on terrain, buildings,
+  rocks, trees, and castle walls, not just a narrow allowlist.
+- **Coffee** is a real pickup now (reflex/reload boost); energy drink got a
+  proper drink animation (fizz, gulp, crushed can).
+- **Weather**: fog joins rain/storm. **Volcano** is a real level with
+  flowing lava and lethal eruptions (no more grass on the volcano — basalt/
+  ash/steam only). The baby-room boss can finally be killed.
+- **Multiplayer**: round timer + live score + end-of-round tally, host
+  god-mode (change map/mode/difficulty, spawn bots — two-hand-grip
+  gestures), co-op seat-swap hotkey, player names, team colors.
+- **"Four arms" avatar bug fixed** — the controller model and the hand
+  glove were both rendering at once.
+- **Vehicles**: right trigger drives every vehicle forward now; the jeep
+  got a real steering wheel; the plane spawns facing into the map instead
+  of away from it; runner mode got snap/smooth turning and a stick-sprint
+  option.
+- **Persistent-host fallback**: if no one's on your Wi-Fi, the game now
+  falls back to an online relay room automatically, with reconnect. New
+  "Upload Log" button in the menu ships your session log for support
+  without ever plugging the headset in.
+- 3 new weapons (burst SMG, mini-howitzer, close-range spread gun); fixed
+  the store page's 360° preview image (4 of 6 faces were mirrored wrong).
+
+# Tank Commander VR v0.6.9 – v0.6.17
+
+## Vehicles, avatars, and lobby polish
+- New **JEEP** vehicle (open-top 4x4, rear-mounted tank gun).
+- Real Rec Room-style procedural avatars — helmet, vest, backpack, belt,
+  shoulder pads — with a proper arm-IK fix (arms used to solve toward the
+  map origin instead of your actual hand position).
+- Grapple/climb-the-world added (later gated behind pickups in v0.6.18).
+- Controller aim pose now always wins the menu ray over hand-tracking, so
+  the menu doesn't get hijacked when both are active at once.
+- Lobby: live vehicle turntable, level diorama preview, framerate fix
+  (previews no longer build full mission-grade collision).
+- THE MOON — a sphere-gravity bonus level.
+- Fixed the periscope glass rendering as solid white (a recurring Mobile-
+  renderer alpha-blend bug — the glass pane was removed rather than
+  re-tuned a third time), left-stick Y-axis settled, enemy spawn rings
+  brought closer in.
+
+# Tank Commander VR v0.6.5 – v0.6.8
+
+## On-foot mode, real hands, and the pause menu
+- **On-foot locomotion** (dismount your vehicle, walk/sprint/grapple/climb)
+  built on `godot-xr-tools`, with full procedural avatars for seated and
+  on-foot crew alike.
+- **The controller pose bug, finally found**: `XRController3D` pose names
+  were the action-map names instead of the engine's own names, so
+  controller poses never resolved at all — this silently broke the glove
+  visual, hatch levers, and on-foot movement together, and turned out to be
+  the root cause behind several rounds of earlier "hands are broken"
+  investigation.
+- Pause menu now freezes the level in place instead of tearing it down;
+  quitting to the hangar is a deliberate choice from that menu.
+- AI tanks bias their patrol toward the player instead of wandering fully
+  at random — first contact used to sometimes take a very long time.
+- Every generated mesh (boxes, cylinders) had been rendering inside-out
+  since v0.1 — Godot's front-face winding is clockwise, not the convention
+  everything was originally built against. Fixed globally.
+
 # Tank Commander VR v0.6.4
 
 ## Hand position fix (round 4)
