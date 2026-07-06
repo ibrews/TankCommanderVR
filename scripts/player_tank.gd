@@ -388,7 +388,7 @@ func _on_arm(on: bool) -> void:
 func _on_breech_lever(v: float) -> void:
 	if absf(v) > 0.85 and not loaded and ammo > 0:
 		if puppet:
-			NetManager.c_event.rpc_id(1, "breech")
+			NetManager.send_client_event("breech")
 		else:
 			_chamber()
 
@@ -727,7 +727,7 @@ func fire_cannon(from_stick := false) -> void:
 			Sfx.play_at("click", muzzle.global_position, -6.0)
 			if Game.help_on:
 				cockpit["labels"]["hint"].text = "PULL RED BREECH LEVER TO RELOAD"
-		NetManager.c_event.rpc_id(1, "fire")
+		NetManager.send_client_event("fire")
 		return
 	if not loaded:
 		Sfx.play_at("click", muzzle.global_position, -6.0)
@@ -756,7 +756,7 @@ func fire_cannon(from_stick := false) -> void:
 
 func fire_rockets() -> void:
 	if puppet:
-		NetManager.c_event.rpc_id(1, "rockets")
+		NetManager.send_client_event("rockets")
 		return
 	if not Game.alive or not rockets_armed or rocket_cool > 0.0 or rockets_left <= 0:
 		if not rockets_armed:

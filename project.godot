@@ -24,7 +24,10 @@ XRToolsRumbleManager="*res://addons/godot-xr-tools/rumble/rumble_manager.gd"
 
 [debug]
 
+; Persist a rolling session log to user://logs/godot.log so the menu's
+; "UPLOAD LOG" button has something to POST to the relay for triage.
 file_logging/enable_file_logging=true
+file_logging/enable_file_logging.pc=true
 file_logging/log_path="user://logs/godot.log"
 file_logging/max_log_files=10
 

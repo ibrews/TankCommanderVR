@@ -712,11 +712,17 @@ func _on_paused_join_requested() -> void:
 
 # join() needs to write its "searching" status text onto WHICHEVER menu
 # board is actually on screen — the hangar's `menu` normally, but a
-# paused-mid-mission join happens on `_pause_lobby` instead.
+# paused-mid-mission join happens on `_pause_lobby` instead. set_status()
+# (not _text()) since the relay fallback keeps updating this same line
+# ("connecting...", "reconnecting...") and needs one reusable label, not a
+# fresh one per call.
 func _join_on(target_menu: MainMenu) -> void:
 	if target_menu == null or not is_instance_valid(target_menu):
 		return
-	target_menu.call("_text", "Searching for a host on this Wi-Fi...", Vector2(0, -0.75), 14)
+	target_menu.call("set_status", "Searching for a host on this Wi-Fi...")
+	NetManager.relay_status.connect(func(txt):
+		if target_menu and is_instance_valid(target_menu):
+			target_menu.call("set_status", txt))
 	NetManager.join_found.connect(func(cfg):
 		Game.mode = cfg.mode
 		Game.level_id = cfg.level
