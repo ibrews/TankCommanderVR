@@ -1,0 +1,5 @@
+serial: 192.168.86.142:5555
+Quest 3S Limited Edition Xbox
+14
+    versionCode=27 minSdk=29 targetSdk=34
+    versionName=0.6.17

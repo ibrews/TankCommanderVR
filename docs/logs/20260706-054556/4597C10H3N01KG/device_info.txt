@@ -1,0 +1,5 @@
+serial: 4597C10H3N01KG
+Quest 3S Limited Edition Xbox
+14
+    versionCode=27 minSdk=29 targetSdk=34
+    versionName=0.6.17
