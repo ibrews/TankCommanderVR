@@ -756,7 +756,18 @@ func start_game() -> void:
 	NetManager.fx = fx
 	var veh := Game.vehicle
 	if Game.mode == Game.Mode.COOP or Game.mode == Game.Mode.VERSUS:
-		veh = "tank"   # multiplayer is tank business
+		# MP is tank-only ON PURPOSE, not a dropped selection: the whole net
+		# layer is tank-shaped — coop is one shared tank (host drives, client
+		# is the turret gunner puppet), and versus replicates turret.rotation.y
+		# / gun_elev and draws the opponent as a RemoteTank. Only PlayerTank
+		# exposes turret/gun_elev; plane/boat/heli have no gunner seat and no
+		# replica body, so picking them here would spawn a vehicle setup_coop/
+		# setup_versus (typed `PlayerTank`) can't drive. Force tank until a
+		# non-tank MP replication path exists. Respecting the menu's non-tank
+		# pick is a feature, not a bug fix — tracked separately.
+		if veh != "tank":
+			push_warning("[main] %s not supported in MP yet — using tank" % veh)
+		veh = "tank"
 	if Game.mode == Game.Mode.PLANE:
 		veh = "plane"  # legacy path
 	# Sphere-world bonus level: the whole point is walking around the
