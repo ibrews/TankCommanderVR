@@ -844,7 +844,10 @@ func _mp_hotkeys(delta: float) -> void:
 	if not NetManager.active():
 		return
 	var both_grip := hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8
-	if not both_grip or _mp_cool > 0.0:
+	# NOT while both triggers are also squeezed — that's the disaster easter
+	# egg's gesture (grips+triggers+A), which must not double-fire god-mode.
+	var triggers := hand_l.effective_trigger() > 0.6 or hand_r.effective_trigger() > 0.6
+	if not both_grip or triggers or _mp_cool > 0.0:
 		return
 	if hand_l.is_button_pressed("by_button") and Game.mode == Game.Mode.COOP:
 		_mp_cool = 0.6
