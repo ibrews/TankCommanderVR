@@ -34,7 +34,17 @@ func _ready() -> void:
 	add_to_group("main")
 	_setup_environment()
 	_setup_rig()
-	to_menu()
+	var args := OS.get_cmdline_user_args()
+	# Test/automation hooks below all assume to_menu()/start_game() has
+	# already run synchronously by the end of _ready() (menu exists at frame
+	# 0, timers are queued against a live scene) — the splash's whole point
+	# is delaying that, so any hook still in flight skips it entirely.
+	var skip_splash := ("--smoke" in args or "--shots" in args or "--disaster" in args
+		or "--rain" in args or "--mp-host" in args or "--mp-join" in args)
+	if skip_splash:
+		to_menu()
+	else:
+		_show_splash()
 	_check_autostart()
 	# Solo playtesting has nobody watching — these are what let a future
 	# session see what actually happened without live narration. See
@@ -53,7 +63,6 @@ func _ready() -> void:
 			get_tree().create_timer(4.0).timeout.connect(func():
 				if not Game.alive:
 					to_menu()))
-	var args := OS.get_cmdline_user_args()
 	if "--smoke" in args:
 		_smoke_frames = 200
 		print("[smoke] starting smoke test")
@@ -442,6 +451,25 @@ func _swap_vehicle(new_veh: String) -> void:
 		rig.call("attach_to_vehicle", vehicle)
 		_auto_start_if_third_person(vehicle)
 	Game.vehicle = new_veh
+
+# ---------------------------------------------------------------- splash
+# First-launch splash held in front of whichever rig _setup_rig() built.
+# Reuses to_menu_anchor() (same call the real hangar/menu uses) so the panel
+# sits as a proper world-space board the XR camera looks at, not a flat 2D
+# overlay that would read as broken in stereo. There's no heavy resource to
+# ResourceLoader-thread-load here — autoloads and the hangar/menu build are
+# all synchronous procedural GDScript — so this only needs to hold a minimum
+# visible duration, same ambience the hangar uses (dark, no sun) applied
+# early so the splash and the menu it hands off to don't visibly pop.
+func _show_splash() -> void:
+	_apply_ambience(true)
+	var splash := Splash.new()
+	splash.position = Vector3(0, 1.5, -1.9)
+	add_child(splash)
+	rig.call("to_menu_anchor", splash)
+	splash.finished.connect(func():
+		splash.queue_free()
+		to_menu(), CONNECT_ONE_SHOT)
 
 # ---------------------------------------------------------------- menu state
 func to_menu() -> void:
