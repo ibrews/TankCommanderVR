@@ -253,7 +253,15 @@ func restart() -> void:
 	wave = 0
 	alive = true
 	time_since_damage = 999.0
-	player_mode = PlayerMode.SEATED
+	# Only force SEATED for a vehicle-death respawn. Left-stick-click's
+	# generic "reset" binding (xr_rig.gd) calls restart() from ON_FOOT too —
+	# forcing SEATED there with no vehicle to seat into broke the rig's
+	# per-frame branch (xr_rig.gd checks player_mode == ON_FOOT for its
+	# on-foot movement/camera feed, else assumes a seated vehicle exists),
+	# leaving the player stuck in neither state — reported as a black/frozen
+	# screen in runner mode. Found live 2026-07-06.
+	if player_mode != PlayerMode.ON_FOOT:
+		player_mode = PlayerMode.SEATED
 	# NOTE: my_kills/their_kills/team_score are NOT cleared here — versus
 	# respawns the tank via restart() after every death, and the running
 	# scoreboard must survive that. Kills reset only at a fresh round start

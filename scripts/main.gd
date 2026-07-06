@@ -1076,6 +1076,7 @@ func exit_vehicle() -> void:
 	if Game.player_mode != Game.PlayerMode.SEATED:
 		return
 	var v := current_vehicle
+	print("[vehicle] exiting ", v.name)
 	var dismount_pos: Vector3 = v.global_position - v.global_transform.basis.z * 2.2
 	dismount_pos.y = terrain.height(dismount_pos.x, dismount_pos.z) + 0.1
 	var dismount := Transform3D(v.global_transform.basis.orthonormalized(), dismount_pos)
@@ -1155,6 +1156,7 @@ func enter_vehicle(v: Node3D) -> void:
 	if Game.player_mode != Game.PlayerMode.ON_FOOT:
 		return
 	var at := v.global_position
+	print("[vehicle] entering ", v.name, " at ", at)
 	rig.call("attach_to_vehicle", v)
 	_auto_start_if_third_person(v)
 	# climbing-in clank + seat click, same haptic language as exit_vehicle()

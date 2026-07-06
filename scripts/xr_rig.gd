@@ -342,8 +342,17 @@ class XRHand:
 		else:
 			laser.visible = true
 			var d: float = res.dist
-			laser.position = Vector3(0, 0, -d / 2)
-			laser.scale = Vector3(1, 1, d)
+			# Draw the beam along the ACTUAL ray (from/dir above), not down
+			# this node's own -Z: this node is the GRIP pose, which tilts
+			# steeply up from the aim pose the ray really uses — the beam
+			# read as "big yellow lines pointing up, not mimicking the
+			# raycast" (Alex, live headset 2026-07-06) while clicks still
+			# landed fine. Global transform set every frame while pointing,
+			# so the parent's grip motion can't skew it.
+			var up := Vector3.UP if absf(dir.y) < 0.99 else Vector3.FORWARD
+			laser.global_transform = Transform3D(
+				Basis.looking_at(dir, up) * Basis.from_scale(Vector3(1, 1, d)),
+				from + dir * (d * 0.5))
 			if clicked:
 				pulse(0.4, 0.02)
 
@@ -798,6 +807,7 @@ func _apply_view_offset() -> void:
 	# once actually PLAYING (there's a real vehicle to orbit at that point).
 	var third := Game.third_person and Game.state != Game.GState.MENU
 	position = _fp_pos + (Vector3(0, 3.0, 8.0) if third else Vector3.ZERO)
+	print("[camera] mode=", "third" if third else "first", " state=", Game.GState.keys()[Game.state], " pos=", position)
 
 ## First-person head/hand pose relative to `relative_to`, ignoring any current
 ## third-person chase offset (_apply_view_offset() adds it straight to
@@ -1061,10 +1071,19 @@ func _feed_arm_swing(delta: float) -> void:
 	var target: Object = on_foot_body if Game.player_mode == Game.PlayerMode.ON_FOOT else tank
 	if target == null or not target.has_method("set_arm_swing"):
 		return
-	var vl := (hand_l.position - _prev_hl).length() / maxf(delta, 0.001)
-	var vr := (hand_r.position - _prev_hr).length() / maxf(delta, 0.001)
-	_prev_hl = hand_l.position
-	_prev_hr = hand_r.position
+	# hand_pos() (rig-local), NOT hand_l.position: the controller tracker's
+	# transform freezes when the controllers are set down, so bare-hand play
+	# read as zero swing — "swinging my arms in hand tracking mode doesn't do
+	# anything" (Alex, live headset 2026-07-06). hand_pos() prefers the live
+	# hand-tracking mesh and falls back to the controller transform, so one
+	# path serves both input styles. Rig-local so vehicle/world motion of the
+	# rig itself never counts as swing.
+	var pl := to_local(hand_l.hand_pos())
+	var pr := to_local(hand_r.hand_pos())
+	var vl := (pl - _prev_hl).length() / maxf(delta, 0.001)
+	var vr := (pr - _prev_hr).length() / maxf(delta, 0.001)
+	_prev_hl = pl
+	_prev_hr = pr
 	_swing = lerpf(_swing, (vl + vr) * 0.5, 6.0 * delta)
 	target.call("set_arm_swing", _swing)
 
@@ -1080,9 +1099,17 @@ func _feed_stick_sprint() -> void:
 	var active := Game.sprint_stick and hand_l.get_vector2("primary").y > SPRINT_STICK_THRESHOLD
 	on_foot_body.call("set_stick_sprint", active)
 
-# Re-entry: walk within ~0.6m of the abandoned vehicle's seat anchor and
-# squeeze either grip to climb back in. main.gd tracks current_vehicle across
-# both the "runner" menu-select path and a mid-mission exit_vehicle() call.
+# Entry/re-entry: walk near ANY vehicle's seat and squeeze a grip, hold the
+# left trigger, or press B to climb in. Originally this only targeted
+# main.current_vehicle (the specific vehicle you last exited), which made
+# fresh runner-mode starts entirely dependent on physically grabbing the
+# hatch lever — impossible to discover, and unusable in third person where
+# you can't even see your own hands (Alex, live headset 2026-07-06: "it
+# doesn't make sense to have to grab things to get into a vehicle...
+# just being close + holding left trigger or B should be enough").
+# current_vehicle keeps priority (it's the seat you bailed from mid-mission)
+# but any cockpit-bearing vehicle in range works now.
+const ENTRY_RADIUS := 2.5
 var _reentry_grip_was := false
 var _exit_hold := 0.0
 func _check_reentry() -> void:
@@ -1092,16 +1119,38 @@ func _check_reentry() -> void:
 	if m == null:
 		return
 	var v: Node3D = m.get("current_vehicle")
-	# grip OR the same left-trigger hold-gesture family as the exit binding —
-	# one input vocabulary for enter and exit
+	if v == null or not is_instance_valid(v):
+		v = _nearest_enterable_vehicle()
+	# grip, the left-trigger hold-gesture family shared with the exit
+	# binding, or a plain B press — one input vocabulary for enter and exit
 	var gripping := hand_l.effective_grip() > 0.55 or hand_r.effective_grip() > 0.55 \
-		or hand_l.effective_trigger() > 0.7
+		or hand_l.effective_trigger() > 0.7 or hand_r.is_button_pressed("by_button")
 	if v and is_instance_valid(v):
 		var anchor: Node3D = v.cockpit["seat_anchor"]
-		if on_foot_body.global_position.distance_to(anchor.global_position) < 1.2 \
+		if on_foot_body.global_position.distance_to(anchor.global_position) < ENTRY_RADIUS \
 				and gripping and not _reentry_grip_was:
 			m.call_deferred("enter_vehicle", v)
 	_reentry_grip_was = gripping
+
+# Nearest vehicle with a real cockpit (seat_anchor) within entry range of the
+# on-foot body. Group "player" holds the player-side vehicles; the cockpit
+# check filters out the on-foot body itself and any non-vehicle members.
+func _nearest_enterable_vehicle() -> Node3D:
+	var best: Node3D = null
+	var best_d := ENTRY_RADIUS
+	for p in get_tree().get_nodes_in_group("player"):
+		var cand := p as Node3D
+		if cand == null or not ("cockpit" in cand) or not cand.visible:
+			continue
+		var ck: Dictionary = cand.get("cockpit")
+		if ck.is_empty() or not ck.has("seat_anchor"):
+			continue
+		var d := on_foot_body.global_position.distance_to(
+			(ck["seat_anchor"] as Node3D).global_position)
+		if d < best_d:
+			best_d = d
+			best = cand
+	return best
 
 func _dz(v: float) -> float:
 	return v if absf(v) > 0.12 else 0.0

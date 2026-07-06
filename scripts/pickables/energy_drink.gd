@@ -74,6 +74,9 @@ func _on_action_pressed(_p) -> void:
 		var r: XRRig = m.rig
 		if r.on_foot_body and is_instance_valid(r.on_foot_body):
 			r.on_foot_body.drink_energy(DURATION, MULTIPLIER)
+			print("[drink] energy drink applied: duration=", DURATION, " multiplier=", MULTIPLIER)
+		else:
+			push_warning("[drink] energy drink action fired but no on_foot_body — likely seated in a vehicle; no effect applied")
 	# drink experience: gulp sound plays out over DRINK_WINDOW while still
 	# held, THEN the can visibly crushes right before it drops — matches the
 	# real-world beat (crack -> chug -> crush -> toss) instead of an instant

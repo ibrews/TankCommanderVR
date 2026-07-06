@@ -79,4 +79,7 @@ func _on_action_pressed(_p) -> void:
 		var r: XRRig = m.rig
 		if r.on_foot_body and is_instance_valid(r.on_foot_body):
 			r.on_foot_body.drink_coffee(DURATION, COOLDOWN_MULT)
+			print("[drink] coffee applied: duration=", DURATION, " cooldown_mult=", COOLDOWN_MULT)
+		else:
+			push_warning("[drink] coffee action fired but no on_foot_body — likely seated in a vehicle; no effect applied")
 	call_deferred("drop_and_free")

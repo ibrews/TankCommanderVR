@@ -48,7 +48,18 @@ func _respawn() -> void:
 	speed = 35.0
 	throttle = 0.6
 	bombs = 12
-	var gp := Vector3(terrain.spawn.x, 90.0, terrain.spawn.y + 60.0)
+	# Push the spawn out from terrain.spawn along its own direction from
+	# center, same as before, but capped to the level's actual arena_radius
+	# (some levels are much smaller than the old fixed +60 assumed — gym
+	# radius=105/spawn.y=80 put the plane at 140, well past the edge, into
+	# undefined terrain, triggering the ground-contact crash check within
+	# seconds of spawning; same story on island/volcano/babyroom). Found
+	# live 2026-07-06.
+	var base_2d := Vector2(terrain.spawn.x, terrain.spawn.y)
+	var out_dir := base_2d.normalized() if base_2d.length() > 0.01 else Vector2(0, 1)
+	var max_dist := maxf(terrain.arena_radius - 20.0, 30.0)
+	var spawn_2d := out_dir * minf(base_2d.length() + 60.0, max_dist)
+	var gp := Vector3(spawn_2d.x, 90.0, spawn_2d.y)
 	global_position = gp
 	# Face the arena center (world origin), not a hardcoded PI — the old
 	# fixed Basis(UP, PI) put the nose (local -Z, same fuselage convention as
@@ -175,23 +186,32 @@ func _build() -> void:
 	# — with no captions, so only the bright yellow hatch lever actually read
 	# as a distinct control. Recolored stick/throttle to stand out and
 	# labeled every control the same way cockpit_builder.gd labels the tank.
+	# Control heights: the cockpit tub is a SOLID box whose top face sits at
+	# y=0.15 in this root's space (box center -0.1, height 0.5). The first
+	# pass placed the stick pivot at y=-0.30 and throttle at y=-0.18 — their
+	# entire meshes (stick knob tops out ~y=0.01, throttle knob ~0.04) were
+	# buried INSIDE the tub, invisible; only the hatch lever at exactly
+	# y=0.15 poked out (Alex, live headset 2026-07-06: "on the plane I see
+	# no controls... maybe they're inside geometry"). Pivots now sit just
+	# under the tub top so shafts emerge from the surface like real
+	# console-mounted controls.
 	var grip := VRControl.TwoAxisGrip.create()
-	grip.position = Vector3(0, -0.30, -0.05)
+	grip.position = Vector3(0, 0.10, -0.05)
 	root.add_child(grip)
 	grip.deflection_changed.connect(func(v): stick = v)
-	_label(root, "STICK", Vector3(0, -0.10, -0.05), -20, 13)
+	_label(root, "STICK", Vector3(0, 0.52, -0.05), -20, 13)
 	var thr := VRControl.Lever.create(0.22, Color(0.75, 0.42, 0.12), 40.0, false)
-	thr.position = Vector3(-0.34, -0.18, -0.1)
+	thr.position = Vector3(-0.34, 0.10, -0.1)
 	root.add_child(thr)
 	thr.value_changed.connect(func(v): throttle = clampf((v + 1.0) / 2.0, 0.0, 1.0))
 	thr.value = 0.2
-	_label(root, "THROTTLE", Vector3(-0.34, -0.10, -0.24), -20, 13)
+	_label(root, "THROTTLE", Vector3(-0.34, 0.42, -0.24), -20, 13)
 	var bomb := VRControl.PushButton.create(Color(0.85, 0.12, 0.1), 0.032)
-	bomb.position = Vector3(-0.34, -0.10, -0.28)
+	bomb.position = Vector3(-0.34, 0.17, -0.28)
 	root.add_child(bomb)
 	bomb.pressed.connect(drop_bomb)
-	_label(root, "BOMB", Vector3(-0.34, -0.06, -0.34), -20, 13)
-	_label(root, "MG TRIGGER", Vector3(0, -0.10, 0.05), -20, 13)
+	_label(root, "BOMB", Vector3(-0.34, 0.28, -0.34), -20, 13)
+	_label(root, "MG TRIGGER", Vector3(0, 0.46, 0.10), -20, 13)
 	# canopy-rail hatch lever — Alex, live headset: plane should get a cockpit
 	# ejection then a parachute on hatch-pull (see _on_hatch_lever /
 	# main.exit_vehicle_airborne); biplane just falls out, no ejection, and

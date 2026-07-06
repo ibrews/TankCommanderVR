@@ -319,8 +319,11 @@ class GiantBaby:
 		if d < 12.0 and player.has_method("take_damage"):
 			player.take_damage(Tune.v("baby_step_dmg"), gp)
 			Sfx.play_at("char_baby_2", gp + Vector3(0, 40, 0), 8.0, 1.0, 400.0)
-		elif Game.rng.randf() < 0.25:
-			Sfx.play_at("char_baby_%d" % (1 + Game.rng.randi() % 3), gp + Vector3(0, 40, 0), 6.0, 1.0, 400.0)
+			print("[baby] stomp hit player, dist=", d)
+		else:
+			print("[baby] stomp missed, dist=", d, " (damage only lands within 12.0 on the ~1.45s stomp tick, not on continuous contact)")
+			if Game.rng.randf() < 0.25:
+				Sfx.play_at("char_baby_%d" % (1 + Game.rng.randi() % 3), gp + Vector3(0, 40, 0), 6.0, 1.0, 400.0)
 
 	func take_damage(amount: float, at: Vector3) -> void:
 		if _dead:
