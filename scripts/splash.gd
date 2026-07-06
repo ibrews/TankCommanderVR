@@ -76,6 +76,17 @@ func _ready() -> void:
 	ver.modulate = Color(0.4, 0.42, 0.4)
 	ver.position = Vector3(0, -0.34, 0.01)
 	add_child(ver)
+	# comedic-labeling tradition (cabbage merchant, SUPER FIZZ MAX) extends to
+	# the splash itself — a fake laurel-wreath "award" badge, corner-tucked so
+	# it never competes with "Made for Ani" above.
+	var badge := Label3D.new()
+	badge.text = "🏆 WINNER: 14 FAKE AWARDS 🏆\n(Tank Commander Film Festival, not real)"
+	badge.font_size = 11 * 4
+	badge.pixel_size = 0.0004
+	badge.modulate = Color(0.85, 0.75, 0.35)
+	badge.horizontal_alignment = HORIZONTAL_ALIGNMENT_RIGHT
+	badge.position = Vector3(PANEL_W * 0.5 - 0.05, -PANEL_H * 0.5 + 0.09, 0.01)
+	add_child(badge)
 
 func _process(delta: float) -> void:
 	_t += delta
