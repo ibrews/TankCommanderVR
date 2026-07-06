@@ -31,6 +31,16 @@ var _sprint: XRToolsMovementSprint
 var _climb: XRToolsMovementClimb
 var _grapple_l: XRToolsMovementGrapple
 var _grapple_r: XRToolsMovementGrapple
+# Item-gated powers (Alex: grapple/climb were ALWAYS on — they must be earned).
+# Set true the first time the matching pickable is grabbed (grapple_hook.gd /
+# climbing_gloves.gd via acquire_grapple()/acquire_climb()); from then on the
+# provider is allowed to enable in on-foot mode. Rig-lived, so it persists
+# across vehicle enter/exit for the whole playthrough; a restart rebuilds the
+# rig and re-clears these, which is the intended "start fresh" behavior. NOT a
+# hold check: once found the power is yours (drop the prop, keep the ability —
+# Spider-Man doesn't lose his webs by setting down a can).
+var _grapple_acquired := false
+var _climb_acquired := false
 
 class XRHand:
 	extends XRController3D
@@ -601,23 +611,28 @@ func _build_on_foot_nodes() -> void:
 	_climb.owner = self
 
 	var grapple_scene: PackedScene = load("res://addons/godot-xr-tools/functions/movement_grapple.tscn")
+	# Spider-Man rule (Alex): ANY solid world surface is a valid grapple anchor,
+	# not just the dedicated layer-6 "Grapple Target" bodies nobody ever placed.
+	# RAYCAST mask = world (layers 1-5, DEFAULT) + climb handles (19): lets the
+	# rope actually strike terrain, buildings, walls, vehicles, and climb-only
+	# handles. ENABLE mask = which of those hits count: world floor/walls (1),
+	# player vehicle hulls (2), enemy vehicle hulls (4), climbable handles (19)
+	# — anything solid. Excluding pickables (layer 3) keeps the rope from
+	# anchoring to a grenade in mid-air.
+	# (1 << 5) = legacy layer 6 "Grapple Target" — nobody ever placed one, but
+	# keeping it in the raycast mask costs nothing and can't break anything.
+	var grapple_ray_mask := XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | MeshKit.CLIMB_LAYER | (1 << 5)
+	var grapple_anchor_mask := 1 | (1 << 1) | (1 << 2) | MeshKit.CLIMB_LAYER | (1 << 5)
 	_grapple_l = grapple_scene.instantiate()
 	_grapple_l.enabled = false
-	# narrow to layer 6 "Grapple Target" (world layers 1-5 stay raycastable
-	# so the rope doesn't clip through walls; addon default would also
-	# accept a bare hit on any of layers 1-5 as a valid grapple point, which
-	# _is_raycast_valid() below filters back down via grapple_enable_mask)
-	_grapple_l.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
-	# Spider-Man rule (Alex): ANY solid world surface is a valid anchor —
-	# terrain/walls (layer 1) and climb bodies (19), not just the dedicated
-	# layer-6 targets nobody ever placed.
-	_grapple_l.grapple_enable_mask = 1 | (1 << 5) | (1 << 18)
+	_grapple_l.grapple_collision_mask = grapple_ray_mask
+	_grapple_l.grapple_enable_mask = grapple_anchor_mask
 	hand_l.add_child(_grapple_l)
 	_grapple_l.owner = self
 	_grapple_r = grapple_scene.instantiate()
 	_grapple_r.enabled = false
-	_grapple_r.grapple_collision_mask = XRToolsMovementGrapple.DEFAULT_COLLISION_MASK | (1 << 5)
-	_grapple_r.grapple_enable_mask = 1 | (1 << 5) | (1 << 18)
+	_grapple_r.grapple_collision_mask = grapple_ray_mask
+	_grapple_r.grapple_enable_mask = grapple_anchor_mask
 	hand_r.add_child(_grapple_r)
 	_grapple_r.owner = self
 
@@ -667,9 +682,30 @@ func _set_on_foot_active(active: bool) -> void:
 	_direct_l.enabled = active
 	_direct_r.enabled = active
 	_sprint.enabled = active
-	_climb.enabled = active
-	_grapple_l.enabled = active
-	_grapple_r.enabled = active
+	# Climb/grapple are gated by pickups: even on foot they stay off until the
+	# player has found the gloves / hook. _refresh_power_gates() (also called
+	# by acquire_*() the instant a pickable is grabbed) is the single place
+	# that resolves "on foot AND acquired".
+	_refresh_power_gates()
+
+# Re-derive climb/grapple provider enabled-state from mode + acquisition. The
+# pickups themselves stay on whenever on-foot so the props can be grabbed in
+# the first place — only the powers they unlock are gated.
+func _refresh_power_gates() -> void:
+	var on_foot := Game.player_mode == Game.PlayerMode.ON_FOOT
+	_climb.enabled = on_foot and _climb_acquired
+	_grapple_l.enabled = on_foot and _grapple_acquired
+	_grapple_r.enabled = on_foot and _grapple_acquired
+
+# Called by the pickables the first time they're grabbed. Permanent for the
+# playthrough (see the _*_acquired notes above).
+func acquire_grapple() -> void:
+	_grapple_acquired = true
+	_refresh_power_gates()
+
+func acquire_climb() -> void:
+	_climb_acquired = true
+	_refresh_power_gates()
 
 # Mid-mission vehicle exit (main.exit_vehicle()) and the menu-selectable
 # "runner" vehicle both route through here. Reparents the rig to world_parent
@@ -688,8 +724,11 @@ func enter_on_foot(world_parent: Node3D, dismount_transform: Transform3D) -> voi
 	if on_foot_body.get_parent() != self:
 		add_child(on_foot_body)
 	on_foot_body.enabled = true
-	_set_on_foot_active(true)
+	# Set mode BEFORE _set_on_foot_active — _refresh_power_gates() reads
+	# Game.player_mode to decide whether the (acquired) climb/grapple providers
+	# may turn on.
 	Game.player_mode = Game.PlayerMode.ON_FOOT
+	_set_on_foot_active(true)
 
 # Third person in VR pulls the whole rig back and up in the vehicle frame so
 # you view it like a drone — the headset still drives look, which keeps it

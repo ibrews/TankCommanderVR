@@ -1,8 +1,12 @@
-# Climbing gloves prop: holding it enables the rig's single
-# XRToolsMovementClimb provider (movement_climb.gd has no concept of gear,
-# only of gripping XRToolsClimbable-tagged surfaces — so "gloves enable
-# climbing" gates the ability itself, not which walls count. Simpler, matches
-# the addon's grain, no surface-tier gating needed).
+# Climbing gloves prop: the player must physically find and grab it; the FIRST
+# grab permanently unlocks the rig's XRToolsMovementClimb provider for the rest
+# of the playthrough (rig.acquire_climb()). movement_climb.gd has no concept of
+# gear, only of gripping XRToolsClimbable-tagged surfaces — so the gloves gate
+# the ABILITY, while which surfaces count is decided by which bodies carry the
+# climbable script + grab layer (terrain, buildings, rocks, walls — see
+# terrain.gd / mesh_kit.add_static_box_collider). Powers used to be always-on
+# regardless of pickup (Alex's complaint); this is the gate. Drop them and you
+# keep the ability; it re-clears only on a level restart (rebuilds the rig).
 class_name ClimbingGlovesPickable
 extends XRToolsPickable
 
@@ -22,10 +26,10 @@ func _ready() -> void:
 	add_child(shape)
 	super._ready()
 	picked_up.connect(func(_p):
-		_set_climb_enabled(true)
+		_acquire_climb()
 		Sfx.play_at("click", global_position, -4.0, 0.9)
 		_pulse_holder(0.4, 0.06))
-	dropped.connect(func(_p): _set_climb_enabled(false))
+	# no dropped handler: acquisition is permanent for the playthrough
 
 func _build_mesh() -> void:
 	var st := MeshKit.begin()
@@ -46,8 +50,7 @@ func _pulse_holder(amp: float, dur: float) -> void:
 	if ctrl and ctrl.has_method("pulse"):
 		ctrl.pulse(amp, dur)
 
-func _set_climb_enabled(on: bool) -> void:
+func _acquire_climb() -> void:
 	var m := get_tree().get_first_node_in_group("main")
 	if m and m.rig is XRRig:
-		var r: XRRig = m.rig
-		r._climb.enabled = on
+		(m.rig as XRRig).acquire_climb()

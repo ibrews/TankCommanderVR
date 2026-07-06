@@ -26,6 +26,23 @@ func _ready() -> void:
 	_shape.shape = box
 	_shape.position = Vector3(0, 2.6, 0)
 	add_child(_shape)
+	# Climb the ramparts. This body already owns a script (destructible logic),
+	# and a node can hold only one — and movement_climb casts the grabbed
+	# collider to XRToolsClimbable — so climbing rides a sibling StaticBody on
+	# CLIMB_LAYER with the climbable script, sharing the wall's box. It's on the
+	# climb layer only (not layer 1), so it adds no extra solid/physics surface,
+	# just a grab handle overlapping the real wall.
+	var climb := StaticBody3D.new()
+	climb.collision_layer = MeshKit.CLIMB_LAYER
+	climb.collision_mask = 0
+	climb.set_script(load("res://addons/godot-xr-tools/objects/climbable.gd"))
+	var ccs := CollisionShape3D.new()
+	var cbox := BoxShape3D.new()
+	cbox.size = Vector3(seg_len, 5.2, 1.5)
+	ccs.shape = cbox
+	ccs.position = Vector3(0, 2.6, 0)
+	climb.add_child(ccs)
+	add_child(climb)
 
 func _wall_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()
