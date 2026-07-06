@@ -910,6 +910,9 @@ func _spawn_on_foot_pickables() -> void:
 		["pistol", Vector2(4.0, -4.0)],
 		["cabbage_grenade", Vector2(-4.0, -4.0)],
 		["coffee", Vector2(-2.0, 8.0)],
+		["threefer", Vector2(8.0, 0.0)],
+		["lil_howie", Vector2(-8.0, 0.0)],
+		["slaw_blaster", Vector2(0.0, -8.0)],
 	]
 	for entry in offsets:
 		var pos: Vector2 = Terrain.SPAWN_CENTER + (entry[1] as Vector2)
@@ -925,6 +928,12 @@ func _spawn_on_foot_pickables() -> void:
 				prop = CabbageGrenadePickable.new()
 			"coffee":
 				prop = CoffeePickable.new()
+			"threefer":
+				prop = ThreeFerPickable.new()
+			"lil_howie":
+				prop = LilHowiePickable.new()
+			"slaw_blaster":
+				prop = SlawBlasterPickable.new()
 			_:
 				prop = EnergyDrinkPickable.new()
 		world.add_child(prop)
