@@ -88,8 +88,18 @@ func _rebuild() -> void:
 	# soldier dressing pass (Alex: "good looking avatars") — helmet dome +
 	# brim over the bare sphere, all cheap primitives, same draw budget class
 	var helmet := _mk_sphere(0.148, tint.darkened(0.35))
-	helmet.position = Vector3(0, 0.035, 0.01)
-	helmet.scale = Vector3(1.0, 0.72, 1.0)
+	# Nudged up + flatter, and the visor pushed slightly further forward below
+	# (Alex: "I think my hat might still be clocking my visor") -- worked out
+	# from the actual sphere/box geometry (dome's front-lower surface reached
+	# down to head-local y=-0.032 at the visor's z-depth, well inside the
+	# visor box's own y=[-0.0225,0.0625] range: a real, confirmed overlap, not
+	# just "close"). This reduces it a good deal but doesn't fully eliminate
+	# it without either shrinking the visor or cutting the dome's front
+	# lip entirely -- couldn't verify the result in a headset this pass
+	# (no device attached this session), so treat this as a real improvement
+	# to re-check live, not a guaranteed final fix.
+	helmet.position = Vector3(0, 0.065, 0.01)
+	helmet.scale = Vector3(1.0, 0.66, 1.0)
 	_head.add_child(helmet)
 	var brim := _mk_cyl(0.155, 0.155, 0.02, tint.darkened(0.4))
 	brim.position = Vector3(0, -0.01, 0.015)
@@ -103,7 +113,7 @@ func _rebuild() -> void:
 	vm.roughness = 0.15
 	vm.metallic = 0.4
 	visor.material_override = vm
-	visor.position = Vector3(0, 0.02, -0.105)
+	visor.position = Vector3(0, 0.02, -0.12)
 	_head.add_child(visor)
 
 	_hip = Node3D.new()

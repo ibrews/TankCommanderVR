@@ -81,7 +81,15 @@ class Lever:
 			var nv := clampf(v, -1.0, 1.0)
 			if absf(nv - value) > 0.0005:
 				value = nv
-				pivot.rotation.x = value * max_angle
+				# Negated: a positive value comes from the hand moving toward -Z
+				# (see on_hand_update()'s atan2(-local.z, local.y)), but a positive
+				# rotation.x about the pivot's own local X axis swings the knob
+				# toward +Z -- the opposite of the hand supposedly holding it.
+				# Purely cosmetic (the `value` driving game logic is untouched) --
+				# fixes the knob visually drifting backward away from your grip
+				# as you push/pull it (Alex, live headset 2026-07-06: "when I
+				# grab a lever and pull or push it goes the wrong way").
+				pivot.rotation.x = -value * max_angle
 				value_changed.emit(value)
 			else:
 				value = nv
@@ -180,7 +188,18 @@ class TwoAxisGrip:
 		var d := Vector2(clampf(off.x / 0.10, -1.0, 1.0), clampf(-off.z / 0.10, -1.0, 1.0))
 		if d.distance_to(deflection) > 0.01:
 			deflection = d
-			pivot.rotation = Vector3(deflection.y * 0.28, 0, -deflection.x * 0.28)
+			# Y negated for the VISUAL tilt only (X/left-right confirmed
+			# correct, unchanged) -- same visual/function split as the Lever
+			# fix earlier this session: a positive rotation.x on this pivot
+			# swings the knob toward +Z (backward, toward the player) for a
+			# positive deflection.y, which is the hand pushing FORWARD
+			# (-Z) -- the knob was visually moving opposite the hand that's
+			# holding it, exactly like the lever bug. `deflection` itself
+			# (the emitted/functional value everyone reads) is untouched, so
+			# this doesn't affect the plane's already-verified-correct pitch
+			# or the tank's gun elevation (fixed separately, at its own
+			# consuming end in player_tank.gd).
+			pivot.rotation = Vector3(-deflection.y * 0.28, 0, -deflection.x * 0.28)
 			deflection_changed.emit(deflection)
 
 	func release() -> void:
@@ -394,9 +413,16 @@ class Knob:
 	var value := 0.5
 	var detents := 12
 	var knob_mesh: MeshInstance3D
-	var _grab_x := 0.0
+	var _grab_ang := 0.0
 	var _grab_value := 0.5
 	var _last_detent := -1
+
+	# Lock-to-lock authority, like a real volume dial (matches SteeringWheel's
+	# own MAX_TURN idiom).
+	const TURN_RANGE := deg_to_rad(270.0)
+	# Below this radius from the knob's own center the angle math goes noisy
+	# (atan2 near the origin), so ignore hand-update ticks that close.
+	const MIN_RADIUS := 0.015
 
 	static func create(col := Color(0.15, 0.15, 0.16), radius := 0.028) -> Knob:
 		var k := Knob.new()
@@ -412,14 +438,37 @@ class Knob:
 		k._apply()
 		return k
 
+	# Was a straight linear-slide-along-local-X drag -- but the knob VISUALLY
+	# spins around its own local Z (see _apply()'s knob_mesh.rotation.z), and
+	# both cockpit_builder.gd radio knobs are additionally mounted with a 90°
+	# rotation.y (facing the seat from the side wall), which rotates local X
+	# to point along world Z. Net effect: no gesture a player would actually
+	# try -- twisting the wrist did nothing (position-only, no rotation ever
+	# reached this code), and even an intentional "slide sideways" attempt
+	# read along the wrong world axis after the mount rotation. Alex,
+	# 2026-07-06: "I haven't successfully turned any knobs yet despite my
+	# best efforts." Rewritten to track the grabbing hand's ANGLE around the
+	# knob's own local Z axis instead -- same atan2-around-a-pivot idiom
+	# SteeringWheel already uses -- so moving your hand in an arc around the
+	# knob's face (the natural "spin the dial" motion) is what actually turns
+	# it, regardless of how the knob is mounted.
 	func on_grab(hand: Node) -> void:
 		super.on_grab(hand)
-		_grab_x = to_local(hand.global_position).x
+		var local := to_local(hand.global_position)
+		_grab_ang = atan2(local.y, local.x)
 		_grab_value = value
 
 	func on_hand_update(hand_pos: Vector3) -> void:
-		var dx := to_local(hand_pos).x - _grab_x
-		var nv := clampf(_grab_value + dx * 2.4, 0.0, 1.0)
+		var local := to_local(hand_pos)
+		if Vector2(local.x, local.y).length() < MIN_RADIUS:
+			return
+		var ang := atan2(local.y, local.x)
+		# Negated for the same reason SteeringWheel negates its own delta:
+		# atan2 winds counter-clockwise looking down local -Z, but matching
+		# "clockwise turn = higher value" (the usual real-dial convention)
+		# needs the opposite sign.
+		var d := -wrapf(ang - _grab_ang, -PI, PI)
+		var nv := clampf(_grab_value + d / TURN_RANGE, 0.0, 1.0)
 		if absf(nv - value) > 0.002:
 			value = nv
 			_apply()

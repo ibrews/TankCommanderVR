@@ -41,7 +41,12 @@ var _status: Label3D = null
 # log upload plumbing
 const LOG_URL := "https://tank-commander.alexcoulombe.workers.dev/logs"
 const LOG_PATH := "user://logs/godot.log"
+const LOGS_DIR := "user://logs"
+# Marks the last ROTATED (previous-run) log we already auto-shipped, so a
+# crash log doesn't get re-uploaded on every subsequent boot forever.
+const AUTO_MARKER_PATH := "user://logs/.last_auto_uploaded"
 var _http: HTTPRequest = null
+var _auto_http: HTTPRequest = null
 var _upload_btn: Dictionary = {}
 
 const HOWTO := [
@@ -67,6 +72,9 @@ func _ready() -> void:
 	_show_main()
 	if is_pause_overlay:
 		return
+	# One-shot per real hangar visit (not the pause overlay, which builds a
+	# fresh MainMenu every time you pause) — see _maybe_auto_upload_stale_log().
+	_maybe_auto_upload_stale_log()
 	Sfx.music_menu()
 	Sfx.coach("vo_welcome", 4, 2.0)
 	get_tree().create_timer(6.5).timeout.connect(func():
@@ -165,7 +173,7 @@ func _show_main() -> void:
 		Game.display_name = Game.default_name()
 	_button("namereroll", Game.display_name, Vector2(0.88, 0.63), Vector2(0.5, 0.11), 11)
 	_button("helptoggle", "HELP: ON" if Game.help_on else "HELP: OFF", Vector2(0.72, -0.42), Vector2(0.42, 0.14), 12)
-	_button("viewtoggle", "VIEW: 3RD" if Game.third_person else "VIEW: 1ST", Vector2(1.14, -0.42), Vector2(0.42, 0.14), 12)
+	_button("viewtoggle", ["VIEW: 1ST", "VIEW: 3RD", "VIEW: FAR"][Game.cam_mode], Vector2(1.14, -0.42), Vector2(0.42, 0.14), 12)
 	# Runner (on-foot) locomotion prefs — only meaningful once you're walking,
 	# but kept on the main page (not buried in HOWTO, which is read-only text)
 	# same as help/view above so they're reachable without a dedicated menu.
@@ -249,12 +257,7 @@ func _upload_log() -> void:
 		return
 	var body := f.get_as_text()
 	f.close()
-	var dev := OS.get_unique_id()
-	if dev.is_empty():
-		dev = OS.get_model_name()
-	var url := "%s?device=%s&kind=manual" % [LOG_URL, dev.uri_encode()]
-	var err := _http.request(url, ["Content-Type: text/plain"], HTTPClient.METHOD_POST, body)
-	if err != OK:
+	if _post_log(_http, body, "manual") != OK:
 		_set_upload_label("Failed")
 
 func _on_log_uploaded(result: int, code: int, _headers: PackedStringArray, _body: PackedByteArray) -> void:
@@ -266,6 +269,74 @@ func _on_log_uploaded(result: int, code: int, _headers: PackedStringArray, _body
 func _set_upload_label(txt: String) -> void:
 	if _upload_btn.has("label") and is_instance_valid(_upload_btn["label"]):
 		_upload_btn["label"].text = txt
+
+func _post_log(http: HTTPRequest, body: String, kind: String) -> Error:
+	var dev := OS.get_unique_id()
+	if dev.is_empty():
+		dev = OS.get_model_name()
+	var url := "%s?device=%s&kind=%s" % [LOG_URL, dev.uri_encode(), kind]
+	return http.request(url, ["Content-Type: text/plain"], HTTPClient.METHOD_POST, body)
+
+# Crash-safety net for "we kept crashing"/"I kept getting disconnected"
+# debugging (Alex, 2026-07-06): the manual UPLOAD LOG button only ever reads
+# the CURRENT run's user://logs/godot.log — but Godot's own file-logging
+# rotation (project.godot's file_logging/*) renames the PREVIOUS run's log to
+# a timestamped file the instant a new run starts. If the app crashed and
+# relaunched, that previous (crashed) session's log is already rotated away
+# by the time anyone thinks to press the button, and there's no way to pick a
+# specific rotated file from the menu UI — so exactly the session you'd most
+# want data from was unreachable. Silently ships the most recent ROTATED log
+# once per hangar visit (not the pause overlay — that rebuilds every pause)
+# if it hasn't already been sent, tagged kind=auto so it's distinguishable
+# from a deliberate manual click in the /logs/list view.
+func _maybe_auto_upload_stale_log() -> void:
+	var dir := DirAccess.open(LOGS_DIR)
+	if dir == null:
+		return
+	var last_marker := ""
+	if FileAccess.file_exists(AUTO_MARKER_PATH):
+		var mf := FileAccess.open(AUTO_MARKER_PATH, FileAccess.READ)
+		if mf:
+			last_marker = mf.get_as_text().strip_edges()
+			mf.close()
+	var best_name := ""
+	var best_time := 0
+	dir.list_dir_begin()
+	var fname := dir.get_next()
+	while fname != "":
+		if not dir.current_is_dir() and fname != "godot.log" and fname.begins_with("godot") and fname.ends_with(".log"):
+			var t := FileAccess.get_modified_time(LOGS_DIR.path_join(fname))
+			if t > best_time:
+				best_time = t
+				best_name = fname
+		fname = dir.get_next()
+	dir.list_dir_end()
+	if best_name == "" or best_name == last_marker:
+		return
+	var f := FileAccess.open(LOGS_DIR.path_join(best_name), FileAccess.READ)
+	if f == null:
+		return
+	var body := f.get_as_text()
+	f.close()
+	if body.is_empty():
+		return
+	# Separate HTTPRequest node from the manual button's _http: this can fire
+	# while the player is already mid-click on the real button, and one node
+	# can't run two requests at once. Doesn't touch _upload_btn's label —
+	# nobody asked for this one, so no on-screen feedback for it either way.
+	_auto_http = HTTPRequest.new()
+	add_child(_auto_http)
+	_auto_http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray) -> void:
+		# Marker written only on confirmed success — a failed attempt (e.g. no
+		# Wi-Fi yet at boot) retries on the next hangar visit instead of being
+		# silently dropped forever.
+		if result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300:
+			var wf := FileAccess.open(AUTO_MARKER_PATH, FileAccess.WRITE)
+			if wf:
+				wf.store_string(best_name)
+				wf.close()
+		_auto_http.queue_free())
+	_post_log(_auto_http, body, "auto")
 
 # ---------------- pointer interface (called by the rigs)
 # Returns true if the ray hits the panel (for laser length/visuals).

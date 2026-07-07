@@ -52,7 +52,16 @@ func _process(_delta: float) -> void:
 	_apply("xr_standard_trigger_pressed", hand.effective_trigger())
 	_apply("xr_standard_squeeze_pressed", hand.effective_grip())
 	var stick := hand.get_vector2("primary")
-	var norm := _normalize_axes(stick.x, stick.y)
+	# webxr-input-profiles' normalizeAxes() (ported below) assumes the Gamepad-
+	# API sign convention where pushing the stick UP/away reads as NEGATIVE y.
+	# This project's own OpenXR mapping is the opposite -- xr_rig.gd feeds
+	# raw ls.y straight into drive speed with forward=+y (see its "Drive Y"
+	# comment, confirmed correct on-device) -- so plugging Godot's raw y
+	# straight into this formula animated the glTF thumbstick toward its
+	# "pulled back" pose while the player pushed forward. Negate here, at the
+	# animation boundary only, so the gameplay-facing raw value (used
+	# everywhere else) stays untouched.
+	var norm := _normalize_axes(stick.x, -stick.y)
 	_apply("xr_standard_thumbstick_xaxis_pressed", norm.x)
 	_apply("xr_standard_thumbstick_yaxis_pressed", norm.y)
 	_apply("xr_standard_thumbstick_pressed", 1.0 if hand.is_button_pressed("primary_click") else 0.0)

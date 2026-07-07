@@ -12,6 +12,7 @@ var hand_l_mesh: XRNode3D
 var hand_r_mesh: XRNode3D
 var _calibrated := true
 var _calib_t := 0.0
+var _use_establishing_shot := false  # true only for the fresh level-start attach_to_vehicle() call
 var _fp_pos := Vector3.ZERO   # calibrated first-person eye position
 
 # On-foot mode (godot-xr-tools): built once here, enabled/disabled as the
@@ -456,7 +457,7 @@ func _ready() -> void:
 	add_child(wind)
 	var xr := XRServer.find_interface("OpenXR")
 	if xr and xr.has_signal("pose_recentered"):
-		xr.pose_recentered.connect(func(): _calibrated = false; _calib_t = 0.3)
+		xr.pose_recentered.connect(func(): _calibrated = false; _calib_t = 0.3; _use_establishing_shot = false)
 	Game.camera_mode_changed.connect(func(_t: bool): _apply_camera_mode())
 	# Defensive: if nothing is tracking a few seconds in, the OpenXR runtime or
 	# action map is misconfigured — surface it rather than leaving the player
@@ -565,7 +566,22 @@ func to_menu_anchor(parent: Node3D) -> void:
 # empirically the player's natural head orientation already frames the
 # vehicle fine without forcing a look-at, exactly like third person
 # already does.
-const ESTABLISHING_SHOT_OFFSET := Vector3(0, 10.0, 10.0)
+#
+# Alex, 2026-07-06: hold this shot for 2s LONGER before cutting to the
+# selected view mode, and make sure it never looks like just a preview of
+# one of the chase-cam distances -- a real 3/4 angle (genuine X/side
+# offset, not just straight-behind-and-above) at a distance clear of both
+# THIRD (~8.5m) and the new FAR (~14.6m, THIRD + 20') chase distances.
+const ESTABLISHING_SHOT_OFFSET := Vector3(9.0, 13.0, 10.0)  # dist ~18.7m, side+above -- distinct from both chase cams
+const ESTABLISHING_SHOT_EXTRA_HOLD := 2.0  # on top of the normal ~1.2s calibration wait
+
+# Chase-cam offsets, expressed in the seat_anchor's own rotating local frame
+# (SEATED only -- see _apply_view_offset()). FAR is THIRD_OFFSET plus 20'
+# (6.096m) of extra distance straight back, per Alex's ask -- literally
+# "another 20' further back," not a different angle.
+const THIRD_OFFSET := Vector3(0, 3.0, 8.0)
+const FAR_EXTRA_BACK := 6.096  # 20 feet
+const FAR_OFFSET := Vector3(0, 3.0, 8.0 + FAR_EXTRA_BACK)
 
 func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 	tank = v
@@ -582,6 +598,7 @@ func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 		position = ESTABLISHING_SHOT_OFFSET
 	_calibrated = false
 	_calib_t = 0.0
+	_use_establishing_shot = show_establishing_shot
 	camera.current = true
 	camera.make_current()
 	v.set("_rumble_cb", func(amp, dur):
@@ -614,10 +631,20 @@ func _build_on_foot_nodes() -> void:
 	var pickup_scene: PackedScene = load("res://addons/godot-xr-tools/functions/function_pickup.tscn")
 	_pickup_l = pickup_scene.instantiate()
 	_pickup_l.enabled = false
+	# Default direct-grab reach is 0.3m -- fine for something at hand height,
+	# but ground-level pickables (the three on-foot power items, dropped
+	# weapons) needed a full crouch to actually reach. Alex, 2026-07-07:
+	# "make sure I can grab objects from a short distance... so I don't need
+	# to bend all the way to the ground." Doubled, not maxed out -- still a
+	# real reach-for-it gesture, not a magnetic full-room grab (the addon's
+	# own ranged_enable=true/ranged_distance=5.0 already covers genuine
+	# across-the-room pointing separately).
+	_pickup_l.grab_distance = 0.6
 	hand_l.add_child(_pickup_l)
 	_pickup_l.owner = self
 	_pickup_r = pickup_scene.instantiate()
 	_pickup_r.enabled = false
+	_pickup_r.grab_distance = 0.6
 	hand_r.add_child(_pickup_r)
 	_pickup_r.owner = self
 
@@ -790,6 +817,7 @@ func enter_on_foot(world_parent: Node3D, dismount_transform: Transform3D) -> voi
 	# may turn on.
 	Game.player_mode = Game.PlayerMode.ON_FOOT
 	_set_on_foot_active(true)
+	_apply_view_offset()   # re-apply whatever camera-mode preference is current
 
 # Third person in VR pulls the whole rig back and up in the vehicle frame so
 # you view it like a drone — the headset still drives look, which keeps it
@@ -806,8 +834,85 @@ func _apply_view_offset() -> void:
 	# never resizes/repositions to compensate. Only apply the chase offset
 	# once actually PLAYING (there's a real vehicle to orbit at that point).
 	var third := Game.third_person and Game.state != Game.GState.MENU
-	position = _fp_pos + (Vector3(0, 3.0, 8.0) if third else Vector3.ZERO)
-	print("[camera] mode=", "third" if third else "first", " state=", Game.GState.keys()[Game.state], " pos=", position)
+	if Game.player_mode == Game.PlayerMode.ON_FOOT:
+		# On-foot: the origin's position is fully addon-managed
+		# (XRToolsPlayerBody.rotate_player()/move_body() etc. increment
+		# origin_node.global_transform.origin every frame to track real+
+		# virtual walking/turning) -- writing a baked local offset here the
+		# way SEATED does below fights that and strands the origin at a
+		# stale, disconnected spot (this used to reuse _fp_pos, which is
+		# only ever computed by the SEATED _calibrate() and never touched on
+		# foot). Root cause of "I still don't seem to see my avatar in third
+		# person mode when I'm a runner" (Alex, 2026-07-06): the camera never
+		# actually pulled back at all on foot, so the local AvatarRig (built
+		# correctly -- see main.gd's _update_local_avatar()) sat right on top
+		# of the camera the whole time, same as first person. Detach the
+		# camera instead and chase it off the on-foot body's own live
+		# position every frame -- see _update_on_foot_chase_cam(), called
+		# from _physics_process().
+		position = Vector3.ZERO
+		camera.top_level = third
+		if third:
+			# Snap immediately instead of leaving whatever stale local
+			# transform the camera had before top_level flipped true --
+			# top_level reinterprets that SAME transform as a world-space
+			# one, which could be anywhere (still inside a vehicle's
+			# rotating cockpit frame, mid-headset-tracking-update, etc.).
+			# Left un-snapped, that's a real candidate for "I still see a
+			# black screen often when trying to use my runner avatar" (Alex,
+			# 2026-07-07) -- a degenerate/miles-away camera transform for
+			# however many frames it took _update_on_foot_chase_cam() to
+			# first correct it, or forever if on_foot_body wasn't valid yet.
+			_update_on_foot_chase_cam(0.0, true)
+		else:
+			camera.transform = Transform3D()
+		print("[camera] mode=", Game.CamMode.keys()[Game.cam_mode], " state=", Game.GState.keys()[Game.state], " on-foot")
+		return
+	camera.top_level = false
+	var offset := Vector3.ZERO
+	if third:
+		offset = FAR_OFFSET if Game.cam_mode == Game.CamMode.FAR else THIRD_OFFSET
+	position = _fp_pos + offset
+	print("[camera] mode=", Game.CamMode.keys()[Game.cam_mode], " state=", Game.GState.keys()[Game.state], " pos=", position)
+
+## On-foot equivalent of the SEATED chase offset above -- see
+## _apply_view_offset()'s on-foot branch for why this can't just bake a
+## local position offset the way seated vehicles do. Recomputed every
+## physics frame from the on-foot body's actual position/facing (this rig's
+## own basis already tracks snap/smooth turning -- XRToolsPlayerBody.
+## rotate_player() rotates origin_node, i.e. this rig, around the camera on
+## every turn, so -global_transform.basis.z is a live facing direction).
+## snap=true jumps straight to the target instead of lerping -- used right
+## after top_level flips true so there's never a frame with a stale/garbage
+## transform (see the call site's comment).
+func _update_on_foot_chase_cam(delta: float, snap: bool = false) -> void:
+	if not camera.top_level or Game.player_mode != Game.PlayerMode.ON_FOOT:
+		return
+	if on_foot_body == null or not is_instance_valid(on_foot_body):
+		# Nothing valid to chase -- fall back to a state that's guaranteed to
+		# render something (identity, non-detached) rather than leave the
+		# camera stuck detached with no target to correct toward.
+		camera.top_level = false
+		camera.transform = Transform3D()
+		return
+	var body_pos: Vector3 = on_foot_body.global_position
+	if not (is_finite(body_pos.x) and is_finite(body_pos.y) and is_finite(body_pos.z)):
+		return
+	var facing := -global_transform.basis.z
+	facing.y = 0.0
+	if facing.length() < 0.01:
+		facing = Vector3.FORWARD
+	facing = facing.normalized()
+	var back_dist := 3.2 + (FAR_EXTRA_BACK if Game.cam_mode == Game.CamMode.FAR else 0.0)
+	var eye := body_pos - facing * back_dist + Vector3(0, 2.0, 0)
+	var look := body_pos + Vector3(0, 1.0, 0)
+	if eye.distance_to(look) < 0.05:
+		return  # degenerate looking_at() input -- skip this tick rather than risk an invalid basis
+	var target := Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
+	if snap:
+		camera.global_transform = target
+	else:
+		camera.global_transform = camera.global_transform.interpolate_with(target, clampf(6.0 * delta, 0.0, 1.0))
 
 ## First-person head/hand pose relative to `relative_to`, ignoring any current
 ## third-person chase offset (_apply_view_offset() adds it straight to
@@ -878,13 +983,22 @@ func _hand_debug_line(tag: String, h: XRHand) -> String:
 var _mp_cool := 0.0
 func _mp_hotkeys(delta: float) -> void:
 	_mp_cool = maxf(0.0, _mp_cool - delta)
-	if not NetManager.active():
-		return
 	var both_grip := hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8
 	# NOT while both triggers are also squeezed — that's the disaster easter
 	# egg's gesture (grips+triggers+A), which must not double-fire god-mode.
 	var triggers := hand_l.effective_trigger() > 0.6 or hand_r.effective_trigger() > 0.6
 	if not both_grip or triggers or _mp_cool > 0.0:
+		return
+	# Solo driver<->gunner seat swap — same grips+Y gesture co-op already uses
+	# for NetManager.request_seat_swap(), but purely local (no peer to swap
+	# with). Checked before the NetManager.active() gate below so it still
+	# fires in solo, where NetManager is never active.
+	if hand_l.is_button_pressed("by_button") and Game.mode == Game.Mode.SOLO and tank is PlayerTank:
+		_mp_cool = 0.6
+		tank.call("toggle_seat")
+		_pulse_both(0.4, 0.06)
+		return
+	if not NetManager.active():
 		return
 	if hand_l.is_button_pressed("by_button") and Game.mode == Game.Mode.COOP:
 		_mp_cool = 0.6
@@ -973,12 +1087,14 @@ func _physics_process(delta: float) -> void:
 		_feed_arm_swing(delta)
 		_feed_stick_sprint()
 		_check_reentry()
+		_update_on_foot_chase_cam(delta)
 		return
 	if tank == null:
 		return
 	if not _calibrated:
 		_calib_t += delta
-		if _calib_t > 1.2 and camera.transform.origin.length() > 0.01:
+		var _calib_threshold := 1.2 + (ESTABLISHING_SHOT_EXTRA_HOLD if _use_establishing_shot else 0.0)
+		if _calib_t > _calib_threshold and camera.transform.origin.length() > 0.01:
 			_calibrate()
 	# Dedicated exit-vehicle binding (Alex: "we should absolutely have a
 	# button to exit/enter vehicles!"): hold LEFT trigger ~1s while seated.
@@ -1042,6 +1158,7 @@ func _physics_process(delta: float) -> void:
 	if hand_l.is_button_pressed("by_button") and not get_meta("y_was", false):
 		_calibrated = false
 		_calib_t = 1.0
+		_use_establishing_shot = false
 	set_meta("y_was", hand_l.is_button_pressed("by_button"))
 	if hand_l.is_button_pressed("ax_button") and not get_meta("x_was", false):
 		tank.call("quick_start")
@@ -1049,6 +1166,19 @@ func _physics_process(delta: float) -> void:
 	# primary_click (left-stick click) used to also trigger quick_start here
 	# — now repurposed for the global reset-level binding above (X button
 	# alone still starts the engine), per Alex's explicit ask.
+	# Right A alone (not the both-grips MP chord that also uses it for the
+	# host team-toggle) cycles the radio station -- Alex, 2026-07-06: "if we
+	# still have a spare button... maybe that cycles the radio stations if
+	# you're in any vehicle." Works seated in any vehicle (Sfx.radio_station
+	# is global autoload state, not tank-specific) -- only DAD FM's spoken
+	# lines need the tank's own radio_attach() node to have been created at
+	# least once this session; the two music-only stations work regardless.
+	var a_pressed := hand_r.is_button_pressed("ax_button")
+	var both_grip_now := hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8
+	if a_pressed and not get_meta("a_was", false) and not both_grip_now:
+		Sfx.set_radio_station((Sfx.radio_station + 1) % Sfx.STATIONS.size())
+		hand_r.pulse(0.3, 0.03)
+	set_meta("a_was", a_pressed)
 	_check_easter_egg(delta)
 	_feed_arm_swing(delta)
 

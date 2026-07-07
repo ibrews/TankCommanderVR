@@ -36,7 +36,11 @@ func to_menu_anchor(parent: Node3D) -> void:
 # Matches XRRig.ESTABLISHING_SHOT_OFFSET (see its own comment for why) --
 # duplicated rather than shared since the two rigs don't have a common
 # base class, kept in sync by value only.
-const ESTABLISHING_SHOT_OFFSET := Vector3(0, 10.0, 10.0)
+const ESTABLISHING_SHOT_OFFSET := Vector3(9.0, 13.0, 10.0)  # dist ~18.7m -- distinct from both chase distances
+const ESTABLISHING_SHOT_HOLD := 3.2  # matches XRRig's 1.2 + 2.0s extra hold
+const CHASE_BACK := 9.0
+const CHASE_UP := 4.0
+const FAR_EXTRA_BACK := 6.096  # 20 feet, matches XRRig.FAR_EXTRA_BACK
 
 func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 	tank = v
@@ -50,7 +54,7 @@ func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 	camera.current = true
 	if show_establishing_shot:
 		position = ESTABLISHING_SHOT_OFFSET
-		get_tree().create_timer(1.2).timeout.connect(func():
+		get_tree().create_timer(ESTABLISHING_SHOT_HOLD).timeout.connect(func():
 			if tank == v and is_instance_valid(self):
 				position = v.cockpit["eye_local"]
 				_apply_camera_mode())
@@ -58,8 +62,9 @@ func attach_to_vehicle(v: Node3D, show_establishing_shot: bool = false) -> void:
 		position = v.cockpit["eye_local"]
 		_apply_camera_mode()
 
-# First person seats the camera at the cockpit eye; third person detaches it to
-# a chase position behind the vehicle. Mouse-look still steers the view in both.
+# First person seats the camera at the cockpit eye; third/far detach it to a
+# chase position behind the vehicle (far = another 20' back). Mouse-look
+# still steers the view in all three.
 func _apply_camera_mode() -> void:
 	if tank == null:
 		return
@@ -83,8 +88,9 @@ func local_body_pose(relative_to: Node3D) -> Dictionary:
 
 func _chase_target() -> Transform3D:
 	# behind + above the vehicle, looking at it, orbited by the mouse-look yaw
+	var back_dist := CHASE_BACK + (FAR_EXTRA_BACK if Game.cam_mode == Game.CamMode.FAR else 0.0)
 	var back := tank.global_transform.basis.rotated(Vector3.UP, _yaw).z.normalized()
-	var eye := tank.global_position + back * 9.0 + Vector3(0, 4.0, 0)
+	var eye := tank.global_position + back * back_dist + Vector3(0, CHASE_UP, 0)
 	var look := tank.global_position + Vector3(0, 1.2, 0)
 	return Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
 

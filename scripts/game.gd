@@ -37,7 +37,19 @@ var travel_carry := {}     # score/hp/wave preserved across an endless travel
 var help_on := true        # coaching VO + written hints (menu-toggleable)
 signal ui_visibility_changed(visible_: bool)
 var ui_visible := true     # cockpit HUD labels (ammo/score/plaque/hint) — left-Y button toggle
-var third_person := false  # false = in-cockpit first person (default), true = chase cam
+## Three camera modes: cockpit first-person, a near chase cam, and a far
+## chase cam another 20' further back (Alex, 2026-07-06). `third_person`
+## stays a plain bool (computed from cam_mode) rather than being replaced
+## outright — every existing "if Game.third_person" call site (avatar
+## visibility, auto-start-if-third-person, the menu's view label, ambience)
+## only ever cared about "am I out of the cockpit," which both non-FIRST
+## modes still satisfy; only the actual camera-positioning code
+## (xr_rig.gd/desktop_rig.gd) needs to look at cam_mode for which distance.
+enum CamMode { FIRST, THIRD, FAR }
+var cam_mode: int = CamMode.FIRST
+var third_person: bool:
+	get: return cam_mode != CamMode.FIRST
+	set(v): cam_mode = CamMode.THIRD if v else CamMode.FIRST
 # On-foot (Runner) locomotion prefs — menu-toggleable, see menu.gd's
 # "turntoggle"/"sprinttoggle" buttons and xr_rig.gd's on-foot movement setup.
 var smooth_turn := false   # false = SNAP turn (default, matches the game's prior no-turn-provider
@@ -50,7 +62,7 @@ signal camera_mode_changed(third: bool)
 signal pause_changed(is_paused: bool)
 
 func toggle_camera_mode() -> void:
-	third_person = not third_person
+	cam_mode = (cam_mode + 1) % 3
 	camera_mode_changed.emit(third_person)
 
 func toggle_ui() -> void:

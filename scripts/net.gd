@@ -549,6 +549,11 @@ func _relay_apply_evt(env: Dictionary) -> void:
 			if projectiles:
 				projectiles.fire(int(env["kind"]), _un_v3(env["pos"]), _un_v3(env["vel"]), [], true, true)
 		"v_damage": v_damage(float(env.get("amount", 0.0)))
+		"s_round":
+			s_round(float(env.get("left", 0.0)), bool(env.get("active", false)),
+				bool(env.get("tmode", false)), int(env.get("red", 0)), int(env.get("blue", 0)))
+		"s_round_end":
+			s_round_end(int(env.get("red", 0)), int(env.get("blue", 0)))
 
 # ---- (de)serialization helpers: JSON only carries floats/arrays, so pack
 # Transform3D/Vector2/Vector3 into plain number arrays and back.
@@ -585,7 +590,7 @@ func setup_coop(t: PlayerTank) -> void:
 	# (coop stays wave-based; the timer is just an optional shared countdown)
 	if hosting:
 		Game.start_round(Game.round_len)
-		s_round.rpc(Game.round_left, true, Game.team_mode, 0, 0)
+		_broadcast_round(Game.round_left, true, Game.team_mode, 0, 0)
 	_spawn_name_billboard(t, their_id())
 
 # Enable/disable this peer's cockpit controls for its CURRENT seat. Split out
@@ -746,7 +751,7 @@ func setup_versus(world: Node3D, t: Terrain, p: Projectiles, f: FxPool, my_tank:
 	# host arms the shared round clock; the client mirrors it via s_round()
 	if hosting:
 		Game.start_round(Game.round_len)
-		s_round.rpc(Game.round_left, true, Game.team_mode, 0, 0)
+		_broadcast_round(Game.round_left, true, Game.team_mode, 0, 0)
 	# Opponent's replica is built lazily once we know their vehicle type (see
 	# v_hello/_ensure_remote_vehicle) -- each peer can pick a DIFFERENT vehicle
 	# in versus, so there's nothing correct to build synchronously here.
@@ -845,7 +850,7 @@ func tick_round(_delta: float) -> void:
 	_round_bcast_t -= _delta
 	if _round_bcast_t <= 0.0:
 		_round_bcast_t = 0.25   # ~4 Hz is plenty for a visible clock
-		s_round.rpc(Game.round_left, Game.round_active, Game.team_mode,
+		_broadcast_round(Game.round_left, Game.round_active, Game.team_mode,
 			int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0)))
 	if Game.round_active and Game.round_left <= 0.0:
 		Game.round_active = false
@@ -853,8 +858,32 @@ func tick_round(_delta: float) -> void:
 		# so a pre-baked "YOU/THEM" summary would be backwards on the client).
 		# Team scores are symmetric, so we hand those over for the client to
 		# use; the client still calls round_tally() itself.
-		s_round_end.rpc(int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0)))
+		_broadcast_round_end(int(Game.team_score.get(Game.Team.RED, 0)), int(Game.team_score.get(Game.Team.BLUE, 0)))
 		Game.round_ended.emit(Game.round_tally())
+
+# Both callers of s_round/s_round_end (above, plus setup_coop()/setup_versus()'s
+# initial arm) used to call .rpc() unconditionally -- harmless the moment
+# hosting starts (still Transport.ENET then, see host()), but tick_round()
+# fires every frame for the rest of the session, including well after a
+# LAN-less host has fallen over to Transport.RELAY (host()'s relay-fallback
+# timer, see _process()) -- at that point multiplayer.multiplayer_peer is
+# null and every one of these ticks threw "Trying to call an RPC while no
+# multiplayer peer is active" (confirmed via a live dual-instance relay test,
+# 2026-07-06), silently breaking the shared round clock/score sync for any
+# cross-network relay session. Mirrors broadcast_shot()/versus_shot()'s
+# existing transport branch.
+func _broadcast_round(left: float, active: bool, team_mode: bool, red: int, blue: int) -> void:
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "s_round", "left": left, "active": active,
+			"tmode": team_mode, "red": red, "blue": blue, "echo": false})
+	else:
+		s_round.rpc(left, active, team_mode, red, blue)
+
+func _broadcast_round_end(red: int, blue: int) -> void:
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "s_round_end", "red": red, "blue": blue, "echo": false})
+	else:
+		s_round_end.rpc(red, blue)
 
 # Client mirror of the authoritative round state. Never ticks down here.
 @rpc("authority", "unreliable_ordered")

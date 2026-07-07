@@ -24,9 +24,33 @@ const YR := 0.72    # roof
 
 static func build(parent: Node3D) -> Dictionary:
 	var out := {"controls": {}, "needles": {}, "lamps": {}, "labels": {}}
+	# Declutch: an extra hinge between the turret and the whole crew basket
+	# (walls/seat/tillers/grip — everything below). Identity by default, so
+	# nothing about today's geometry/positions changes. player_tank.gd drives
+	# its rotation.y each frame: 0 while gunner-seated (basket follows the
+	# turret exactly, same as this cockpit has ALWAYS behaved — "cockpit
+	# space = turret space" per the file header), or -turret.rotation.y while
+	# driver-seated (cancels the turret's spin so the driver's whole basket,
+	# camera included since seat_anchor lives inside it, stays hull-fixed).
+	# Camera+controls both live under this one node, so nothing drifts out of
+	# hand-reach as it rotates — Alex's gunner-seat ask (2026-07-06): "swap to
+	# a gunner position where you physically steer/aim the turret and your
+	# first-person view yaws with it," without the driver's view spinning
+	# along whenever someone else aims. Known trade-off: the gun's own breech
+	# (mounted on gun_pivot/recoil, a sibling of this node under `turret`, not
+	# a child of it) still visually follows the true turret rotation — so
+	# while declutched (driver-seated) during active aiming, the breech prop
+	# can visually drift relative to these now-static walls. Cosmetic only;
+	# a real hull-fixed driver's compartment (separate geometry, no shared
+	# room with the gun at all) would remove it but is real added art scope.
+	var declutch := Node3D.new()
+	declutch.name = "SeatDeclutch"
+	parent.add_child(declutch)
+	out["declutch"] = declutch
+
 	var root := Node3D.new()
 	root.name = "Cockpit"
-	parent.add_child(root)
+	declutch.add_child(root)
 	out["root"] = root
 
 	_build_static(root)
@@ -468,36 +492,72 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	out["labels"]["radio_station"] = station_l
 	out["radio_node"] = radio
 
-	# thermal display — right wall above the grip: green static screen + IR switch
+	# thermal display — right wall above the grip: a REAL live camera feed
+	# (Alex, 2026-07-06: "would be really cool if we can do that" — this used
+	# to be a fixed rock.png texture tinted green, never actually reading the
+	# world at all). A SubViewport with its own Camera3D renders the scene;
+	# a false-color luminance ramp (unshaded spatial shader, see
+	# _make_thermal_shader()) gives it the familiar cold-blue/hot-white FLIR
+	# look without any real heat simulation. The camera itself gets
+	# reparented to gun_pivot by player_tank.gd (cockpit_builder.gd has no
+	# access to the gun rig, which is built separately) so it points wherever
+	# the gun is aimed — a genuine sighting aid, not just decoration.
+	# Moved rearward (z -0.12 -> 0.20) and down (y 0.18 -> 0.10): the old spot
+	# sat squarely inside the side vision-slit's own opening (window gap is
+	# z=[-0.15,0.10], band y=[0.24,0.39] -- the display box's y=[0.09,0.27]
+	# clipped 0.03 into the bottom of that band, and its z sat mid-window).
+	# Alex, 2026-07-07: "the location needs to adjust so it's not interfering
+	# with the window."
+	const THERMAL_Y := 0.10
+	const THERMAL_Z := 0.20
 	var tst := MeshKit.begin()
 	MeshKit.box(tst, Transform3D(Basis(), Vector3(0, 0, -0.03)), Vector3(0.22, 0.18, 0.06), Color(0.16, 0.17, 0.16))
 	var tbox := MeshInstance3D.new()
 	tbox.mesh = MeshKit.commit(tst, MeshKit.mat_vcol(0.6, 0.3))
-	tbox.position = Vector3(X1 - 0.04, 0.18, -0.12)
+	tbox.position = Vector3(X1 - 0.04, THERMAL_Y, THERMAL_Z)
 	tbox.rotation.y = deg_to_rad(-90)
 	root.add_child(tbox)
+
+	var thermal_vp := SubViewport.new()
+	thermal_vp.size = Vector2i(256, 192)
+	thermal_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED  # off until the IR switch is flipped on
+	thermal_vp.own_world_3d = false  # shares the main World3D -- sees the same terrain/enemies/vehicles
+	root.add_child(thermal_vp)
+	var thermal_cam := Camera3D.new()
+	thermal_cam.fov = 35.0  # narrow — a sight, not a wide establishing view
+	thermal_cam.current = true  # a Camera3D inside a SubViewport still needs
+	# this to actually be the one that viewport renders through -- without it
+	# the viewport had no active camera at all, so the feed just never
+	# updated no matter what render_target_update_mode said. Root cause of
+	# "thermal overlay image doesn't change" (Alex, 2026-07-07). Safe to set
+	# unconditionally: this camera only ever lives inside its own private
+	# SubViewport, so it can't steal "current" from the real seat/rig camera.
+	thermal_vp.add_child(thermal_cam)
+	out["thermal_cam"] = thermal_cam
+	out["thermal_vp"] = thermal_vp
+
 	var screen := MeshInstance3D.new()
 	var sq := QuadMesh.new()
 	sq.size = Vector2(0.17, 0.13)
 	screen.mesh = sq
-	var sm := StandardMaterial3D.new()
-	sm.albedo_texture = load("res://assets/tex/rock.png")
-	sm.albedo_color = Color(0.15, 0.5, 0.2)
-	sm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
-	sm.uv1_scale = Vector3(2, 2, 1)
+	var sm := ShaderMaterial.new()
+	sm.shader = _make_thermal_shader()
+	sm.set_shader_parameter("screen_tex", thermal_vp.get_texture())
 	screen.material_override = sm
-	screen.position = Vector3(X1 - 0.043, 0.18, -0.12)
+	screen.position = Vector3(X1 - 0.043, THERMAL_Y, THERMAL_Z)
 	screen.rotation.y = deg_to_rad(-90)
 	screen.visible = false
 	root.add_child(screen)
 	out["thermal_screen"] = screen
 	var ir := VRControl.ToggleSwitch.create(Color(0.3, 0.8, 0.4))
-	ir.position = Vector3(X1 - 0.05, 0.055, -0.12)
+	ir.position = Vector3(X1 - 0.05, THERMAL_Y - 0.125, THERMAL_Z)
 	ir.rotation.z = deg_to_rad(90)
 	root.add_child(ir)
 	c["ir"] = ir
-	ir.toggled_on.connect(func(on): screen.visible = on)
-	var tl := _label(root, "THERMAL", Vector3(X1 - 0.045, 0.285, -0.12), 0, 13)
+	ir.toggled_on.connect(func(on):
+		screen.visible = on
+		thermal_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED)
+	var tl := _label(root, "THERMAL", Vector3(X1 - 0.045, THERMAL_Y + 0.185, THERMAL_Z), 0, 13)
 	tl.rotation.y = deg_to_rad(-90)
 
 	# MG trigger button beside the turret grip (hands have no A button)
@@ -552,6 +612,37 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	_label(root, "CAUTION\nTRAVERSE", Vector3(0.10, 0.10, -0.35), 0, 10)
 	var pl2 := _label(root, "MAX 40 KMH", Vector3(EYE.x + 0.24, 0.13, Z0 + 0.03), 0, 10)
 	pl2.modulate = Color(0.9, 0.8, 0.5)
+
+# False-color FLIR-style ramp over the thermal SubViewport's own render --
+# luminance in, cold-blue/hot-white out. No real heat simulation (nothing in
+# this game tracks temperature), just the recognizable video-game "thermal
+# camera" look layered over an otherwise-normal render of the same world.
+static func _make_thermal_shader() -> Shader:
+	var sh := Shader.new()
+	sh.code = """
+shader_type spatial;
+render_mode unshaded, cull_back;
+uniform sampler2D screen_tex : source_color;
+
+void fragment() {
+	vec4 src = texture(screen_tex, UV);
+	float lum = dot(src.rgb, vec3(0.299, 0.587, 0.114));
+	vec3 c;
+	if (lum < 0.2) {
+		c = mix(vec3(0.02, 0.0, 0.08), vec3(0.1, 0.0, 0.35), lum / 0.2);
+	} else if (lum < 0.4) {
+		c = mix(vec3(0.1, 0.0, 0.35), vec3(0.0, 0.3, 0.6), (lum - 0.2) / 0.2);
+	} else if (lum < 0.6) {
+		c = mix(vec3(0.0, 0.3, 0.6), vec3(0.9, 0.85, 0.1), (lum - 0.4) / 0.2);
+	} else if (lum < 0.8) {
+		c = mix(vec3(0.9, 0.85, 0.1), vec3(0.95, 0.25, 0.05), (lum - 0.6) / 0.2);
+	} else {
+		c = mix(vec3(0.95, 0.25, 0.05), vec3(1.0, 1.0, 1.0), (lum - 0.8) / 0.2);
+	}
+	ALBEDO = c;
+}
+"""
+	return sh
 
 # ------------------------------------------------------------------ lighting
 static func _build_lighting(root: Node3D, out: Dictionary) -> void:

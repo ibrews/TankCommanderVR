@@ -57,6 +57,15 @@ var _net_target := Transform3D()
 var _net_turret_y := 0.0
 var _net_has := false
 
+# gunner seat (solo): local-only seat-swap state, mirrors co-op's networked
+# driver_is_host flip but with nobody else to hand the driver's seat to — see
+# local_is_gunner()/toggle_seat(). Co-op ignores this var entirely (it reads
+# NetManager's role instead).
+var gunner_seated := false
+var _last_local_gunner := false
+var _declutch_blend := 1.0     # 0..1 ease-in right after a seat swap, else settled
+var _latched_drive_cmd := Vector2.ZERO  # SP gunner-seated: frozen (l,r) track cmd
+
 # inputs
 var tiller_l_v := 0.0
 var tiller_r_v := 0.0
@@ -96,6 +105,16 @@ func _ready() -> void:
 	cockpit = CockpitBuilder.build(turret)
 	_wire_controls()
 	_build_reticle()
+	# Thermal sight camera: cockpit_builder.gd builds the SubViewport/Camera3D
+	# but has no access to gun_pivot (built below, in _build_exterior, not
+	# there) -- reparent it here so the feed actually points where the gun is
+	# aimed (gun_pivot.rotation.x already carries elevation; the reparent
+	# picks up traverse for free since gun_pivot is itself a turret child).
+	if cockpit.has("thermal_cam"):
+		var tcam: Camera3D = cockpit["thermal_cam"]
+		tcam.get_parent().remove_child(tcam)
+		gun_pivot.add_child(tcam)
+		tcam.position = Vector3(0, 0.28, -1.4)
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(3.3, 1.1, 6.6)
@@ -343,7 +362,8 @@ func _wire_controls() -> void:
 		var m := get_tree().get_first_node_in_group("main")
 		if m and m.rig is XRRig:
 			m.rig.set("_calibrated", false)
-			m.rig.set("_calib_t", 1.0))
+			m.rig.set("_calib_t", 1.0)
+			m.rig.set("_use_establishing_shot", false))
 	c["hatch"].value_changed.connect(_on_hatch_lever)
 
 func _on_hatch_lever(v: float) -> void:
@@ -423,6 +443,7 @@ func _on_restart() -> void:
 	global_position.y = terrain.height(global_position.x, global_position.z) + 0.04
 	yaw = PI
 	_spd = 0.0
+	gunner_seated = false
 	ammo = 40
 	rockets_left = 12
 	loaded = true
@@ -493,6 +514,7 @@ func _physics_process(delta: float) -> void:
 	_update_engine(delta)
 	_update_drive(delta)
 	_update_turret(delta)
+	_sync_seat_declutch(delta)
 	_update_weapons(delta)
 	_update_gauges(delta)
 	_update_hints()
@@ -509,9 +531,19 @@ func _puppet_update(delta: float) -> void:
 	var inp := effective_turret_input()
 	turret.rotation.y += -inp.x * Tune.v("turret_slew") * delta
 	turret.rotation.y = lerp_angle(turret.rotation.y, _net_turret_y, clampf(1.5 * delta, 0.0, 1.0))
-	gun_elev = clampf(gun_elev + inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
+	# Negated: Alex, 2026-07-07 -- "left and right is correct but front and
+	# back is reversed" on the vehicle joysticks (the turret grip specifically
+	# -- confirmed left/right's existing sign above is fine, unchanged). Fixed
+	# at the CONSUMING end, not in TwoAxisGrip itself: the same grip class is
+	# shared with the plane's control stick, whose forward-push-dives
+	# convention was already independently verified correct earlier this
+	# session -- flipping the shared class would have fixed the tank at the
+	# cost of re-breaking the plane. Push the grip forward (away) now
+	# depresses the gun; pull back elevates it, matching a real gun/yoke.
+	gun_elev = clampf(gun_elev - inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
 	gun_pivot.rotation.x = gun_elev
 	turret_p.volume_db = -14.0 if inp.length() > 0.1 else -80.0
+	_sync_seat_declutch(delta)
 	_update_gauges(delta)
 	_update_reticle()
 	var gp := global_position
@@ -593,7 +625,16 @@ func _update_drive(delta: float) -> void:
 	# driver seat, so its streamed stick vector (driver_input) feeds our drive.
 	if NetManager.hosting and Game.mode == Game.Mode.COOP and not NetManager.i_am_driver():
 		stick_drive = NetManager.driver_input
-	var cmd := effective_drive() if (engine_on and Game.alive) else Vector2.ZERO
+	var cmd: Vector2
+	if Game.mode == Game.Mode.SOLO and gunner_seated:
+		# Nobody's left to drive: keep whatever track command was in effect
+		# the instant you swapped to the gunner seat (Alex's call, 2026-07-06 —
+		# picked over auto-parking/auto-driving) rather than reading live
+		# tiller/stick input the player can no longer physically reach.
+		cmd = _latched_drive_cmd
+	else:
+		cmd = effective_drive() if (engine_on and Game.alive) else Vector2.ZERO
+		_latched_drive_cmd = cmd
 	var mud: float = lerpf(Tune.v("mud_slow"), 1.0, 1.0 if Levels.mud_factor(global_position) >= 1.0 else 0.0)
 	var target_fwd := (cmd.x + cmd.y) * 0.5 * Tune.v("tank_max_speed") * mud * Game.speed_scale()
 	var target_yaw_rate := (cmd.x - cmd.y) * YAW_GAIN * 2.0
@@ -686,6 +727,48 @@ func _align(delta: float) -> void:
 func get_aim_yaw_pitch() -> Vector2:
 	return Vector2(turret.rotation.y, gun_elev)
 
+## Which seat the LOCAL player currently occupies, for camera/declutch
+## purposes only (NOT the same thing as turret-input authority, which co-op
+## already resolves via NetManager.i_am_gunner()/driver_input). Co-op reads
+## the networked role directly; solo (and any other mode) uses its own local
+## toggle since there's no second peer to hand the other seat to.
+func local_is_gunner() -> bool:
+	if Game.mode == Game.Mode.COOP and NetManager.active():
+		return NetManager.i_am_gunner()
+	return gunner_seated
+
+## Solo-only seat swap (grips+Y — same gesture co-op already uses for
+## NetManager.request_seat_swap()). No-op elsewhere: co-op must go through
+## NetManager so both peers agree on who drives.
+func toggle_seat() -> void:
+	if Game.mode == Game.Mode.SOLO:
+		gunner_seated = not gunner_seated
+
+## Keeps the crew basket's declutch hinge (cockpit_builder.gd's SeatDeclutch)
+## tracking the current seat: identity while gunner-seated (basket follows the
+## turret exactly, same as this cockpit has always behaved), or
+## -turret.rotation.y while driver-seated (cancels the turret's spin so the
+## driver's whole basket — camera included, since seat_anchor lives inside
+## it — stays hull-fixed regardless of who's aiming). Eased over ~0.35s right
+## after a seat change (comfort: an instant snap of the whole visible room
+## would be a nasty surprise in VR); tracks exactly the rest of the time, so a
+## driver's view stays truly locked to hull-forward even while someone else
+## sweeps the turret continuously.
+func _sync_seat_declutch(delta: float) -> void:
+	var dc: Node3D = cockpit.get("declutch")
+	if dc == null:
+		return
+	var lg := local_is_gunner()
+	if lg != _last_local_gunner:
+		_last_local_gunner = lg
+		_declutch_blend = 0.0
+	var target := 0.0 if lg else -turret.rotation.y
+	if _declutch_blend < 1.0:
+		_declutch_blend = minf(1.0, _declutch_blend + delta / 0.35)
+		dc.rotation.y = lerp_angle(dc.rotation.y, target, _declutch_blend)
+	else:
+		dc.rotation.y = target
+
 ## My own local turret-aim intent: physical grip input, falling back to the
 ## thumbstick when the grip isn't in use (mirrors effective_drive()'s
 ## physical-vs-stick merge, including animating the grip pivot to match a
@@ -696,7 +779,7 @@ func effective_turret_input() -> Vector2:
 	if turret_input.length() >= 0.05 or stick_turret.length() <= 0.08:
 		return turret_input
 	var grip: VRControl.TwoAxisGrip = cockpit["controls"]["grip"]
-	grip.pivot.rotation = Vector3(stick_turret.y * 0.28, 0, -stick_turret.x * 0.28)
+	grip.pivot.rotation = Vector3(-stick_turret.y * 0.28, 0, -stick_turret.x * 0.28)  # Y negated to match TwoAxisGrip's own visual convention fix
 	return stick_turret
 
 func _update_turret(delta: float) -> void:
@@ -710,7 +793,7 @@ func _update_turret(delta: float) -> void:
 	if not battery_on or not Game.alive:
 		inp = Vector2.ZERO
 	turret.rotation.y += -inp.x * Tune.v("turret_slew") * delta
-	gun_elev = clampf(gun_elev + inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)
+	gun_elev = clampf(gun_elev - inp.y * 0.5 * delta, GUN_EL_MIN, GUN_EL_MAX)  # see _puppet_update()'s note
 	gun_pivot.rotation.x = gun_elev
 	turret_p.volume_db = -14.0 if inp.length() > 0.1 else -80.0
 	turret_p.pitch_scale = 0.9 + inp.length() * 0.3

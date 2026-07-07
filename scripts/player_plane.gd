@@ -268,23 +268,34 @@ func _physics_process(delta: float) -> void:
 	if _crashed:
 		return
 	prop.rotation.z += (20.0 + throttle * 45.0) * delta
-	# thumbstick fallbacks
+	# thumbstick fallback: computed fresh every frame (mirrors player_tank.gd's
+	# effective_turret_input() merge) instead of destructively overwriting
+	# `stick` -- the old `stick = stick_fallback` assignment was a one-shot
+	# latch: the very first frame the thumbstick exceeded the 0.08 deadzone,
+	# `stick` got set to a non-zero value, which permanently failed the
+	# `stick.length() < 0.05` re-entry check on every later frame (even after
+	# releasing the stick back to neutral) -- so the plane locked onto
+	# whatever roll/pitch was in effect on that first frame and never
+	# responded to the thumbstick again for the rest of the flight ("planes
+	# don't steer properly with the Quest controllers", Alex 2026-07-06).
+	# Grip stick still wins outright whenever it's actually in use.
+	var eff_stick := stick
 	if stick.length() < 0.05 and stick_fallback.length() > 0.08:
-		stick = stick_fallback
+		eff_stick = stick_fallback
 	throttle = clampf(throttle + stick_throttle * delta * 0.5, 0.0, 1.0)
 	# flight model (biplane: slower, nimbler)
 	var vmax := Tune.v("plane_speed_max") * (0.72 if biplane else 1.0)
 	var target_speed := 16.0 + throttle * (vmax - 16.0)
 	speed = move_toward(speed, target_speed, 8.0 * delta)
-	var pitch_rate := -stick.y * 1.1
-	var roll_rate := -stick.x * 1.9
+	var pitch_rate := -eff_stick.y * 1.1
+	var roll_rate := -eff_stick.x * 1.9
 	basis = (basis
 		* Basis(Vector3.RIGHT, pitch_rate * delta)
 		* Basis(Vector3.BACK, roll_rate * delta)).orthonormalized()
 	# bank-to-turn + gentle auto-level
 	var bank := basis.x.y
 	basis = Basis(Vector3.UP, -bank * 0.9 * delta) * basis
-	if absf(stick.x) < 0.1:
+	if absf(eff_stick.x) < 0.1:
 		var bank_angle := asin(clampf(basis.x.y, -1.0, 1.0))
 		basis = (basis * Basis(Vector3.BACK, -bank_angle * 1.2 * delta)).orthonormalized()
 	# stall sink
