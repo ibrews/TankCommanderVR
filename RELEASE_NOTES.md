@@ -1,3 +1,31 @@
+# Tank Commander VR v0.6.25
+
+## Live playtest fix batch — controls, camera modes, gunner seat, thermal sight
+- **Gunner seat**: swap between a hull-fixed driver view and a turret-fixed
+  gunner view (grips+Y in solo, or the existing co-op seat-swap). Solo holds
+  the last drive command while you're in the gunner seat.
+- **Three camera modes**: first-person, third-person, and a new far
+  third-person (another 20' back). Works seated and on foot — on-foot third
+  person is now a real chase cam (it never actually pulled back before).
+- **Live thermal sight**: the tank's thermal display is a real camera feed
+  that tracks the gun's aim now, with a false-color heat-cam look — was a
+  static decorative texture before.
+- **Fixed**: plane thumbstick steering (was locking up after the first
+  input), tank gun elevation was backwards front-to-back, radio knobs
+  couldn't actually be turned, controller-model/lever visuals reading
+  backwards on the Y axis, on-foot pickup reach (was floor-only), a
+  round-timer sync bug over the Cloudflare relay fallback.
+- **New**: right-A cycles the radio station in any vehicle; crash logs now
+  auto-upload on next boot as a safety net alongside the manual button.
+
+## Known issues going into this build
+- Radio silence and "plane roll doesn't respond to the right stick" were
+  reported live but did not reproduce in testing (music/talk/roll all
+  verified working in a real session) — flag again if still present.
+- On-foot third-person black screen: root cause unconfirmed, hardened the
+  likely code path (camera transform on mode switch) but couldn't reproduce
+  directly.
+
 # Tank Commander VR v0.6.19
 
 ## Multiplayer vehicle support + security fix
