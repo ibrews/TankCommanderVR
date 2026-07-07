@@ -850,7 +850,26 @@ func _apply_view_offset() -> void:
 		# camera instead and chase it off the on-foot body's own live
 		# position every frame -- see _update_on_foot_chase_cam(), called
 		# from _physics_process().
-		position = Vector3.ZERO
+		#
+		# THE ACTUAL BLACK-SCREEN BUG (found 2026-07-07 from real device
+		# logs): this used to also do `position = Vector3.ZERO` here, which
+		# is correct for SEATED (there `position` is a LOCAL offset from a
+		# seat_anchor parent, always meant to reset to identity) but WRONG
+		# here -- on foot, the rig is parented directly to the level's
+		# static world node, so `position` IS the origin's actual
+		# world-relevant placement. enter_on_foot() sets `transform =
+		# dismount_transform` a few lines before calling this function;
+		# zeroing `position` right after threw that away and teleported the
+		# WHOLE RIG to world origin (0,0,0) instead -- almost certainly
+		# inside solid terrain or off in empty void on every level, which
+		# reads as exactly "black screen... often when trying to use my
+		# runner avatar." Confirmed via Cloudflare-pulled device logs: many
+		# independent play sessions ALL ended abruptly within a couple
+		# seconds of the "on-foot" log line, in plain FIRST person (not just
+		# third/far, which is what the earlier top_level-snap hardening
+		# targeted and didn't actually fix) -- consistent with the player
+		# hard-quitting after landing inside geometry, not a script crash
+		# (draws stayed non-zero right up to the cutoff in every capture).
 		camera.top_level = third
 		if third:
 			# Snap immediately instead of leaving whatever stale local
