@@ -1075,7 +1075,12 @@ func _physics_process(delta: float) -> void:
 	# unlike the seated-only bindings further down.
 	var r_click := hand_r.is_button_pressed("primary_click")
 	if r_click and not get_meta("rsc_was", false):
-		Game.toggle_camera_mode()
+		# Ignore while seated-but-uncalibrated (the establishing-shot window):
+		# _apply_view_offset would compute from a still-zero _fp_pos and yank
+		# the camera to a chase offset around the seat origin, cutting the
+		# establishing shot short with a wrong-looking jump (2026-07-16 audit).
+		if _calibrated or tank == null:
+			Game.toggle_camera_mode()
 	set_meta("rsc_was", r_click)
 	var l_click := hand_l.is_button_pressed("primary_click")
 	if l_click and not get_meta("lsc2_was", false):
@@ -1086,21 +1091,71 @@ func _physics_process(delta: float) -> void:
 		else:
 			Game.restart()
 	set_meta("lsc2_was", l_click)
-	# Respawn (left Y) + UI toggle (right B) — Alex: "let's have a respawn
-	# button if all the buttons on the controllers aren't being used" — these
-	# two were completely free (by_button only otherwise gated behind the
-	# both-grips MP-hotkey chord below, never as a bare single press) in
-	# every mode, seated or on-foot.
-	var respawn_pressed := hand_l.is_button_pressed("by_button")
-	if respawn_pressed and not get_meta("respawn_was", false) and Game.alive:
-		Game.restart()
-		hand_l.pulse(0.5, 0.05)
-	set_meta("respawn_was", respawn_pressed)
-	var ui_toggle_pressed := hand_r.is_button_pressed("by_button")
-	if ui_toggle_pressed and not get_meta("ui_toggle_was", false):
-		Game.toggle_ui()
-		hand_r.pulse(0.25, 0.03)
-	set_meta("ui_toggle_was", ui_toggle_pressed)
+	# Y/B/A each carry two actions, deconflicted by TAP vs HOLD. The 2026-07-16
+	# release-prep audit found three genuine double-bindings here: bare left-Y
+	# ran respawn AND seat-recalibrate on the same press (one accidental tap
+	# wiped the whole run via Game.restart()), bare right-B ran rockets AND the
+	# HUD toggle, bare right-A cycled the radio on every coax-MG burst — and
+	# the grips+Y/B/X/A chords leaked into all of them too.
+	#   LEFT Y   tap = seat recalibrate (seated) | hold 1s = respawn/reset run
+	#   RIGHT B  tap = rockets | hold 0.8s = HUD toggle   (both seated-only;
+	#            on-foot B stays the vehicle-entry input via _check_reentry)
+	#   RIGHT A  hold = coax MG (unchanged) | quick tap = cycle radio station
+	# Destructive/rare actions live on the HOLD with haptic charge ticks (same
+	# telegraph idiom as the left-trigger exit hold); combat actions stay on
+	# tap. A two-hand grip chord cancels any in-flight tap/hold outright so
+	# seat-swap/god-mode presses can never leak.
+	var seated_now := Game.player_mode == Game.PlayerMode.SEATED and tank != null
+	if hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8:
+		_y_hold = -1.0
+		_b_hold = -1.0
+		_a_hold = -1.0
+	if hand_l.is_button_pressed("by_button"):
+		if _y_hold >= 0.0:
+			_y_hold += delta
+			if fmod(_y_hold, 0.25) < delta:
+				hand_l.pulse(0.2, 0.03)
+			if _y_hold > 1.0:
+				_y_hold = -1.0
+				if Game.alive:
+					Game.restart()
+					hand_l.pulse(0.6, 0.08)
+	else:
+		if _y_hold > 0.0 and _y_hold < 0.35 and seated_now:
+			_calibrated = false
+			_calib_t = 1.0
+			_use_establishing_shot = false
+			hand_l.pulse(0.3, 0.04)
+		_y_hold = 0.0
+	if hand_r.is_button_pressed("by_button"):
+		if not get_meta("b_down_was", false) and not seated_now:
+			# Press began OUTSIDE a cockpit — B doubles as the on-foot
+			# enter-vehicle input (_check_reentry), so swallow the whole
+			# press: entering with B must never fire rockets or toggle the
+			# HUD on release once you land in the seat.
+			_b_hold = -1.0
+		elif _b_hold >= 0.0 and seated_now:
+			_b_hold += delta
+			if fmod(_b_hold, 0.25) < delta:
+				hand_r.pulse(0.15, 0.03)
+			if _b_hold > 0.8:
+				_b_hold = -1.0
+				Game.toggle_ui()
+				hand_r.pulse(0.25, 0.03)
+		set_meta("b_down_was", true)
+	else:
+		if _b_hold > 0.0 and _b_hold < 0.35 and seated_now:
+			tank.call("stick_rockets")
+		_b_hold = 0.0
+		set_meta("b_down_was", false)
+	if hand_r.is_button_pressed("ax_button"):
+		if _a_hold >= 0.0:
+			_a_hold += delta
+	else:
+		if _a_hold > 0.0 and _a_hold < 0.3 and hand_r.holding == null:
+			Sfx.set_radio_station((Sfx.radio_station + 1) % Sfx.STATIONS.size())
+			hand_r.pulse(0.3, 0.03)
+		_a_hold = 0.0
 	_mp_hotkeys(delta)
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_feed_arm_swing(delta)
@@ -1171,33 +1226,16 @@ func _physics_process(delta: float) -> void:
 		set_meta("rtrig_was", trig)
 		if not (hand_l.holding is VRControl.TwoAxisGrip):
 			tank.call("set_mg", hand_r.is_button_pressed("ax_button") and hand_r.holding == null)
-	if hand_r.is_button_pressed("by_button") and not get_meta("b_was", false):
-		tank.call("stick_rockets")
-	set_meta("b_was", hand_r.is_button_pressed("by_button"))
-	if hand_l.is_button_pressed("by_button") and not get_meta("y_was", false):
-		_calibrated = false
-		_calib_t = 1.0
-		_use_establishing_shot = false
-	set_meta("y_was", hand_l.is_button_pressed("by_button"))
+	# Rockets (B tap), seat recalibrate (Y tap), and radio cycle (A tap) all
+	# moved to the tap-vs-hold deconflict block earlier in this function —
+	# they were double-bound here (2026-07-16 audit). Only X quick-start
+	# remains a bare seated edge-trigger.
 	if hand_l.is_button_pressed("ax_button") and not get_meta("x_was", false):
 		tank.call("quick_start")
 	set_meta("x_was", hand_l.is_button_pressed("ax_button"))
 	# primary_click (left-stick click) used to also trigger quick_start here
 	# — now repurposed for the global reset-level binding above (X button
 	# alone still starts the engine), per Alex's explicit ask.
-	# Right A alone (not the both-grips MP chord that also uses it for the
-	# host team-toggle) cycles the radio station -- Alex, 2026-07-06: "if we
-	# still have a spare button... maybe that cycles the radio stations if
-	# you're in any vehicle." Works seated in any vehicle (Sfx.radio_station
-	# is global autoload state, not tank-specific) -- only DAD FM's spoken
-	# lines need the tank's own radio_attach() node to have been created at
-	# least once this session; the two music-only stations work regardless.
-	var a_pressed := hand_r.is_button_pressed("ax_button")
-	var both_grip_now := hand_l.effective_grip() > 0.8 and hand_r.effective_grip() > 0.8
-	if a_pressed and not get_meta("a_was", false) and not both_grip_now:
-		Sfx.set_radio_station((Sfx.radio_station + 1) % Sfx.STATIONS.size())
-		hand_r.pulse(0.3, 0.03)
-	set_meta("a_was", a_pressed)
 	_check_easter_egg(delta)
 	_feed_arm_swing(delta)
 
@@ -1276,6 +1314,12 @@ func _feed_stick_sprint() -> void:
 const ENTRY_RADIUS := 2.5
 var _reentry_grip_was := false
 var _exit_hold := 0.0
+# Tap-vs-hold state for the three multiplexed face buttons (see the
+# deconflict block in _physics_process): >=0 accumulating, -1 latched
+# (action fired or press disqualified; ignore until release).
+var _y_hold := 0.0
+var _b_hold := 0.0
+var _a_hold := 0.0
 func _check_reentry() -> void:
 	if on_foot_body == null or not is_instance_valid(on_foot_body):
 		return

@@ -75,11 +75,26 @@ export class Room {
     const pair = new WebSocketPair();
     const [client, server] = Object.values(pair);
 
+    // The game is strictly 2-player (one host simulating, one guest). With no
+    // cap, a 3rd joiner (or an unrelated PAIR, since the always-on public
+    // "main" room is shared) got welcomed into the same session: the host
+    // broadcast state to everyone and multiple guests fought over the gunner
+    // seat (2026-07-16 MP audit). Reject instead: the joiner gets a typed
+    // 'full' message it can surface ("room full — try again later") and a
+    // clean close.
+    if (this.state.getWebSockets().length >= 2) {
+      this.state.acceptWebSocket(server, ['reject', '0', '0']);
+      server.send(JSON.stringify({ type: 'full' }));
+      server.close(4001, 'room full');
+      return new Response(null, { status: 101, webSocket: client });
+    }
+
     const id = crypto.randomUUID();
     const color = this.pickUniqueColor();
     // First socket to connect to a fresh room is flagged host=1 in a third
     // tag, so the game can grant "host is god" powers to whoever opened the
-    // room. If the host leaves, the game may promote via its own message.
+    // room. If the host leaves, remaining peers get a 'host_left' (see
+    // webSocketClose) — the game ends the session rather than promoting.
     const isHost = this.state.getWebSockets().length === 0 ? '1' : '0';
     this.state.acceptWebSocket(server, [id, String(color), isHost]);
 
@@ -138,12 +153,24 @@ export class Room {
   }
 
   async webSocketClose(ws) {
-    const [id] = this.state.getTags(ws);
-    this.broadcast({ type: 'leave', id }, ws);
+    this.announceLeave(ws);
   }
   async webSocketError(ws) {
-    const [id] = this.state.getTags(ws);
+    this.announceLeave(ws);
+  }
+
+  // Shared leave path: everyone gets the roster update, and if the HOST is
+  // the one who left, survivors also get a typed 'host_left' — the sim
+  // authority is gone and the game can't safely re-elect one mid-session
+  // (tank.puppet/authority state would have to rebuild), so the client ends
+  // the session cleanly instead of sitting frozen (2026-07-16 MP audit).
+  announceLeave(ws) {
+    const [id, , hostFlag] = this.state.getTags(ws);
+    if (id === 'reject') return; // capacity-rejected socket, never a member
     this.broadcast({ type: 'leave', id }, ws);
+    if (hostFlag === '1') {
+      this.broadcast({ type: 'host_left' }, ws);
+    }
   }
 
   broadcast(obj, exclude) {

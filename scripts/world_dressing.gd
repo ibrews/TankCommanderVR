@@ -417,7 +417,8 @@ func _build_gym() -> void:
 	add_child(bl)
 	for side in [-1.0, 1.0]:
 		MeshKit.add_static_box_collider(self, Vector3(side * (W - 15.0), 5.0, 0), Vector3(20.0, 10.0, 150.0))
-	# hoops north/south
+	# hoops north/south — rim centers collected for the HoopScorer below
+	var rim_centers: Array = []
 	for side in [-1.0, 1.0]:
 		var hst := MeshKit.begin()
 		MeshKit.cyl(hst, Transform3D(Basis(), Vector3(0, 6.0, 0)), 0.35, 0.3, 12.0, 8, Color(0.4, 0.42, 0.45))
@@ -428,6 +429,7 @@ func _build_gym() -> void:
 		hoop.position = Vector3(0, 0, -side * (W - 18.0))
 		add_child(hoop)
 		MeshKit.add_static_box_collider(self, hoop.position + Vector3(0, 6, 0), Vector3(1.2, 12.0, 1.2))
+		rim_centers.append(hoop.position + Vector3(0, 9.6, side * 2.6))
 	# cardboard forts (cover)
 	var rng := RandomNumberGenerator.new()
 	rng.seed = 66
@@ -448,7 +450,8 @@ func _build_gym() -> void:
 		fort.position = Vector3(x, _ground_min(x, z, 2.5) - 0.06, z)
 		add_child(fort)
 		MeshKit.add_static_box_collider(self, Vector3(x, 4.0, z), Vector3(6.5, 8.0, 6.5))
-	# bouncy basketballs
+	# bouncy basketballs (tracked by the HoopScorer added after the loop)
+	var scorer_balls: Array = []
 	for i in 3:
 		var ball := RigidBody3D.new()
 		ball.mass = 14.0
@@ -477,6 +480,16 @@ func _build_gym() -> void:
 		ball.add_child(mi)
 		ball.position = Vector3(-20.0 + i * 20.0, 6.0, 20.0)
 		add_child(ball)
+		scorer_balls.append(ball)
+	# Nothing But Net: sink a ball through either rim for +150 and a party
+	# (scripts/gym_hoop.gd) — the hoops/balls were pure decoration until now.
+	# load()-instantiated rather than by class_name: a brand-new class_name
+	# isn't in the global script-class cache until an editor pass regenerates
+	# it, which a headless run/export doesn't do (bit us 2026-07-16).
+	var scorer: Node3D = load("res://scripts/gym_hoop.gd").new()
+	scorer.rims = rim_centers
+	scorer.balls = scorer_balls
+	add_child(scorer)
 
 func _palm_mesh() -> ArrayMesh:
 	var st := MeshKit.begin()

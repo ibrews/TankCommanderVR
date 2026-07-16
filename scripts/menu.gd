@@ -51,10 +51,10 @@ var _upload_btn: Dictionary = {}
 
 const HOWTO := [
 	"",  # page 0 unused
-	"STARTING THE TANK\n\n1. Flip BATTERY (left console)\n2. Open FUEL PUMP cover, flip switch\n3. HOLD green STARTER until the engine catches\n4. Shift GEAR to D (right pedestal)\n\nOr press X / click left stick for auto-start.",
+	"STARTING THE TANK\n\n1. Flip BATTERY (left console)\n2. Open FUEL PUMP cover, flip switch\n3. HOLD green STARTER until the engine catches\n4. Shift GEAR to D (right pedestal)\n\nOr press X for auto-start.\nTap A anytime to change the radio station.",
 	"DRIVING\n\nGrab the two floor TILLERS with your grips.\nPush both forward = drive. Pull one back = turn.\nOpposite directions = spin in place!\n\nOr use the LEFT STICK to steer and hold the\nRIGHT TRIGGER for throttle — works in every\nvehicle (tank, jeep, boat, plane).\nWatch the mud — it slows you down.\n\nGETTING OUT: hold the LEFT TRIGGER for one\nsecond (or pull the yellow HATCH lever).\nTo climb back in, walk up to your vehicle\nand squeeze a grip (or hold LEFT TRIGGER).",
 	"FIGHTING\n\nGrab the turret STICK (right pedestal).\nMove it to aim. TRIGGER (while gripping) = cannon.\nEmpty-handed, squeeze GRIP to fire instead —\nthe trigger is busy driving.\nAfter each shot pull the red BREECH LEVER to reload.\nA (while gripping) = machine gun.\n\nROCKETS: left console — open the red cover,\nflip ARM, press the big red button.",
-	"CO-OP + VERSUS (same Wi-Fi)\n\nCO-OP: one headset hosts, the other joins.\nHost DRIVES + machine gun. Friend runs the\nTURRET: cannon, breech, and the heavy rockets.\n\nVERSUS: tank vs tank duel. First to 5 wins.\n\nPLANE MODE: stick + throttle. Bombs away!",
+	"CO-OP + VERSUS (same Wi-Fi or online)\n\nCO-OP: one headset hosts, the other joins.\nHost DRIVES + machine gun. Friend runs the\nTURRET: cannon, breech, and the heavy rockets.\nSwap seats anytime: squeeze both grips + Y.\n\nVERSUS: pick your vehicle — tank, jeep, boat\nor plane — and duel. First to 5 wins.\n\nPLANE MODE: stick + throttle. Bombs away!",
 ]
 
 # Set true (before add_child, so it's already true by the time _ready()
@@ -290,6 +290,11 @@ func _post_log(http: HTTPRequest, body: String, kind: String) -> Error:
 # if it hasn't already been sent, tagged kind=auto so it's distinguishable
 # from a deliberate manual click in the /logs/list view.
 func _maybe_auto_upload_stale_log() -> void:
+	# Devices only: desktop dev runs rotate a new log every headless test
+	# invocation, which flooded the KV sink with near-identical auto uploads
+	# (2026-07-16 audit). Fort-side logs are on local disk anyway.
+	if OS.get_name() != "Android":
+		return
 	var dir := DirAccess.open(LOGS_DIR)
 	if dir == null:
 		return
@@ -324,17 +329,25 @@ func _maybe_auto_upload_stale_log() -> void:
 	# while the player is already mid-click on the real button, and one node
 	# can't run two requests at once. Doesn't touch _upload_btn's label —
 	# nobody asked for this one, so no on-screen feedback for it either way.
+	#
+	# Marker written OPTIMISTICALLY before the request and rolled back on
+	# failure — the old written-only-on-success ordering meant every fresh
+	# hangar visit while the first attempt was still in flight (or after a
+	# quiet failure) re-POSTed the same log, duplicating entries in the KV
+	# sink (2026-07-16 audit; the sink showed the same 554-byte log 7+ times).
+	var wf := FileAccess.open(AUTO_MARKER_PATH, FileAccess.WRITE)
+	if wf:
+		wf.store_string(best_name)
+		wf.close()
 	_auto_http = HTTPRequest.new()
 	add_child(_auto_http)
 	_auto_http.request_completed.connect(func(result: int, code: int, _h: PackedStringArray, _b: PackedByteArray) -> void:
-		# Marker written only on confirmed success — a failed attempt (e.g. no
-		# Wi-Fi yet at boot) retries on the next hangar visit instead of being
-		# silently dropped forever.
-		if result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300:
-			var wf := FileAccess.open(AUTO_MARKER_PATH, FileAccess.WRITE)
-			if wf:
-				wf.store_string(best_name)
-				wf.close()
+		if not (result == HTTPRequest.RESULT_SUCCESS and code >= 200 and code < 300):
+			# roll back so the next hangar visit retries (e.g. no Wi-Fi yet)
+			var rb := FileAccess.open(AUTO_MARKER_PATH, FileAccess.WRITE)
+			if rb:
+				rb.store_string(last_marker)
+				rb.close()
 		_auto_http.queue_free())
 	_post_log(_auto_http, body, "auto")
 

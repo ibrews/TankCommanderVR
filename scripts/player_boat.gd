@@ -132,7 +132,10 @@ func _build() -> void:
 	root.add_child(speed_label)
 	if Game.help_on:
 		var hint := Label3D.new()
-		hint.text = "THROTTLE OR RIGHT TRIGGER · GRAB WHEEL TO STEER · STICK AIMS GUN · RED = ROCKETS"
+		# "GRAB HELM" not "wheel" (it's a pistol-grip TwoAxisGrip, the jeep has
+		# the actual wheel), and the deck gun's fire method was never stated
+		# anywhere (2026-07-16 docs audit).
+		hint.text = "THROTTLE OR RIGHT TRIGGER · GRAB HELM TO STEER · STICK AIMS GUN · GRIP = FIRE GUN · RED = ROCKETS"
 		hint.font_size = 44
 		hint.pixel_size = 0.0003
 		hint.modulate = Color(1.0, 0.8, 0.35)
@@ -178,7 +181,10 @@ func _physics_process(delta: float) -> void:
 	# +Y node rotation is a LEFT turn in Godot, so stick-right must subtract
 	# (Alex: "on gunboat right thumbstick X is backwards (yaw)")
 	gun_yaw = clampf(gun_yaw - stick_turret.x * 1.8 * delta, -2.4, 2.4)
-	gun_pitch = clampf(gun_pitch + stick_turret.y * 1.0 * delta, -0.05, 0.55)
+	# Pitch NEGATED to match the tank's corrected convention (push forward =
+	# depress, pull back = elevate) — same never-propagated inversion as the
+	# jeep's rear gun (2026-07-16 audit).
+	gun_pitch = clampf(gun_pitch - stick_turret.y * 1.0 * delta, -0.05, 0.55)
 	gun_pivot.rotation = Vector3(gun_pitch, gun_yaw, 0)
 	if mg_held:
 		mg_timer -= delta

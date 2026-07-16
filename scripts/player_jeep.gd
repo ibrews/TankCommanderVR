@@ -130,7 +130,10 @@ func _build() -> void:
 	root.add_child(speed_label)
 	if Game.help_on:
 		var hint := Label3D.new()
-		hint.text = "GRAB WHEEL TO STEER · THROTTLE OR RIGHT TRIGGER · RIGHT STICK AIMS REAR GUN · GRIP GUN OR GRIP BTN = CANNON"
+		# "GRIP GUN" dropped from the old text -- there is no grabbable gun
+		# control on the jeep (the rear gun is stick-aimed only); the cannon
+		# fires from the red button or an empty-hand grip squeeze.
+		hint.text = "GRAB WHEEL TO STEER · THROTTLE OR RIGHT TRIGGER · RIGHT STICK AIMS REAR GUN · RED BTN OR GRIP = CANNON"
 		hint.font_size = 44
 		hint.pixel_size = 0.0003
 		hint.modulate = Color(1.0, 0.8, 0.35)
@@ -168,9 +171,13 @@ func _physics_process(delta: float) -> void:
 	speed_label.text = "%d MPH" % int(absf(spd) * 2.237)
 	if absf(spd) > 8.0 and Game.rng.randf() < delta * 5.0:
 		fx.dust(global_position - fwd * 2.0, 0.9)
-	# rear gun aim (same fixed sign rules as the boat's deck gun)
+	# rear gun aim (same fixed sign rules as the boat's deck gun). Pitch
+	# NEGATED to match the tank's corrected convention (player_tank.gd
+	# _update_turret: push forward = depress, pull back = elevate) — this was
+	# the one vehicle pair the tank's 2026-07-07 elevation fix never reached
+	# (2026-07-16 audit).
 	gun_yaw = wrapf(gun_yaw - stick_turret.x * 2.0 * delta, -PI, PI)
-	gun_pitch = clampf(gun_pitch + stick_turret.y * 1.0 * delta, -0.05, 0.5)
+	gun_pitch = clampf(gun_pitch - stick_turret.y * 1.0 * delta, -0.05, 0.5)
 	gun_pivot.rotation = Vector3(gun_pitch, gun_yaw, 0)
 	if mg_held:
 		mg_timer -= delta

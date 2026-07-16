@@ -57,12 +57,30 @@ var _vo_pools := {}       # prefix -> [variant names]
 var _vo_last := {}        # pool -> last variant played (no repeats)
 var _idle_t := 30.0
 
-# radio (the channel knob in the cockpit)
-const STATIONS := ["AUTO", "DAD FM", "CALM FM", "BATTLE FM", "OFF"]
+# radio (the channel knob in the cockpit, or a quick tap of right-A)
+const STATIONS := ["AUTO", "DAD FM", "SAIGON FM", "CALM FM", "BATTLE FM", "TOUR FM", "OFF"]
+# talk stations: station index -> the VO pool prefix its queue draws from.
+# DAD FM keeps its hardcoded radio_1..12 base plus the radio_x pool; SAIGON FM
+# is pure pool ("dj" — the Good-Morning-style DJ lines, gen_vo6.py).
+const TALK_POOLS := {1: "radio_x", 2: "dj"}
+const STATION_TOUR := 5   # index of TOUR FM below (level-track shuffle)
 var radio_station := 0
 var _radio_talk: AudioStreamPlayer3D = null
 var _radio_next := 4.0
 var _radio_queue: Array = []
+# TOUR FM: shuffles through every level's music. The tracks are authored as
+# short seamless loops (and _make_looping sets loop on the shared streams),
+# so `finished` never fires — a timer advances the dial instead.
+var _m_tour: AudioStreamPlayer = null
+var _tour_queue: Array = []
+var _tour_next := 0.0
+# Boot-spike fix (2026-07-16 perf audit): the ~225 VO clips used to all load
+# synchronously in _ready(), the main contributor to a ~1.1s first-frame
+# stall. Core SFX/music still load sync (needed immediately); VO drains from
+# this queue a few files per frame in _process — fully loaded ~2s in, and
+# vo() already no-ops safely on a not-yet-loaded name. vo_welcome/vo_title
+# are preloaded sync so the hangar greeting can never be the missing one.
+var _vo_load_queue: Array = []
 
 func _ready() -> void:
 	for n in NAMES:
@@ -73,8 +91,9 @@ func _ready() -> void:
 		if n.ends_with("_loop") or n == "alarm" or n.begins_with("music_"):
 			_make_looping(s)
 		streams[n] = s
-	# VO: load everything in the manifest (variant pools), fall back to the
-	# hardcoded list for pre-manifest builds.
+	# VO: everything in the manifest (variant pools), falling back to the
+	# hardcoded list for pre-manifest builds — queued for time-sliced loading
+	# (see _vo_load_queue above), except the two boot-critical names.
 	var vo_names: Array = VO_NAMES.duplicate()
 	var mf := FileAccess.open("res://assets/audio/vo/manifest.txt", FileAccess.READ)
 	if mf:
@@ -84,20 +103,10 @@ func _ready() -> void:
 			if line != "":
 				vo_names.append(line)
 	for n in vo_names:
-		var s: AudioStream = load("res://assets/audio/vo/%s.wav" % n)
-		if s:
-			streams[n] = s
-			# pool by prefix: "vo_kill_3" joins pool "vo_kill"
-			var parts: PackedStringArray = String(n).rsplit("_", true, 1)
-			if parts.size() == 2 and parts[1].is_valid_int():
-				var pool: String = parts[0]
-				if not _vo_pools.has(pool):
-					_vo_pools[pool] = []
-				_vo_pools[pool].append(n)
-	# exact-named singles join their pool too (vo_kill.wav joins "vo_kill")
-	for pool in _vo_pools.keys():
-		if streams.has(pool) and not _vo_pools[pool].has(pool):
-			_vo_pools[pool].append(pool)
+		if n == "vo_welcome" or n == "vo_title":
+			_load_vo_now(n)
+		else:
+			_vo_load_queue.append(n)
 	for i in POOL_SIZE:
 		var p := AudioStreamPlayer3D.new()
 		p.max_distance = 260.0
@@ -108,9 +117,32 @@ func _ready() -> void:
 	_m_calm = _mk_music("music_calm")
 	_m_calm_b = _mk_music("music_calm")
 	_m_combat = _mk_music("music_combat")
+	_m_tour = _mk_music("music_beach")
 	_vo_player = AudioStreamPlayer.new()
 	_vo_player.volume_db = 2.0
 	add_child(_vo_player)
+
+## Load one VO file synchronously and register it in its variant pool
+## ("vo_kill_3" joins pool "vo_kill"; a base-named "vo_kill" joins its own
+## pool too). Called from _ready for boot-critical names and from the
+## time-sliced drain in _process for everything else.
+func _load_vo_now(n: String) -> void:
+	var s: AudioStream = load("res://assets/audio/vo/%s.wav" % n)
+	if s == null:
+		return
+	streams[n] = s
+	var parts: PackedStringArray = String(n).rsplit("_", true, 1)
+	if parts.size() == 2 and parts[1].is_valid_int():
+		var pool: String = parts[0]
+		if not _vo_pools.has(pool):
+			_vo_pools[pool] = []
+			# base-named stream loaded BEFORE its first variant: adopt it now
+			if streams.has(pool):
+				_vo_pools[pool].append(pool)
+		_vo_pools[pool].append(n)
+	# variant(s) loaded before their base-named single: adopt the base now
+	if _vo_pools.has(n) and not _vo_pools[n].has(n):
+		_vo_pools[n].append(n)
 
 func _mk_music(name: String) -> AudioStreamPlayer:
 	var p := AudioStreamPlayer.new()
@@ -199,11 +231,19 @@ func sting(name: String) -> void:
 	play_ui(name, -4.0)
 
 func _process(delta: float) -> void:
+	# time-sliced VO loading (see _vo_load_queue) — a handful per frame keeps
+	# any single frame's load cost ~ a few ms instead of one 800ms+ boot stall
+	if not _vo_load_queue.is_empty():
+		for i in 8:
+			if _vo_load_queue.is_empty():
+				break
+			_load_vo_now(_vo_load_queue.pop_front())
 	_threat = move_toward(_threat, _threat_target, delta * 0.4)
 	var gain_db := linear_to_db(clampf(music_gain, 0.03, 2.0))
 	var menu_target := (-10.0 + gain_db) if _music_mode == "menu" else -80.0
 	var calm_target := -80.0
 	var combat_target := -80.0
+	var tour_target := -80.0
 	if _music_mode == "game":
 		match radio_station:
 			0:  # AUTO — adaptive score
@@ -213,13 +253,16 @@ func _process(delta: float) -> void:
 				# of actual playtime. Combat crossfade math is unchanged.
 				calm_target = -8.0 - _threat * 18.0 + gain_db
 				combat_target = -34.0 + _threat * 24.0 + gain_db
-			1:  # DAD FM — talk over a quiet bed
+			1, 2:  # DAD FM / SAIGON FM — talk over a quiet bed
 				calm_target = -26.0 + gain_db
-			2:  # CALM FM
+			3:  # CALM FM
 				calm_target = -12.0 + gain_db
-			3:  # BATTLE FM
+			4:  # BATTLE FM
 				combat_target = -12.0 + gain_db
-			4:  # OFF
+			STATION_TOUR:  # TOUR FM — level-track shuffle
+				tour_target = -12.0 + gain_db
+				_tour_tick(delta)
+			_:  # OFF
 				pass
 	# split the calm target across the two variation players
 	var calm_a := calm_target if _calm_active == 0 else -80.0
@@ -232,6 +275,8 @@ func _process(delta: float) -> void:
 	_m_menu.volume_db = move_toward(_m_menu.volume_db, menu_target, delta * 30.0)
 	_m_calm.volume_db = move_toward(_m_calm.volume_db, calm_target, delta * 20.0)
 	_m_combat.volume_db = move_toward(_m_combat.volume_db, combat_target, delta * 20.0)
+	if _m_tour:
+		_m_tour.volume_db = move_toward(_m_tour.volume_db, tour_target, delta * 20.0)
 	if _music_mode == "menu" and not _m_menu.playing:
 		_m_menu.play()
 	if _music_mode == "game" and not _m_calm.playing:
@@ -254,6 +299,12 @@ func set_radio_station(i: int) -> void:
 	if s == radio_station:
 		return
 	radio_station = s
+	# Each talk station owns its queue — without this, tuning DAD FM -> SAIGON
+	# FM would keep popping the OLD station's leftover shuffled lines.
+	_radio_queue.clear()
+	if _m_tour and s != STATION_TOUR:
+		_m_tour.stop()
+		_tour_next = 0.0
 	if _radio_talk:
 		_radio_talk.stop()
 		_radio_talk.stream = streams.get("static_loop")
@@ -263,33 +314,98 @@ func set_radio_station(i: int) -> void:
 			if _radio_talk and _radio_talk.stream == streams.get("static_loop"):
 				_radio_talk.stop()
 				_radio_talk.volume_db = 2.0)
-	if s == 1:
+	if TALK_POOLS.has(s):
 		_radio_next = 1.2
 		if _radio_talk:
 			get_tree().create_timer(0.4).timeout.connect(func():
-				if radio_station == 1 and _radio_talk:
+				if TALK_POOLS.has(radio_station) and _radio_talk:
 					_radio_talk.stream = streams.get("jingle")
 					_radio_talk.play())
 
+# TOUR FM: hold each level track 35-60s, then hop to the next off a shuffled
+# deck of every per-level tune (the tracks are seamless loops, so a timer —
+# not `finished` — advances the dial; see _m_tour's declaration).
+const TOUR_TRACKS := ["music_beach", "music_city", "music_city_b", "music_town",
+	"music_town_b", "music_castle", "music_castle_b", "music_island",
+	"music_island_b", "music_mudpit", "music_mudpit_b", "music_gym",
+	"music_gym_b", "music_volcano", "music_volcano_b", "music_toy"]
+
+func _tour_tick(delta: float) -> void:
+	if _m_tour == null:
+		return
+	_tour_next -= delta
+	if _tour_next > 0.0 and _m_tour.playing:
+		return
+	_tour_next = Game.rng.randf_range(35.0, 60.0)
+	if _tour_queue.is_empty():
+		_tour_queue = TOUR_TRACKS.duplicate()
+		_tour_queue.shuffle()
+	var track: String = _tour_queue.pop_back()
+	if streams.has(track):
+		_m_tour.stream = streams[track]
+		_m_tour.play()
+
 func _radio_tick(delta: float) -> void:
-	if radio_station != 1 or _radio_talk == null or _music_mode != "game":
+	if not TALK_POOLS.has(radio_station) or _radio_talk == null or _music_mode != "game":
 		return
 	if _radio_talk.playing:
 		return
 	_radio_next -= delta
 	if _radio_next > 0.0:
 		return
-	_radio_next = Game.rng.randf_range(7.0, 16.0)
+	# THE MOON NUMBERS STATION: on the sphere-world bonus level, the talk
+	# stations occasionally bleed into an eerie shortwave numbers broadcast —
+	# static swell, five slow pitched beeps, static out. Built entirely from
+	# existing one-shots (no VO, no assets); the beep cadence sells it.
+	if Levels.current.has("sphere_world") and Game.rng.randf() < 0.22:
+		_play_numbers_station()
+		return
+	# SAIGON FM's DJ runs a tighter show than Dad's rambling ad reads
+	_radio_next = Game.rng.randf_range(4.0, 9.0) if radio_station == 2 else Game.rng.randf_range(7.0, 16.0)
 	if _radio_queue.is_empty():
-		for i in range(1, 13):
-			_radio_queue.append("radio_%d" % i)
-		for n in _vo_pools.get("radio_x", []):
+		if radio_station == 1:
+			for i in range(1, 13):
+				_radio_queue.append("radio_%d" % i)
+		for n in _vo_pools.get(TALK_POOLS[radio_station], []):
 			_radio_queue.append(n)
 		_radio_queue.shuffle()
+	if _radio_queue.is_empty():
+		return  # pool not generated/loaded (pre-DJ builds): stay silent, no crash
 	var line: String = _radio_queue.pop_back()
 	if streams.has(line):
 		_radio_talk.stream = streams[line]
 		_radio_talk.play()
+
+# See _radio_tick's moon gate. Static swell -> five slow beeps (pitched
+# clicks, random 5-digit "count") -> static out. Fire-and-forget timer chain;
+# _radio_next is pushed far enough out that the sequence can't overlap the
+# next talk line.
+func _play_numbers_station() -> void:
+	if _radio_talk == null:
+		return
+	_radio_next = 16.0
+	var pos := _radio_talk.global_position
+	_radio_talk.stream = streams.get("static_loop")
+	_radio_talk.volume_db = -4.0
+	_radio_talk.play()
+	get_tree().create_timer(1.4).timeout.connect(func():
+		if _radio_talk and _radio_talk.stream == streams.get("static_loop"):
+			_radio_talk.stop()
+			_radio_talk.volume_db = 2.0)
+	for i in 5:
+		get_tree().create_timer(1.8 + i * 0.9).timeout.connect(func():
+			# each "digit" is a click pitched to a random tone — reads as a
+			# cold intercepted broadcast, which on the moon is exactly right
+			play_at("click", pos, 4.0, 0.55 + Game.rng.randf_range(0.0, 0.5), 60.0))
+	get_tree().create_timer(1.8 + 5 * 0.9 + 0.6).timeout.connect(func():
+		if _radio_talk and not _radio_talk.playing:
+			_radio_talk.stream = streams.get("static_loop")
+			_radio_talk.volume_db = -10.0
+			_radio_talk.play()
+			get_tree().create_timer(0.8).timeout.connect(func():
+				if _radio_talk and _radio_talk.stream == streams.get("static_loop"):
+					_radio_talk.stop()
+					_radio_talk.volume_db = 2.0))
 
 # coaching VO: tutorial/guidance lines a veteran can silence from the menu
 # (HELP: OFF). Flavor/combat callouts stay on vo() and always play.

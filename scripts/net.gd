@@ -181,6 +181,19 @@ func leave() -> void:
 	remote_vehicle = null
 	_versus_world = null
 	driver_is_host = true
+	# Input + avatar state must not leak into the NEXT session (2026-07-16 MP
+	# audit): gunner/driver inputs only otherwise reset in _on_peer_connected,
+	# which the relay path never runs — a fresh relay coop session started
+	# with the previous one's last aim/MG-held/drive vector. And _crew_avatar
+	# is freed WITH the tank when main tears the world down, but a freed node
+	# is not `== null`, so _ensure_crew_avatar()'s null-guard never rebuilt it
+	# — the peer's crew body silently never spawned again.
+	gunner_input = Vector2.ZERO
+	gunner_mg_held = false
+	driver_input = Vector2.ZERO
+	if is_instance_valid(_crew_avatar):
+		_crew_avatar.queue_free()
+	_crew_avatar = null
 	Game.round_active = false
 	Game.peer_name = ""
 	Game.peer_vehicle = ""
@@ -221,11 +234,24 @@ func _on_peer_connected(id: int) -> void:
 	_snap_seen = false
 	gunner_input = Vector2.ZERO
 	gunner_mg_held = false
+	# Seats back to default too: a guest who dropped mid-swap and rejoins
+	# builds its fresh setup_coop() with driver_is_host=true — if the host
+	# kept the stale swapped value the two sides would silently hold INVERTED
+	# seat beliefs (both-think-they're-gunner deadlock, 2026-07-16 MP audit).
+	driver_is_host = true
+	driver_input = Vector2.ZERO
+	_apply_seat_roles()
 	print("[net] peer %d connected" % id)
 	_send_hello()
 
 func _on_peer_disconnected(id: int) -> void:
 	_peer_up = false
+	# Don't let the ghost keep driving: if the guest held the driver seat and
+	# dropped while pushing forward, driver_input would stay latched and the
+	# unmanned tank would drive itself forever (2026-07-16 MP audit).
+	driver_input = Vector2.ZERO
+	gunner_input = Vector2.ZERO
+	gunner_mg_held = false
 	print("[net] peer %d disconnected" % id)
 
 func search() -> void:
@@ -412,6 +438,21 @@ func _relay_recv(bytes: PackedByteArray) -> void:
 		return
 	match env.get("type", ""):
 		"welcome":
+			# Mid-game role flip = unrecoverable: the worker tags "host" as
+			# first-socket-in-room and never re-promotes, so a host that drops
+			# and reconnects while its guest stayed comes back tagged guest —
+			# leaving BOTH peers as clients, nobody simulating, tank.puppet
+			# stale (2026-07-16 MP audit). No in-place repair is safe (the
+			# whole sim authority would have to rebuild), so end the session
+			# cleanly instead of leaving a permanently frozen game.
+			if active() and Game.state == Game.GState.PLAYING \
+					and hosting != bool(env.get("host", false)):
+				relay_status.emit("host changed — session ended")
+				push_warning("[net] relay role flipped mid-game; returning to menu")
+				var m_flip = get_tree().get_first_node_in_group("main")
+				if m_flip:
+					m_flip.call_deferred("to_menu")
+				return
 			_relay_id = str(env.get("id", ""))
 			_relay_host = bool(env.get("host", false))
 			_relay_roster.clear()
@@ -446,6 +487,20 @@ func _relay_recv(bytes: PackedByteArray) -> void:
 		"leave":
 			_relay_roster.erase(str(env.get("id", "")))
 			relay_status.emit("player left")
+		"full":
+			# Worker capped the room at 2 (see worker.js) — stop retrying, the
+			# session is genuinely unavailable, not flaky.
+			relay_status.emit("online room is full — try again later")
+			_relay_want_open = false
+			leave()
+		"host_left":
+			# Sim authority is gone; no safe mid-session re-election (see the
+			# welcome role-flip guard above). End cleanly.
+			if Game.state == Game.GState.PLAYING:
+				relay_status.emit("host left — session ended")
+				var m_hl = get_tree().get_first_node_in_group("main")
+				if m_hl:
+					m_hl.call_deferred("to_menu")
 		"hello":
 			v_hello(str(env.get("name", "")), int(env.get("team", 0)),
 				bool(env.get("tmode", false)), str(env.get("vehicle", "tank")))
@@ -467,16 +522,30 @@ func _relay_send_snapshot() -> void:
 	elif client and tank:
 		if Game.mode == Game.Mode.COOP:
 			# co-op is invariantly tank-only -- see the matching cast note in _process().
+			# Branch on the CURRENT seat exactly like the ENet path in _process()
+			# does -- this used to be hardcoded to the gunner shape, which left a
+			# relay client-driver with NO channel for its drive stick at all
+			# (post-swap the tank was simply undrivable; 2026-07-16 MP audit).
 			var co_tank: PlayerTank = tank
-			_relay_send({"type": "state", "s": {
-				"k": "gunner",
-				"in": _v2(co_tank.effective_turret_input()),
-				"head": _t3(_my_head_rel()),
-				"hl": _t3(_my_hand_rel(true)),
-				"hr": _t3(_my_hand_rel(false)),
-				"mf": _my_move_flags(),
-				"mg": co_tank.mg_held,
-			}})
+			if i_am_driver():
+				_relay_send({"type": "state", "s": {
+					"k": "driver",
+					"in": _v2(co_tank.stick_drive),
+					"head": _t3(_my_head_rel()),
+					"hl": _t3(_my_hand_rel(true)),
+					"hr": _t3(_my_hand_rel(false)),
+					"mf": _my_move_flags(),
+				}})
+			else:
+				_relay_send({"type": "state", "s": {
+					"k": "gunner",
+					"in": _v2(co_tank.effective_turret_input()),
+					"head": _t3(_my_head_rel()),
+					"hl": _t3(_my_hand_rel(true)),
+					"hr": _t3(_my_hand_rel(false)),
+					"mf": _my_move_flags(),
+					"mg": co_tank.mg_held,
+				}})
 		elif Game.mode == Game.Mode.VERSUS:
 			_relay_send({"type": "state", "s": _versus_state_dict()})
 
@@ -533,6 +602,9 @@ func _relay_apply_state(s: Dictionary) -> void:
 		"gunner":
 			c_gunner(_un_v2(s["in"]), _un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]),
 				int(s["mf"]), s.get("mg", false))
+		"driver":
+			c_driver(_un_v2(s["in"]), _un_t3(s["head"]), _un_t3(s["hl"]), _un_t3(s["hr"]),
+				int(s["mf"]))
 		"versus":
 			s_versus_state(_un_t3(s["t"]), s["ty"], s["ge"], _un_t3(s["head"]),
 				_un_t3(s["hl"]), _un_t3(s["hr"]), int(s["mf"]))
@@ -554,6 +626,19 @@ func _relay_apply_evt(env: Dictionary) -> void:
 				bool(env.get("tmode", false)), int(env.get("red", 0)), int(env.get("blue", 0)))
 		"s_round_end":
 			s_round_end(int(env.get("red", 0)), int(env.get("blue", 0)))
+		# host god-mode + seat-swap — relay counterparts of the authority RPCs
+		# (2026-07-16 MP audit: these five had no relay path at either end)
+		"s_session":
+			s_session(int(env.get("mode", Game.mode)), str(env.get("level", Game.level_id)),
+				int(env.get("diff", Game.difficulty)), str(env.get("mut", "")))
+		"s_add_bots":
+			s_add_bots(int(env.get("count", 0)))
+		"s_team_mode":
+			s_team_mode(bool(env.get("on", false)))
+		"c_swap_seats":
+			c_swap_seats()
+		"s_seats":
+			s_seats(bool(env.get("hd", true)))
 
 # ---- (de)serialization helpers: JSON only carries floats/arrays, so pack
 # Transform3D/Vector2/Vector3 into plain number arrays and back.
@@ -906,19 +991,37 @@ func s_round_end(red: int, blue: int) -> void:
 # `hosting`). Changing map/mode/difficulty restarts the level with new params
 # on BOTH peers; add_bots spawns extra enemies into the running wave.
 
+# Every sender below branches on transport like _broadcast_round() does —
+# these five used to call bare .rpc() unconditionally, which THROWS and drops
+# the message once a host has fallen back from LAN to the relay (no
+# multiplayer peer exists there). Confirmed 2026-07-16 MP audit: over relay,
+# a host difficulty/map change desynced the whole session (guest stranded in
+# the old level with an orphaned puppet), team-mode toggles never reached the
+# guest, and seat swap was a complete no-op in both directions.
+
 func host_change_session(mode: int, level_id: String, diff: int, mutator: String) -> void:
 	if not hosting:
 		return
 	_apply_session_change(mode, level_id, diff, mutator)
 	if has_player():
-		s_session.rpc(mode, level_id, diff, mutator)
+		if _transport == Transport.RELAY:
+			_relay_send({"type": "evt", "e": "s_session", "mode": mode, "level": level_id,
+				"diff": diff, "mut": mutator, "echo": false})
+		else:
+			s_session.rpc(mode, level_id, diff, mutator)
 
 func host_add_bots(count: int) -> void:
 	if not hosting:
 		return
 	_apply_add_bots(count)
 	if has_player():
-		s_add_bots.rpc(count)
+		# (Functionally host-only — bots reach the guest via the replica
+		# snapshot stream — but the bare .rpc() still threw error spam per
+		# press over relay, so it branches like the rest.)
+		if _transport == Transport.RELAY:
+			_relay_send({"type": "evt", "e": "s_add_bots", "count": count, "echo": false})
+		else:
+			s_add_bots.rpc(count)
 
 func host_set_team_mode(on: bool) -> void:
 	if not hosting:
@@ -928,7 +1031,10 @@ func host_set_team_mode(on: bool) -> void:
 	Game.my_team = Game.Team.RED if hosting else Game.Team.BLUE
 	Game.round_state_changed.emit()
 	if has_player():
-		s_team_mode.rpc(on)
+		if _transport == Transport.RELAY:
+			_relay_send({"type": "evt", "e": "s_team_mode", "on": on, "echo": false})
+		else:
+			s_team_mode.rpc(on)
 
 @rpc("authority", "reliable")
 func s_session(mode: int, level_id: String, diff: int, mutator: String) -> void:
@@ -975,6 +1081,8 @@ func request_seat_swap() -> void:
 		return
 	if hosting:
 		_do_seat_swap()
+	elif _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "c_swap_seats", "echo": false})
 	else:
 		c_swap_seats.rpc_id(1)
 
@@ -986,7 +1094,10 @@ func c_swap_seats() -> void:
 func _do_seat_swap() -> void:
 	driver_is_host = not driver_is_host
 	_apply_seat_roles()
-	s_seats.rpc(driver_is_host)
+	if _transport == Transport.RELAY:
+		_relay_send({"type": "evt", "e": "s_seats", "hd": driver_is_host, "echo": false})
+	else:
+		s_seats.rpc(driver_is_host)
 	Sfx.play_at("switch", tank.global_position if tank else Vector3.ZERO, -2.0)
 
 @rpc("authority", "reliable")
@@ -1056,7 +1167,10 @@ func _avatar_tint(id: int) -> Color:
 	return Game.team_tint(_team_for(id)) if Game.team_mode else AvatarCosmetics.tint_for(id)
 
 func _ensure_crew_avatar() -> void:
-	if _crew_avatar == null and tank:
+	# is_instance_valid, NOT == null: the avatar is freed with the tank on
+	# world teardown, and a freed instance doesn't equal null -- the old check
+	# meant the crew body never respawned in any later session (2026-07-16).
+	if not is_instance_valid(_crew_avatar) and tank:
 		_crew_avatar = AvatarRig.new()
 		tank.add_child(_crew_avatar)
 		_crew_avatar.configure(AvatarRig.Mode.SEATED, _avatar_tint(their_id()))

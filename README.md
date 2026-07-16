@@ -75,13 +75,17 @@ This is the reliable way to play today.
 
 | Input | Action |
 |---|---|
-| X / L-stick click | Auto start ritual (battery + engine) |
+| X | Auto start ritual (battery + engine) |
 | Left stick | Drive (tracks mix automatically) |
 | Right stick | Turret traverse / gun elevation |
-| Right trigger | Fire cannon (auto-reloads) |
-| A (hold) | Coax machine gun |
-| B | Fire rocket salvo |
-| Y | Recalibrate seat height |
+| Right trigger | Throttle forward (every ground/water/air vehicle) |
+| Right grip (empty hand) | Fire cannon (auto-reloads) — or trigger while gripping the turret stick |
+| A (hold) | Coax machine gun · quick tap cycles the radio station |
+| B (tap) | Fire rocket salvo · hold ~1s toggles the HUD |
+| Y (tap, left hand) | Recalibrate seat height · hold ~1s respawns/resets the run |
+| R-stick click | Cycle camera: 1st person / 3rd person / far 3rd person |
+| L-stick click | Restart level (solo) / leave to hangar (multiplayer) |
+| Hold LEFT trigger ~1s | Exit the current vehicle (walk up + grip to re-enter) |
 
 **Physical grab/poke:** the cockpit is built entirely from real `VRControl`
 levers/switches/knobs/buttons meant to be grabbed and poked by hand —

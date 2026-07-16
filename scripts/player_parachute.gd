@@ -205,7 +205,11 @@ func take_damage(amount: float, at: Vector3) -> void:
 
 # ---- rig-facing input API (mirrors PlayerTank/PlayerPlane)
 func set_stick_drive(v: Vector2) -> void:
-	stick_fallback = v
+	# v.x arrives PRE-NEGATED by xr_rig (tank convention: -ls.x), but `drift`
+	# (the primary right-stick path above) uses raw rs.x where +x = drift
+	# right. Un-negate so both sticks agree — left-stick-right used to drift
+	# LEFT while right-stick-right drifted right (2026-07-16 audit).
+	stick_fallback = Vector2(-v.x, v.y)
 
 func set_stick_turret(v: Vector2) -> void:
 	drift = v

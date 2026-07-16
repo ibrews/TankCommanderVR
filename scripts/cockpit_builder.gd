@@ -478,7 +478,7 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	root.add_child(vol)
 	c["radio_volume"] = vol
 	var chan := VRControl.Knob.create(Color(0.3, 0.15, 0.1))
-	chan.detents = 4
+	chan.detents = Sfx.STATIONS.size() - 1  # one detent per station boundary
 	chan.value = 0.0
 	chan.position = Vector3(X0 + 0.05, 0.12, 0.01)
 	chan.rotation.y = deg_to_rad(90)
@@ -525,6 +525,13 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	root.add_child(thermal_vp)
 	var thermal_cam := Camera3D.new()
 	thermal_cam.fov = 35.0  # narrow — a sight, not a wide establishing view
+	# Perf: this camera re-renders the shared world every frame while IR is on
+	# (2026-07-16 perf audit: ~1-3ms/frame of extra draw submission on Quest).
+	# Trim what it draws: skip the cockpit-interior layer (2 — the camera sits
+	# inside the gun mantlet, the interior would only occlude) and cap the far
+	# plane well below the main camera's.
+	thermal_cam.cull_mask = 0xFFFFF & ~2
+	thermal_cam.far = 300.0
 	thermal_cam.current = true  # a Camera3D inside a SubViewport still needs
 	# this to actually be the one that viewport renders through -- without it
 	# the viewport had no active camera at all, so the feed just never

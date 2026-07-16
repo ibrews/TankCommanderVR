@@ -15,6 +15,16 @@ const FUSE := 2.2
 const SPLASH_R := 6.0
 const SPLASH_DMG := 20.0
 
+# BIG CABBAGE: every detonation this match feeds the count; the 20th summons
+# the merchant's enormous cousin near the blast (a 3.5x CabbageMan — same
+# mesh, same indestructible serenity) plus a COLESLAW APOCALYPSE score bonus.
+# Static so all grenade instances share one tally; reset with each new match
+# via the world teardown (a fresh level spawns fresh grenades but statics
+# persist — so it's reset explicitly when the milestone fires, making it
+# once-per-20 rather than once-ever).
+static var splattered := 0
+const BIG_CABBAGE_AT := 20
+
 var _armed := false
 var _fuse_t := 0.0
 
@@ -66,4 +76,28 @@ func _detonate() -> void:
 			var d := node.global_position.distance_to(global_position)
 			if d < SPLASH_R:
 				node.take_damage(SPLASH_DMG * clampf(1.0 - d / SPLASH_R, 0.2, 1.0), global_position)
+	splattered += 1
+	if splattered >= BIG_CABBAGE_AT:
+		splattered = 0
+		_summon_big_cabbage()
 	queue_free()
+
+func _summon_big_cabbage() -> void:
+	var m := get_tree().get_first_node_in_group("main")
+	if m == null or not is_instance_valid(m.get("world")) or m.get("terrain") == null:
+		return
+	var terrain = m.terrain
+	var pl := get_tree().get_first_node_in_group("player")
+	if pl == null:
+		return  # CabbageMan's greet logic needs a player node; no player, no cousin
+	var big := Npc.CabbageMan.new()
+	big.player = pl
+	m.world.add_child(big)
+	var pos := global_position + Vector3(Game.rng.randf_range(-6.0, 6.0), 0, Game.rng.randf_range(-6.0, 6.0))
+	big.global_position = Vector3(pos.x, terrain.height(pos.x, pos.z), pos.z)
+	big.scale = Vector3.ONE * 3.5
+	var fx: FxPool = get_tree().get_first_node_in_group("fx")
+	if fx:
+		fx.debris_burst(big.global_position + Vector3(0, 4, 0), 14, Color(0.3, 0.6, 0.3))
+	Sfx.play_at("char_cabbage_1", big.global_position + Vector3(0, 5, 0), 6.0, 0.8)
+	Game.add_score(100)

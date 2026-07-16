@@ -66,6 +66,11 @@ var _last_local_gunner := false
 var _declutch_blend := 1.0     # 0..1 ease-in right after a seat swap, else settled
 var _latched_drive_cmd := Vector2.ZERO  # SP gunner-seated: frozen (l,r) track cmd
 
+# thermal sight (see _ready's note: camera must STAY inside its SubViewport)
+var _thermal_cam: Camera3D = null
+var _thermal_vp: SubViewport = null
+const THERMAL_CAM_OFFSET := Vector3(0, 0.28, -1.4)  # gun_pivot-local mount point
+
 # inputs
 var tiller_l_v := 0.0
 var tiller_r_v := 0.0
@@ -106,15 +111,17 @@ func _ready() -> void:
 	_wire_controls()
 	_build_reticle()
 	# Thermal sight camera: cockpit_builder.gd builds the SubViewport/Camera3D
-	# but has no access to gun_pivot (built below, in _build_exterior, not
-	# there) -- reparent it here so the feed actually points where the gun is
-	# aimed (gun_pivot.rotation.x already carries elevation; the reparent
-	# picks up traverse for free since gun_pivot is itself a turret child).
-	if cockpit.has("thermal_cam"):
-		var tcam: Camera3D = cockpit["thermal_cam"]
-		tcam.get_parent().remove_child(tcam)
-		gun_pivot.add_child(tcam)
-		tcam.position = Vector3(0, 0.28, -1.4)
+	# but has no access to gun_pivot. DO NOT reparent the camera onto the gun
+	# (v0.6.25/26 did exactly that and re-broke the feed): a Camera3D renders
+	# into its nearest ANCESTOR viewport, so pulling it out of thermal_vp left
+	# the viewport with no camera (blank screen again) AND leaked a
+	# current=true camera into the main viewport where it could hijack the
+	# hangar-preview view (QA audit 2026-07-16). Instead the camera STAYS
+	# inside its SubViewport and _sync_thermal_cam() copies gun_pivot's global
+	# transform onto it every physics frame while the IR switch has the
+	# viewport rendering -- same aim-following behavior, correct viewport.
+	_thermal_cam = cockpit.get("thermal_cam")
+	_thermal_vp = cockpit.get("thermal_vp")
 	var shape := CollisionShape3D.new()
 	var box := BoxShape3D.new()
 	box.size = Vector3(3.3, 1.1, 6.6)
@@ -345,14 +352,15 @@ func _wire_controls() -> void:
 	c["restart"].value_changed.connect(_on_restart_lever)
 	c["fuel_pump"].toggled_on.connect(func(on): fuel_on = on)
 	c["gear"].value_changed.connect(_on_gear)
-	c["horn"].pressed.connect(func():
-		Sfx.play_at("horn", global_position + Vector3(0, 1.5, -3), 4.0)
-		_rumble(0.3, 0.08))
+	c["horn"].pressed.connect(_on_horn)
 	c["radio_volume"].value_changed.connect(func(v): Sfx.music_gain = v * 1.4)
 	c["radio_channel"].value_changed.connect(func(v):
-		var st := roundi(v * 4.0)
+		# derived from STATIONS.size() so adding stations (SAIGON FM / TOUR FM,
+		# 2026-07-16) can't silently strand the knob's top positions again
+		var top := Sfx.STATIONS.size() - 1
+		var st := roundi(v * float(top))
 		Sfx.set_radio_station(st)
-		cockpit["labels"]["radio_station"].text = Sfx.STATIONS[clampi(st, 0, 4)])
+		cockpit["labels"]["radio_station"].text = Sfx.STATIONS[clampi(st, 0, top)])
 	Sfx.radio_attach(cockpit["radio_node"])
 	c["menu_switch"].toggled_on.connect(func(_on):
 		var m := get_tree().get_first_node_in_group("main")
@@ -365,6 +373,67 @@ func _wire_controls() -> void:
 			m.rig.set("_calib_t", 1.0)
 			m.rig.set("_use_establishing_shot", false))
 	c["hatch"].value_changed.connect(_on_hatch_lever)
+
+# ------------------------------------------------------------------ horn eggs
+# CLOWN HORN: 5 honks inside 2.5s "breaks" the horn into a clown honk for 15s
+# (boing+squeak per press), announced with a confetti pop + jingle. Mash-the-
+# fun-button discovery — the most kid-findable egg in the game.
+var _honk_times: Array = []
+var _clown_until := 0.0
+
+func _on_horn() -> void:
+	var now := Time.get_ticks_msec() / 1000.0
+	var hpos := global_position + Vector3(0, 1.5, -3)
+	if now < _clown_until:
+		Sfx.play_at("boing", hpos, 2.0, Game.rng.randf_range(0.85, 1.3))
+		Sfx.play_at("squeak", hpos, 0.0, Game.rng.randf_range(0.9, 1.5))
+		_rumble(0.4, 0.1)
+		return
+	Sfx.play_at("horn", hpos, 4.0)
+	_rumble(0.3, 0.08)
+	_honk_times.append(now)
+	while _honk_times.size() > 0 and now - _honk_times[0] > 2.5:
+		_honk_times.pop_front()
+	if _honk_times.size() >= 5:
+		_honk_times.clear()
+		_clown_until = now + 15.0
+		Sfx.play_at("jingle", turret.global_position, 2.0)
+		if fx:
+			fx.balloon_pop(global_position + Vector3(0, 3.5, 0))
+
+# DISCO COCKPIT: flip the LIGHTS switch 5x inside 3s → headlights strobe a
+# rainbow for 12s and the radio slams to BATTLE FM (restored after, if the
+# player didn't retune meanwhile). Fidgety switch-flippers find this one.
+var _light_flips: Array = []
+var _disco_tw: Tween = null
+
+func _maybe_disco(now: float) -> void:
+	_light_flips.append(now)
+	while _light_flips.size() > 0 and now - _light_flips[0] > 3.0:
+		_light_flips.pop_front()
+	if _light_flips.size() < 5 or _disco_tw != null:
+		return
+	_light_flips.clear()
+	var prev_station := Sfx.radio_station
+	Sfx.set_radio_station(4)  # BATTLE FM
+	Sfx.play_at("jingle", turret.global_position, 2.0)
+	if fx:
+		fx.balloon_pop(global_position + Vector3(0, 3.5, 0))
+	_disco_tw = create_tween().set_loops()
+	_disco_tw.tween_method(_disco_color, 0.0, 1.0, 1.2)
+	get_tree().create_timer(12.0).timeout.connect(func():
+		if _disco_tw:
+			_disco_tw.kill()
+			_disco_tw = null
+		for l in headlights:
+			l.light_color = Color(1.0, 0.95, 0.8)
+		if Sfx.radio_station == 4:
+			Sfx.set_radio_station(prev_station))
+
+func _disco_color(t: float) -> void:
+	var col := Color.from_hsv(t, 0.85, 1.0)
+	for l in headlights:
+		l.light_color = col
 
 func _on_hatch_lever(v: float) -> void:
 	if absf(v) > 0.8 and Game.player_mode == Game.PlayerMode.SEATED:
@@ -390,6 +459,7 @@ func _on_battery(on: bool) -> void:
 
 func _on_lights(on: bool) -> void:
 	Game.player_lights = on and battery_on
+	_maybe_disco(Time.get_ticks_msec() / 1000.0)
 	if on:
 		Sfx.vo("vo_lights", 0, 40.0)
 	for l in headlights:
@@ -444,6 +514,22 @@ func _on_restart() -> void:
 	yaw = PI
 	_spd = 0.0
 	gunner_seated = false
+	# Aim + seat-declutch back to neutral so a respawn doesn't inherit the
+	# last life's turret angle (which also caused a one-time 0.35s declutch
+	# re-blend of the whole visible room -- QA audit 2026-07-16).
+	turret.rotation.y = 0.0
+	gun_elev = 0.0
+	gun_pivot.rotation.x = 0.0
+	_last_local_gunner = false
+	_declutch_blend = 1.0
+	var dc: Node3D = cockpit.get("declutch")
+	if dc:
+		dc.rotation.y = 0.0
+	# IR sight off on respawn: if it was on at death the 256x192 full-scene
+	# render kept running forever after (perf audit 2026-07-16).
+	var ir = cockpit["controls"].get("ir")
+	if ir and ir.on:
+		ir.flip()
 	ammo = 40
 	rockets_left = 12
 	loaded = true
@@ -515,6 +601,7 @@ func _physics_process(delta: float) -> void:
 	_update_drive(delta)
 	_update_turret(delta)
 	_sync_seat_declutch(delta)
+	_sync_thermal_cam()
 	_update_weapons(delta)
 	_update_gauges(delta)
 	_update_hints()
@@ -544,6 +631,7 @@ func _puppet_update(delta: float) -> void:
 	gun_pivot.rotation.x = gun_elev
 	turret_p.volume_db = -14.0 if inp.length() > 0.1 else -80.0
 	_sync_seat_declutch(delta)
+	_sync_thermal_cam()
 	_update_gauges(delta)
 	_update_reticle()
 	var gp := global_position
@@ -743,6 +831,17 @@ func local_is_gunner() -> bool:
 func toggle_seat() -> void:
 	if Game.mode == Game.Mode.SOLO:
 		gunner_seated = not gunner_seated
+
+## Aims the thermal sight: copies the gun's pose onto the camera that lives
+## inside the thermal SubViewport (never reparent it out -- see _ready).
+## Skipped entirely while the IR switch has the viewport disabled, so the
+## only per-frame cost when the sight is off is this one enum compare.
+func _sync_thermal_cam() -> void:
+	if _thermal_cam == null or _thermal_vp == null:
+		return
+	if _thermal_vp.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
+		return
+	_thermal_cam.global_transform = gun_pivot.global_transform * Transform3D(Basis(), THERMAL_CAM_OFFSET)
 
 ## Keeps the crew basket's declutch hinge (cockpit_builder.gd's SeatDeclutch)
 ## tracking the current seat: identity while gunner-seated (basket follows the
@@ -965,7 +1064,7 @@ func _update_hints() -> void:
 			if gear != 0:
 				_hint_stage = 4
 		4:
-			hint.text = "TILLERS OR RIGHT TRIGGER TO DRIVE — GRIP STICK + TRIGGER TO FIRE"
+			hint.text = "TILLERS OR R-TRIGGER TO DRIVE · GRIP TURRET+TRIGGER OR SQUEEZE GRIP = FIRE"
 			if absf(_spd) > 2.0:
 				_hint_stage = 5
 		5:

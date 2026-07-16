@@ -16,7 +16,8 @@ class Heli:
 	var cockpit: Dictionary = {}
 	var collective := 0.35     # 0..1 lift
 	var cyclic := Vector2.ZERO
-	var yaw_pedal := 0.0       # -1..1 from foot pedals, adds direct yaw authority
+	var yaw_pedal := 0.0       # -1..1 from the PHYSICAL foot pedals only
+	var stick_yaw := 0.0       # -1..1 left-stick-X fallback (kept separate — see set_stick_drive)
 	var stick_fallback := Vector2.ZERO
 	var stick_coll := 0.0
 	var mg_held := false
@@ -335,10 +336,14 @@ class Heli:
 		if Vector2(velocity.x, velocity.z).length() > 3.0 and absf(cyc.y) > 0.1:
 			var want := atan2(-velocity.x, -velocity.z)
 			rotation.y = lerp_angle(rotation.y, want, 0.8 * delta)
-		if absf(yaw_pedal) > 0.05:
-			rotation.y -= yaw_pedal * 1.1 * delta
+		# Physical pedals win while deflected, else the stick fallback — same
+		# live per-frame merge as `cyc` above (see set_stick_drive's note on
+		# why the stick must not write yaw_pedal directly).
+		var yaw_in := yaw_pedal if absf(yaw_pedal) > 0.05 else stick_yaw
+		if absf(yaw_in) > 0.05:
+			rotation.y -= yaw_in * 1.1 * delta
 		rotation.x = lerpf(rotation.x, -cyc.y * 0.22, 3.0 * delta)
-		rotation.z = lerpf(rotation.z, -cyc.x * 0.22 - yaw_pedal * 0.05, 3.0 * delta)
+		rotation.z = lerpf(rotation.z, -cyc.x * 0.22 - yaw_in * 0.05, 3.0 * delta)
 		global_position += velocity * delta
 		global_position.y = minf(global_position.y, 130.0)
 		var gh := terrain.height(global_position.x, global_position.z)
@@ -400,16 +405,21 @@ class Heli:
 			_rumble_cb.call(a, d)
 
 	# rig-facing API. Left stick: Y -> collective rate (unchanged), X -> yaw
-	# pedals (was dead input; gamepad/desktop have no hands to grab the new
-	# physical pedal levers, so they need a stick-mapped fallback same as
-	# stick_fallback covers the cyclic grip).
+	# fallback. NOTE this must NOT write yaw_pedal directly: xr_rig calls
+	# set_stick_drive EVERY physics frame, so assigning yaw_pedal here
+	# clobbered the physical pedal levers' value with 0 whenever the stick
+	# was centered — the pedals were effectively dead (2026-07-16 audit:
+	# "assignment-vs-fallback flavor of the overwrite family", same bug
+	# class as the plane's old stick latch). stick_yaw is stored separately
+	# and _physics_process picks pedals-when-deflected, else stick — the
+	# same live-fallback pattern the cyclic grip already uses.
 	func set_stick_drive(v: Vector2) -> void:
 		stick_coll = v.y
 		# v.x arrives PRE-NEGATED by xr_rig (tank convention); `rotation.y -=
-		# yaw_pedal` means positive pedal yaws right, so un-negate here or
-		# stick-right yaws left (Alex: "helicopter mode, left thumbstick
-		# rotate (X) is backwards")
-		yaw_pedal = clampf(-v.x, -1.0, 1.0)
+		# yaw` means positive yaws right, so un-negate here or stick-right
+		# yaws left (Alex: "helicopter mode, left thumbstick rotate (X) is
+		# backwards")
+		stick_yaw = clampf(-v.x, -1.0, 1.0)
 	func set_stick_turret(v: Vector2) -> void: stick_fallback = v
 	func fire_primary() -> void: mg_held = true; get_tree().create_timer(0.4).timeout.connect(func(): mg_held = false)
 	func stick_fire() -> void: fire_rockets()

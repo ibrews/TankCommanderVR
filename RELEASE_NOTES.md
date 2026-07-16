@@ -1,3 +1,30 @@
+# Tank Commander VR v0.6.27
+
+## The release-prep blitz — controls deconflicted, multiplayer hardened, radio expanded
+- **Button fixes (big one):** Y, B, and A each secretly did TWO things per
+  press — recalibrating your seat also RESET YOUR WHOLE RUN, firing rockets
+  also toggled the HUD, and firing the MG also changed the radio station.
+  Now: tap = the common action (recalibrate / rockets / radio), hold = the
+  rare one (respawn / HUD toggle), MG unchanged on A-hold. Two-hand chords
+  (seat swap, host tools) no longer leak into any of them.
+- **Thermal sight actually works now** (the v0.6.25 fix accidentally
+  re-broke it a different way), and the display moved off the side window.
+- **Multiplayer over the internet (relay) fixed for real:** seat swap, host
+  map/difficulty/team changes, and driving after a seat swap were all
+  silently dead over the relay — every one now works. Room capped at 2
+  players (no more strangers colliding in the shared room), and a host
+  disconnect now ends the session cleanly instead of freezing it.
+- **Radio: two new stations.** SAIGON FM — a wartime morning-DJ station
+  with 16 all-new lines ("GOOOOD MORNING, TANK COMMANDERS!") — and TOUR FM,
+  which shuffles every level's music. Radio knob + A-tap both cycle all 7.
+- **Other vehicles caught up:** jeep + boat gun elevation had the same
+  inversion the tank had; heli's physical yaw pedals were dead (stick was
+  overwriting them); parachute drift now agrees between both sticks.
+- **Boot is faster** (~1s less startup hitch — voice lines now load in the
+  background) and the APK is ~40MB smaller (store art was shipping inside it).
+- **5 new easter eggs.** Honk responsibly. Flip switches irresponsibly.
+  Basketball counts. Cabbage has consequences. Listen closely on the moon.
+
 # Tank Commander VR v0.6.25
 
 ## Live playtest fix batch — controls, camera modes, gunner seat, thermal sight

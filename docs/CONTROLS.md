@@ -5,8 +5,12 @@
 ### Global (works in any vehicle, on foot, or in the menu)
 | Input | Action |
 |---|---|
-| Right stick click | Toggle 1st / 3rd person camera |
+| Right stick click | Cycle camera — 1st person → 3rd person → far 3rd person (~20' further back) |
 | Left stick click | Restart level (solo) / leave to hangar (co-op, versus) |
+| Left Y — tap | Recalibrate seated position |
+| Left Y — hold ~1s | Respawn / reset the run (haptic ticks while charging) |
+| Right B — hold ~1s (seated) | Toggle the cockpit HUD (labels, gauges, lamps) |
+| Right A — quick tap | Cycle radio station (AUTO / DAD FM / CALM FM / BATTLE FM / OFF) |
 | Either menu button | **Pause** — freezes the level in place (solo only; co-op/versus keep running since the other player can't be stopped) and shows the real lobby menu, positioned where you were looking when you paused. Press the same button again with nothing selected to resume exactly where you were. Picking a different vehicle (same level/mode/difficulty/mutator) swaps in place — you keep your wave/score. Picking a different level, mode, difficulty, or mutator does a full restart. |
 | Laser pointer (aim pose, or gaze if no hand/controller tracked) + trigger / A-X / menu button | Click menu / pause-menu buttons |
 | **Hold LEFT trigger ~1 second (seated, empty hand)** | **Exit the current vehicle** — works in every vehicle, no lever hunt. Plane: ejection seat + parachute. Biplane: bail out + parachute. Airborne helicopter: bail out + parachute. Everything else: climb out beside the vehicle. Haptic ticks confirm the hold is charging. |
@@ -39,8 +43,10 @@ doesn't apply to either.
 | Rocket console: flip safety cover → ARM toggle → big red button | Fire a 2-rocket salvo (mild homing vs. planes) |
 | Battery switch → hold green STARTER → gear to D | Full start ritual |
 | X button (not gripping) | Quick-start (skips the ritual) |
-| B / Y button | Fire rockets (stick fallback) |
-| Y button (left hand) | Recalibrate seated position |
+| B button — tap | Fire rockets (stick fallback; hold ~1s is the HUD toggle instead) |
+| A button — quick tap | Cycle radio station (hold is the machine gun) |
+| Y button (left hand) — tap | Recalibrate seated position (hold ~1s respawns) |
+| Grips + Y | Swap driver ↔ gunner seat — solo too: the whole cockpit stays fixed to the hull while driving, or turns with the turret while gunning |
 | **Yellow HATCH lever (above your seat, grab + pull), or hold LEFT TRIGGER** | **Exit the vehicle mid-mission**, on foot. Walk back within ~0.6m of the abandoned vehicle's seat and squeeze either grip (or hold LEFT TRIGGER) to climb back in. |
 
 ### Seated in the plane / biplane
@@ -76,6 +82,18 @@ doesn't apply to either.
 | Grip button (empty-handed) | Fire the deck gun (stick-fallback) |
 | Red button | Fire rockets |
 | Yellow rail lever, or hold LEFT trigger | Exit |
+
+### Seated in the helicopter
+The heli keeps its own scheme — **right-trigger throttle does NOT apply here**
+(collective controls lift instead).
+| Input | Action |
+|---|---|
+| Collective lever (grab, left side), or left stick Y | Lift — raise to climb, lower to descend |
+| Cyclic stick (grab, center), or right stick | Tilt + travel — push forward to fly forward, side to strafe |
+| Foot pedals (grab), or left stick X | Yaw (tail rotor) — pirouette in place |
+| Grip button / trigger while gripping cyclic | Machine gun |
+| Red button | Rockets |
+| Hold LEFT trigger | Exit — parachute if airborne (above ~4m), else climb out |
 
 ### On foot (RUNNER)
 | Input | Action |
