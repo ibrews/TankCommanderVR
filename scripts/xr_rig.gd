@@ -835,57 +835,16 @@ func _apply_view_offset() -> void:
 	# once actually PLAYING (there's a real vehicle to orbit at that point).
 	var third := Game.third_person and Game.state != Game.GState.MENU
 	if Game.player_mode == Game.PlayerMode.ON_FOOT:
-		# On-foot: the origin's position is fully addon-managed
-		# (XRToolsPlayerBody.rotate_player()/move_body() etc. increment
-		# origin_node.global_transform.origin every frame to track real+
-		# virtual walking/turning) -- writing a baked local offset here the
-		# way SEATED does below fights that and strands the origin at a
-		# stale, disconnected spot (this used to reuse _fp_pos, which is
-		# only ever computed by the SEATED _calibrate() and never touched on
-		# foot). Root cause of "I still don't seem to see my avatar in third
-		# person mode when I'm a runner" (Alex, 2026-07-06): the camera never
-		# actually pulled back at all on foot, so the local AvatarRig (built
-		# correctly -- see main.gd's _update_local_avatar()) sat right on top
-		# of the camera the whole time, same as first person. Detach the
-		# camera instead and chase it off the on-foot body's own live
-		# position every frame -- see _update_on_foot_chase_cam(), called
-		# from _physics_process().
-		#
-		# THE ACTUAL BLACK-SCREEN BUG (found 2026-07-07 from real device
-		# logs): this used to also do `position = Vector3.ZERO` here, which
-		# is correct for SEATED (there `position` is a LOCAL offset from a
-		# seat_anchor parent, always meant to reset to identity) but WRONG
-		# here -- on foot, the rig is parented directly to the level's
-		# static world node, so `position` IS the origin's actual
-		# world-relevant placement. enter_on_foot() sets `transform =
-		# dismount_transform` a few lines before calling this function;
-		# zeroing `position` right after threw that away and teleported the
-		# WHOLE RIG to world origin (0,0,0) instead -- almost certainly
-		# inside solid terrain or off in empty void on every level, which
-		# reads as exactly "black screen... often when trying to use my
-		# runner avatar." Confirmed via Cloudflare-pulled device logs: many
-		# independent play sessions ALL ended abruptly within a couple
-		# seconds of the "on-foot" log line, in plain FIRST person (not just
-		# third/far, which is what the earlier top_level-snap hardening
-		# targeted and didn't actually fix) -- consistent with the player
-		# hard-quitting after landing inside geometry, not a script crash
-		# (draws stayed non-zero right up to the cutoff in every capture).
-		camera.top_level = third
-		if third:
-			# Snap immediately instead of leaving whatever stale local
-			# transform the camera had before top_level flipped true --
-			# top_level reinterprets that SAME transform as a world-space
-			# one, which could be anywhere (still inside a vehicle's
-			# rotating cockpit frame, mid-headset-tracking-update, etc.).
-			# Left un-snapped, that's a real candidate for "I still see a
-			# black screen often when trying to use my runner avatar" (Alex,
-			# 2026-07-07) -- a degenerate/miles-away camera transform for
-			# however many frames it took _update_on_foot_chase_cam() to
-			# first correct it, or forever if on_foot_body wasn't valid yet.
-			_update_on_foot_chase_cam(0.0, true)
-		else:
-			camera.transform = Transform3D()
-		print("[camera] mode=", Game.CamMode.keys()[Game.cam_mode], " state=", Game.GState.keys()[Game.state], " on-foot")
+		# ON-FOOT IS FIRST-PERSON ONLY (v0.6.28). The detached chase cam below
+		# is dead code for XR — see the r_click handler's comment for the full
+		# scripted-QA-confirmed failure mechanism (XRCamera pose rewrite +
+		# XRToolsPlayerBody body-follow = unrecoverable black screen). This
+		# branch force-restores tracked first-person regardless of the
+		# persisted cam_mode preference, covering the exit-vehicle-while-
+		# in-third-person path that never goes through the r_click guard.
+		camera.top_level = false
+		camera.transform = Transform3D()
+		print("[camera] mode=FIRST(on-foot forced) state=", Game.GState.keys()[Game.state], " on-foot")
 		return
 	camera.top_level = false
 	var offset := Vector3.ZERO
@@ -894,44 +853,17 @@ func _apply_view_offset() -> void:
 	position = _fp_pos + offset
 	print("[camera] mode=", Game.CamMode.keys()[Game.cam_mode], " state=", Game.GState.keys()[Game.state], " pos=", position)
 
-## On-foot equivalent of the SEATED chase offset above -- see
-## _apply_view_offset()'s on-foot branch for why this can't just bake a
-## local position offset the way seated vehicles do. Recomputed every
-## physics frame from the on-foot body's actual position/facing (this rig's
-## own basis already tracks snap/smooth turning -- XRToolsPlayerBody.
-## rotate_player() rotates origin_node, i.e. this rig, around the camera on
-## every turn, so -global_transform.basis.z is a live facing direction).
-## snap=true jumps straight to the target instead of lerping -- used right
-## after top_level flips true so there's never a frame with a stale/garbage
-## transform (see the call site's comment).
-func _update_on_foot_chase_cam(delta: float, snap: bool = false) -> void:
-	if not camera.top_level or Game.player_mode != Game.PlayerMode.ON_FOOT:
-		return
-	if on_foot_body == null or not is_instance_valid(on_foot_body):
-		# Nothing valid to chase -- fall back to a state that's guaranteed to
-		# render something (identity, non-detached) rather than leave the
-		# camera stuck detached with no target to correct toward.
-		camera.top_level = false
-		camera.transform = Transform3D()
-		return
-	var body_pos: Vector3 = on_foot_body.global_position
-	if not (is_finite(body_pos.x) and is_finite(body_pos.y) and is_finite(body_pos.z)):
-		return
-	var facing := -global_transform.basis.z
-	facing.y = 0.0
-	if facing.length() < 0.01:
-		facing = Vector3.FORWARD
-	facing = facing.normalized()
-	var back_dist := 3.2 + (FAR_EXTRA_BACK if Game.cam_mode == Game.CamMode.FAR else 0.0)
-	var eye := body_pos - facing * back_dist + Vector3(0, 2.0, 0)
-	var look := body_pos + Vector3(0, 1.0, 0)
-	if eye.distance_to(look) < 0.05:
-		return  # degenerate looking_at() input -- skip this tick rather than risk an invalid basis
-	var target := Transform3D(Basis(), eye).looking_at(look, Vector3.UP)
-	if snap:
-		camera.global_transform = target
-	else:
-		camera.global_transform = camera.global_transform.interpolate_with(target, clampf(6.0 * delta, 0.0, 1.0))
+# HISTORY NOTE — on-foot third person (v0.6.27's detached chase cam) was
+# REMOVED in v0.6.28, not just disabled. It worked on the desktop rig but was
+# unrecoverably black in real XR, proven by the first scripted headset-free
+# QA run (2026-07-16, evidence C:\xrsim-run\cam1..3.png + the xrsim QA report
+# in the KB): an XRCamera3D's transform is rewritten from the HMD pose every
+# frame, so `top_level = true` reinterprets that origin-relative pose as
+# WORLD coordinates (camera lands near world origin), and XRToolsPlayerBody's
+# camera-following logic then drags the BODY into the void as well — which is
+# why cycling back to FIRST never recovered. A future on-foot third person
+# must offset the ORIGIN while suppressing the addon's body-follow for the
+# duration; do not resurrect the detached-camera approach.
 
 ## First-person head/hand pose relative to `relative_to`, ignoring any current
 ## third-person chase offset (_apply_view_offset() adds it straight to
@@ -1075,11 +1007,24 @@ func _physics_process(delta: float) -> void:
 	# unlike the seated-only bindings further down.
 	var r_click := hand_r.is_button_pressed("primary_click")
 	if r_click and not get_meta("rsc_was", false):
-		# Ignore while seated-but-uncalibrated (the establishing-shot window):
-		# _apply_view_offset would compute from a still-zero _fp_pos and yank
-		# the camera to a chase offset around the seat origin, cutting the
-		# establishing shot short with a wrong-looking jump (2026-07-16 audit).
-		if _calibrated or tank == null:
+		if Game.player_mode == Game.PlayerMode.ON_FOOT:
+			# Camera cycling is SEATED-ONLY for now. The on-foot detached
+			# chase cam shipped in v0.6.27 black-screened unrecoverably the
+			# moment THIRD was selected — confirmed by the first scripted
+			# headset-free QA run (2026-07-16, evidence C:\xrsim-run\cam*.png):
+			# an XRCamera3D's transform is REWRITTEN from the HMD pose every
+			# frame, so top_level turns that pose into world coordinates near
+			# origin, and XRToolsPlayerBody's camera-following then drags the
+			# BODY into the void too, which is why cycling back to FIRST
+			# never recovered. A real on-foot third person needs a design
+			# that cooperates with the addon (offset the ORIGIN and suppress
+			# body-follow), not a detached camera. Haptic "nope" so the
+			# click isn't read as broken.
+			hand_r.pulse(0.15, 0.05)
+		elif _calibrated or tank == null:
+			# (seated-uncalibrated is ignored too: _apply_view_offset would
+			# compute from a still-zero _fp_pos and cut the establishing
+			# shot short with a wrong-looking jump — 2026-07-16 audit)
 			Game.toggle_camera_mode()
 	set_meta("rsc_was", r_click)
 	var l_click := hand_l.is_button_pressed("primary_click")
@@ -1161,7 +1106,6 @@ func _physics_process(delta: float) -> void:
 		_feed_arm_swing(delta)
 		_feed_stick_sprint()
 		_check_reentry()
-		_update_on_foot_chase_cam(delta)
 		return
 	if tank == null:
 		return

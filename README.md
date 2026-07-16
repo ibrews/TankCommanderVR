@@ -83,7 +83,7 @@ This is the reliable way to play today.
 | A (hold) | Coax machine gun · quick tap cycles the radio station |
 | B (tap) | Fire rocket salvo · hold ~1s toggles the HUD |
 | Y (tap, left hand) | Recalibrate seat height · hold ~1s respawns/resets the run |
-| R-stick click | Cycle camera: 1st person / 3rd person / far 3rd person |
+| R-stick click | Cycle camera: 1st / 3rd / far 3rd person (seated only) |
 | L-stick click | Restart level (solo) / leave to hangar (multiplayer) |
 | Hold LEFT trigger ~1s | Exit the current vehicle (walk up + grip to re-enter) |
 

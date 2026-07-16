@@ -5,7 +5,7 @@
 ### Global (works in any vehicle, on foot, or in the menu)
 | Input | Action |
 |---|---|
-| Right stick click | Cycle camera — 1st person → 3rd person → far 3rd person (~20' further back) |
+| Right stick click | Cycle camera — 1st person → 3rd person → far 3rd person (~20' further back). **Seated only** — on foot is first-person (a working runner third-person is on the roadmap). |
 | Left stick click | Restart level (solo) / leave to hangar (co-op, versus) |
 | Left Y — tap | Recalibrate seated position |
 | Left Y — hold ~1s | Respawn / reset the run (haptic ticks while charging) |

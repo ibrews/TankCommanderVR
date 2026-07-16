@@ -1264,7 +1264,13 @@ func _demo_tick(delta: float) -> void:
 # about the third-person case) -- first person already has real hand
 # visuals doing that job.
 func _update_local_avatar(delta: float) -> void:
-	if Game.state != Game.GState.PLAYING or rig == null or not Game.third_person:
+	# ON_FOOT excluded since v0.6.28: the runner is first-person-only (the
+	# on-foot chase cam was removed after scripted QA proved it black-screens
+	# in real XR — see xr_rig.gd's history note), and with the camera pinned
+	# first-person a `third_person` preference left over from a vehicle would
+	# otherwise build the avatar's head right inside the player's own view.
+	if Game.state != Game.GState.PLAYING or rig == null or not Game.third_person \
+			or Game.player_mode == Game.PlayerMode.ON_FOOT:
 		_clear_local_avatar()
 		return
 	var seated := Game.player_mode == Game.PlayerMode.SEATED
