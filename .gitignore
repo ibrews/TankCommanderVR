@@ -4,3 +4,4 @@ android/build/
 *.log
 *.tmp
 multiplayer/.wrangler/
+tools/vo_raw/
