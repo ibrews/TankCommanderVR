@@ -2,6 +2,9 @@
 
 ![Tank Commander VR](docs/store-art/banner_1280x400.png)
 
+**[🎮 Get it on Meta Horizon App Lab](https://www.meta.com/s/6mSdrdXX6)** — one-tap
+install on Quest 2/3/Pro, no adb required (alpha channel, auto-approve invite link).
+
 *Made for Ani* 🧡
 
 A VR tank game for Meta Quest 3, built with [Godot 4](https://godotengine.org/)
@@ -12,6 +15,13 @@ tillers to drive the tracks, work the turret joystick, cycle the breech lever
 to reload the cannon, and arm the rocket console behind its red safety cover.
 
 Every texture and sound is procedurally generated — no external assets.
+
+## Trailer
+
+[![Watch the trailer](docs/trailer/trailer_cover_2560x1440.png)](https://github.com/ibrews/TankCommanderVR/releases/download/v0.6.28/tank_commander_vr_trailer.mp4)
+
+Click the image to download/play the trailer (~95MB mp4, hosted as a
+[release asset](../../releases/tag/v0.6.28)).
 
 ## Screenshots
 
@@ -56,7 +66,11 @@ itself.
 
 ## Play
 
-Sideload the APK from [Releases](../../releases) onto a Quest 2/3/Pro:
+**[Get it on App Lab](https://www.meta.com/s/6mSdrdXX6)** (recommended) — open that
+link on your headset, accept the invite, and install like any other Quest app; you'll
+also get "Update" notifications for future builds through your normal App Lab library.
+
+Or sideload the APK from [Releases](../../releases) onto a Quest 2/3/Pro:
 
 ```
 adb install -r -g TankCommanderVR.apk
