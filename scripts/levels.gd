@@ -17,6 +17,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-80, -140), Vector2(170, 40)],
 		"tint": Color(1, 1, 1),
 		"sun_energy": 1.25,
+		"look": {"sun_elev": 26.0, "sun_azim": 40.0, "sun_col": Color(1.0, 0.94, 0.82), "fill_e": 0.26, "fill_col": Color(0.62, 0.70, 0.88), "amb_e": 0.80, "fog_col": Color(0.80, 0.84, 0.86), "fog_begin": 50.0, "fog_end": 340.0, "fog_height": 14.0, "sky_top": Color(0.30, 0.48, 0.72), "sky_horizon": Color(0.78, 0.86, 0.90)},
 	},
 	"city": {
 		"title": "CITY",
@@ -32,6 +33,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-110, -120), Vector2(110, -120), Vector2(0, -170)],
 		"tint": Color(0.96, 0.96, 1.0),
 		"sun_energy": 1.15,
+		"look": {"sun_elev": 21.0, "sun_azim": 118.0, "sun_col": Color(1.0, 0.90, 0.74), "fill_e": 0.28, "fill_col": Color(0.55, 0.64, 0.86), "amb_e": 0.72, "fog_col": Color(0.74, 0.78, 0.84), "fog_begin": 35.0, "fog_end": 280.0, "fog_height": 20.0, "sky_top": Color(0.26, 0.40, 0.66), "sky_horizon": Color(0.72, 0.76, 0.82)},
 		"calm_track": "music_city",
 	},
 	"town": {
@@ -46,6 +48,7 @@ const CONFIGS := {
 		"mortars": [Vector2(140, -140)],
 		"tint": Color(1.0, 1.0, 0.94),
 		"sun_energy": 1.3,
+		"look": {"sun_elev": 30.0, "sun_azim": 62.0, "sun_col": Color(1.0, 0.95, 0.84), "fill_e": 0.24, "fill_col": Color(0.60, 0.70, 0.90), "amb_e": 0.85, "fog_col": Color(0.84, 0.86, 0.82), "fog_begin": 60.0, "fog_end": 360.0, "fog_height": 10.0, "sky_top": Color(0.34, 0.52, 0.74), "sky_horizon": Color(0.84, 0.88, 0.84)},
 		"calm_track": "music_town",
 	},
 	"mudpit": {
@@ -61,6 +64,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-130, -60), Vector2(130, -60)],
 		"tint": Color(0.85, 0.78, 0.7),
 		"sun_energy": 1.0,
+		"look": {"sun_elev": 48.0, "sun_azim": 200.0, "sun_col": Color(0.86, 0.86, 0.88), "fill_e": 0.34, "fill_col": Color(0.72, 0.72, 0.74), "amb_e": 1.00, "fog_col": Color(0.66, 0.64, 0.60), "fog_begin": 25.0, "fog_end": 200.0, "fog_height": 26.0, "sky_top": Color(0.44, 0.46, 0.50), "sky_horizon": Color(0.62, 0.60, 0.56), "shadow_opacity": 0.35, "cloud": Color(0.55, 0.55, 0.58, 1.0)},
 		"calm_track": "music_mudpit",
 	},
 	"gym": {
@@ -79,6 +83,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-60, -70), Vector2(60, -70)],
 		"tint": Color(1, 1, 1),
 		"sun_energy": 1.1,
+		"look": {"sun_elev": 62.0, "sun_azim": 300.0, "sun_col": Color(0.94, 0.96, 1.0), "fill_e": 0.30, "fill_col": Color(0.86, 0.90, 0.92), "amb_e": 0.95, "fog_col": Color(0.86, 0.90, 0.92), "fog_begin": 20.0, "fog_end": 150.0, "fog_height": 40.0, "sky_top": Color(0.86, 0.90, 0.92), "sky_horizon": Color(0.86, 0.90, 0.92), "interior": true},
 		"calm_track": "music_gym",
 	},
 	"beach": {
@@ -95,6 +100,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-120, 60)],
 		"tint": Color(1.05, 1.0, 0.92),
 		"sun_energy": 1.4,
+		"look": {"sun_elev": 56.0, "sun_azim": 84.0, "sun_col": Color(1.0, 0.97, 0.88), "fill_e": 0.30, "fill_col": Color(0.55, 0.78, 0.92), "amb_e": 0.95, "fog_col": Color(0.78, 0.90, 0.94), "fog_begin": 70.0, "fog_end": 400.0, "fog_height": 8.0, "sky_top": Color(0.20, 0.52, 0.82), "sky_horizon": Color(0.86, 0.94, 0.94), "cloud": Color(1.0, 1.0, 1.0, 0.38)},
 		"calm_track": "music_beach",
 		"ambient_loop": "waves_loop",
 	},
@@ -114,6 +120,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-70, -70)],
 		"tint": Color(1.0, 1.02, 0.95),
 		"sun_energy": 1.35,
+		"look": {"sun_elev": 44.0, "sun_azim": 70.0, "sun_col": Color(1.0, 0.95, 0.84), "fill_e": 0.28, "fill_col": Color(0.52, 0.76, 0.92), "amb_e": 0.90, "fog_col": Color(0.76, 0.88, 0.94), "fog_begin": 65.0, "fog_end": 400.0, "fog_height": 10.0, "sky_top": Color(0.18, 0.50, 0.80), "sky_horizon": Color(0.82, 0.92, 0.94)},
 		"calm_track": "music_island",
 		"ambient_loop": "waves_loop",
 	},
@@ -133,6 +140,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-125, -35), Vector2(115, -75)],
 		"tint": Color(1.0, 1.0, 0.96),
 		"sun_energy": 1.35,
+		"look": {"sun_elev": 34.0, "sun_azim": 92.0, "sun_col": Color(1.0, 0.92, 0.78), "fill_e": 0.30, "fill_col": Color(0.50, 0.72, 0.92), "amb_e": 0.85, "fog_col": Color(0.74, 0.86, 0.94), "fog_begin": 80.0, "fog_end": 500.0, "fog_height": 12.0, "sky_top": Color(0.20, 0.48, 0.78), "sky_horizon": Color(0.86, 0.90, 0.92)},
 		"calm_track": "music_island",
 		"ambient_loop": "waves_loop",
 	},
@@ -150,6 +158,7 @@ const CONFIGS := {
 		"mortars": [],
 		"tint": Color(0.52, 0.47, 0.46),
 		"sun_energy": 0.85,
+		"look": {"sun_elev": 8.0, "sun_azim": 250.0, "sun_col": Color(1.0, 0.52, 0.30), "fill_e": 0.22, "fill_col": Color(0.42, 0.22, 0.24), "amb_e": 0.32, "fog_col": Color(0.42, 0.26, 0.22), "fog_begin": 20.0, "fog_end": 180.0, "fog_height": 34.0, "sky_top": Color(0.07, 0.05, 0.08), "sky_horizon": Color(0.62, 0.24, 0.10), "cloud": Color(0.20, 0.10, 0.08, 0.95)},
 		"ambient_loop": "lava_loop",
 		"calm_track": "music_volcano",
 	},
@@ -169,6 +178,7 @@ const CONFIGS := {
 		"mortars": [],
 		"tint": Color(1, 1, 1),
 		"sun_energy": 1.05,
+		"look": {"sun_elev": 58.0, "sun_azim": 214.0, "sun_col": Color(1.0, 0.96, 0.90), "fill_e": 0.38, "fill_col": Color(0.98, 0.86, 0.80), "amb_e": 1.05, "fog_col": Color(0.94, 0.90, 0.92), "fog_begin": 25.0, "fog_end": 140.0, "fog_height": 40.0, "sky_top": Color(0.94, 0.90, 0.92), "sky_horizon": Color(0.94, 0.90, 0.92), "interior": true, "shadow_opacity": 0.4},
 		"calm_track": "music_toy",
 	},
 	"debug": {
@@ -185,6 +195,7 @@ const CONFIGS := {
 		"mortars": [Vector2(40, 20)],
 		"tint": Color(1, 1, 1),
 		"sun_energy": 1.25,
+		"look": {"sun_elev": 26.0, "sun_azim": 40.0, "sun_col": Color(1.0, 0.94, 0.82), "fill_e": 0.26, "fill_col": Color(0.62, 0.70, 0.88), "amb_e": 0.80, "fog_col": Color(0.80, 0.84, 0.86), "fog_begin": 50.0, "fog_end": 340.0, "fog_height": 14.0, "sky_top": Color(0.30, 0.48, 0.72), "sky_horizon": Color(0.78, 0.86, 0.90)},
 		"debug_kitchen_sink": true,  # main.gd spawns one-of-everything at close range
 	},
 	"moon": {
@@ -206,6 +217,7 @@ const CONFIGS := {
 		"mortars": [],
 		"tint": Color(0.72, 0.74, 0.85),
 		"sun_energy": 0.55,
+		"look": {"sun_elev": 40.0, "sun_azim": 20.0, "sun_col": Color(1.0, 1.0, 0.98), "fill_e": 0.10, "fill_col": Color(0.30, 0.45, 0.85), "amb_e": 0.05, "sky_top": Color(0.0, 0.0, 0.01), "sky_horizon": Color(0.02, 0.02, 0.05), "vacuum": true},
 		"sphere_world": {"height": 26.0, "radius": 14.0},
 		"no_waves": true,
 	},
@@ -222,6 +234,7 @@ const CONFIGS := {
 		"mortars": [Vector2(-45, -75), Vector2(45, -75)],  # inside the walls
 		"tint": Color(1.0, 0.97, 0.9),
 		"sun_energy": 1.2,
+		"look": {"sun_elev": 15.0, "sun_azim": 108.0, "sun_col": Color(1.0, 0.80, 0.56), "fill_e": 0.30, "fill_col": Color(0.48, 0.52, 0.76), "amb_e": 0.66, "fog_col": Color(0.88, 0.74, 0.58), "fog_begin": 55.0, "fog_end": 320.0, "fog_height": 16.0, "sky_top": Color(0.26, 0.36, 0.62), "sky_horizon": Color(0.94, 0.72, 0.48)},
 		"calm_track": "music_castle",
 	},
 }

@@ -121,8 +121,23 @@ func normal(x: float, z: float) -> Vector3:
 	var hz := height(x, z + E) - height(x, z - E)
 	return Vector3(-hx, 2.0 * E, -hz).normalized()
 
+# Shading-only normal with a wider sample epsilon. The tight-epsilon normal()
+# above samples the ~6.7m-wavelength detail noise at 2.9m vertex spacing,
+# which beats against the grid and shows up as a diamond Moiré across the
+# ground. A 3m epsilon low-passes that out of the LIGHTING only — gameplay
+# (prop slope-rejection in world_dressing.gd, climbing) keeps the precise
+# normal() untouched.
+func shading_normal(x: float, z: float) -> Vector3:
+	const E := 3.0
+	var hx := height(x + E, z) - height(x - E, z)
+	var hz := height(x, z + E) - height(x, z - E)
+	return Vector3(-hx, 2.0 * E, -hz).normalized()
+
+var ground_mat: ShaderMaterial
+
 func _build_chunks() -> void:
 	var mat := ShaderMaterial.new()
+	ground_mat = mat
 	mat.shader = _make_shader()
 	mat.set_shader_parameter("tex_sand", load("res://assets/tex/sand.png"))
 	mat.set_shader_parameter("tex_grass", load("res://assets/tex/grass.png"))
@@ -203,7 +218,7 @@ func _chunk_mesh(x0: float, z0: float, size: float, quads: int = QUADS) -> Array
 			var i := iz * n + ix
 			st.set_color(cols[i])
 			st.set_uv(Vector2(verts[i].x, verts[i].z) * 0.22)
-			st.set_normal(normal(verts[i].x, verts[i].z))
+			st.set_normal(shading_normal(verts[i].x, verts[i].z))
 			st.add_vertex(verts[i])
 	for iz in quads:
 		for ix in quads:
@@ -266,6 +281,10 @@ uniform vec3 tint = vec3(1.0);
 uniform float water_y = -9999.0;
 uniform vec3 water_col : source_color = vec3(0.10, 0.33, 0.45);
 uniform float water_emiss = 0.0;
+uniform vec3 horizon_col : source_color = vec3(0.78, 0.86, 0.90);
+uniform float haze_begin = 60.0;
+uniform float haze_end = 320.0;
+uniform float haze_max = 0.80;
 varying vec3 wpos;
 void vertex() {
 	wpos = (MODEL_MATRIX * vec4(VERTEX, 1.0)).xyz;
@@ -312,7 +331,14 @@ void fragment() {
 	vec3 warm_shift = vec3(1.06, 1.0, 0.92);
 	alb *= mix(cool_shift, warm_shift, macro2);
 	float dist = length(VERTEX);
-	alb *= mix(1.0, 0.60, clamp((dist - 100.0) / 180.0, 0.0, 1.0));
+	// Aerial perspective: fade distant terrain TOWARD the sky's horizon color
+	// instead of darkening it (the old `alb *= mix(1.0, 0.60, ...)` made the
+	// rim mountains read as a brown/black wall — real distance haze
+	// desaturates toward the sky, which is what sells scale). horizon_col is
+	// fed from the live sky material at ambience time so terrain and sky
+	// agree at the seam.
+	float haze = smoothstep(haze_begin, haze_end, dist) * haze_max;
+	alb = mix(alb, horizon_col, haze);
 	ALBEDO = alb;
 	ROUGHNESS = 0.95;
 	}

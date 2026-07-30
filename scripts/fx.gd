@@ -72,6 +72,16 @@ func _particles(amount: int, lifetime: float, vel_min: float, vel_max: float,
 	pm.scale_max = scale_max
 	pm.damping_min = 1.0
 	pm.damping_max = 2.5
+	# Scale pop (2026-07-30 juice pass): snap from small to full size over the
+	# first ~8% of life, then ease slightly past — the timing curve is most of
+	# what reads as "juicy" vs. balloons drifting up at constant size.
+	var sc := Curve.new()
+	sc.add_point(Vector2(0.0, 0.15))
+	sc.add_point(Vector2(0.08, 1.0))
+	sc.add_point(Vector2(1.0, 1.25))
+	var sct := CurveTexture.new()
+	sct.curve = sc
+	pm.scale_curve = sct
 	var grad := Gradient.new()
 	grad.set_color(0, ramp_from)
 	grad.set_color(1, ramp_to)
@@ -91,9 +101,11 @@ func _make_explosion() -> Dictionary:
 	root.visible = false
 	add_child(root)
 	var smoke := _particles(20, 1.7, 3.0, 10.0, 1.8, 3.8, Vector3(0, 1.5, 0),
-		"res://assets/tex/smoke.png", Color(0.30, 0.28, 0.26, 1.0), Color(0.5, 0.5, 0.5, 0.0))
+		"res://assets/tex/smoke.png", Color(0.86, 0.80, 0.72, 1.0), Color(0.35, 0.35, 0.36, 0.0))
 	root.add_child(smoke)
-	var fire := _particles(14, 0.6, 4.0, 13.0, 1.2, 2.6, Vector3(0, 3.0, 0),
+	# 26 smaller fireballs instead of 14 big ones — a mass of fire, not
+	# discrete yellow balloons (juice pass).
+	var fire := _particles(26, 0.6, 4.0, 13.0, 0.6, 1.8, Vector3(0, 3.0, 0),
 		"res://assets/tex/flash.png", Color(1.0, 0.78, 0.3, 1.0), Color(1.0, 0.22, 0.04, 0.0), true)
 	root.add_child(fire)
 	var sparks := _particles(16, 0.9, 10.0, 22.0, 0.12, 0.3, Vector3(0, -14.0, 0),
@@ -245,11 +257,17 @@ func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
 		Sfx.play_at("splat", pos, 2.0)
 	else:
 		_tint_particles(best.fire, Color(1.0, 0.78, 0.3), Color(1.0, 0.22, 0.04, 0.0))
-		_tint_particles(best.smoke, Color(0.30, 0.28, 0.26), Color(0.5, 0.5, 0.5, 0.0))
+		_tint_particles(best.smoke, Color(0.86, 0.80, 0.72), Color(0.35, 0.35, 0.36, 0.0),
+			Color(0.22, 0.21, 0.20, 0.9))
 	best.smoke.restart()
 	best.fire.restart()
 	best.sparks.restart()
-	best.light.light_energy = 7.0 * s
+	# Two-stage flash: hard snap held for ~40ms, then a fast 60/s falloff —
+	# reads as a detonation, not a lamp fading (was 7.0 decaying at 24/s).
+	best.light.light_energy = 14.0 * s
+	best["hold"] = 0.04
+	if big:
+		_punch_exposure()
 	shockwave(pos, s)
 	debris_burst(pos, 8 if big else 5, Color(0.2, 0.18, 0.16))
 	var d := cam_pos.distance_to(pos)
@@ -258,11 +276,16 @@ func explosion(pos: Vector3, big := false, cam_pos := Vector3.ZERO) -> void:
 	else:
 		Sfx.play_at("explosion_far" if d > 110.0 else "explosion", pos, 3.0 if big else 0.0)
 
-func _tint_particles(p: GPUParticles3D, from: Color, to: Color) -> void:
+# Optional mid stop (a.a > 0) turns the 2-key ramp into hot→dark→transparent —
+# the smoke fix: the old ramp went dark→LIGHTER grey, which reads backwards
+# (real smoke starts flame-lit cream, chars dark, then thins out).
+func _tint_particles(p: GPUParticles3D, from: Color, to: Color, mid := Color(0, 0, 0, 0)) -> void:
 	var pm := p.process_material as ParticleProcessMaterial
 	var grad := Gradient.new()
 	grad.set_color(0, from)
 	grad.set_color(1, to)
+	if mid.a > 0.0:
+		grad.add_point(0.28, mid)
 	var gt := GradientTexture1D.new()
 	gt.gradient = grad
 	pm.color_ramp = gt
@@ -378,11 +401,27 @@ func smoke_column(pos: Vector3, duration := 18.0) -> void:
 	best.fire.emitting = true
 
 # ---------------- animation
+# XR-safe "screen shake": a ~60ms exposure bump on big hits. A uniform write
+# that costs nothing, reads as a real flash, and never moves the camera
+# (camera shake is a comfort violation in VR).
+var _exp_punch := 0.0
+
+func _punch_exposure() -> void:
+	_exp_punch = 0.06
+
 func _process(delta: float) -> void:
+	if _exp_punch > 0.0:
+		_exp_punch -= delta
+		var wenv := get_viewport().world_3d.environment
+		if wenv:
+			wenv.tonemap_exposure = 1.2 if _exp_punch > 0.0 else 1.0
 	for e in _explosions:
 		if e.t < 10.0:
 			e.t += delta
-			e.light.light_energy = maxf(0.0, e.light.light_energy - delta * 24.0)
+			if e.get("hold", 0.0) > 0.0:
+				e["hold"] = e["hold"] - delta
+			else:
+				e.light.light_energy = maxf(0.0, e.light.light_energy - delta * 60.0)
 			if e.t > 2.4:
 				e.root.visible = false
 				e.t = 99.0

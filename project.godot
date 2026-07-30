@@ -65,7 +65,17 @@ textures/vram_compression/import_etc2_astc=true
 anti_aliasing/quality/msaa_3d=1
 anti_aliasing/quality/screen_space_aa=0
 anti_aliasing/quality/use_taa=false
+; Debanding: Mobile renders RGB10A2 and both the gradient sky and the new
+; depth fog band visibly without it (Godot's own fog docs warn about this).
+anti_aliasing/quality/use_debanding=true
 scaling_3d/mode=1
+; Directional shadow settings for the 2026-07-30 sun-shadow enable (see
+; main.gd _setup_environment): 1024px 16-bit atlas + Soft Very Low filter
+; (1-tap; required for DirectionalLight3D.shadow_blur to have any effect —
+; Hard mode makes blur a no-op).
+lights_and_shadows/directional_shadow/size.mobile=1024
+lights_and_shadows/directional_shadow/soft_shadow_filter_quality.mobile=1
+lights_and_shadows/directional_shadow/16_bits=true
 scaling_3d/scale=1.0
 environment/defaults/default_clear_color=Color(0.55, 0.62, 0.72, 1)
 lights_and_shadows/directional_shadow/size=2048
@@ -76,7 +86,10 @@ openxr/enabled=true
 openxr/default_action_map="res://openxr_action_map.tres"
 openxr/reference_space=2
 openxr/foveation_level=3
-openxr/foveation_dynamic=false
+; Dynamic foveation scales density with GPU load — free insurance now that
+; foveation actually engages (main.gd sets Viewport.vrs_mode=VRS_XR, which
+; the 4.7 Vulkan path requires; without it foveation_level was inert).
+openxr/foveation_dynamic=true
 ; New in Godot 4.7: Vulkan subsampled images for foveated rendering — ~1ms/frame
 ; measured on Quest 3 by the Godot devs. Requires FXAA/TAA off (both already off
 ; here) and no incompatible post effects; the engine auto-falls-back with a log

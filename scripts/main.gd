@@ -182,18 +182,62 @@ func _setup_environment() -> void:
 	sky_mat.ground_bottom_color = Color(0.32, 0.28, 0.22)
 	sky_mat.ground_horizon_color = Color(0.60, 0.54, 0.46)
 	sky_mat.sun_angle_max = 22.0
+	# Procedural cloud cover (2026-07-30 visual pass): ProceduralSkyMaterial
+	# has a sky_cover slot — an equirect texture multiplied by
+	# sky_cover_modulate — so clouds need no custom sky shader at all. Baked
+	# once at boot from FastNoiseLite; sampled on a cylinder (noise_3d on a
+	# circle) so the equirect X seam wraps cleanly. Hard smoothstep threshold
+	# gives flat-shaded cumulus edges that match the game's look. Per-level
+	# density/tint via the look table's "cloud" color in _apply_ambience.
+	var cn := FastNoiseLite.new()
+	cn.seed = 7
+	cn.noise_type = FastNoiseLite.TYPE_SIMPLEX
+	cn.fractal_type = FastNoiseLite.FRACTAL_FBM
+	cn.fractal_octaves = 4
+	var cimg := Image.create(512, 256, false, Image.FORMAT_RGBA8)
+	for y in 256:
+		var v := float(y) / 255.0
+		# equirect: y=0 zenith, y~128 horizon. Clouds live in a band above
+		# the horizon, thin out at zenith, and vanish below the horizon.
+		var lat_fade := clampf(1.0 - absf(v - 0.40) * 3.0, 0.0, 1.0)
+		for x in 512:
+			var th := float(x) / 512.0 * TAU
+			var n := cn.get_noise_3d(cos(th) * 34.0, v * 80.0, sin(th) * 34.0)
+			var cov := smoothstep(0.10, 0.36, n) * lat_fade
+			cimg.set_pixel(x, y, Color(1, 1, 1, cov))
+	sky_mat.sky_cover = ImageTexture.create_from_image(cimg)
+	sky_mat.sky_cover_modulate = Color(1, 1, 1, 0.65)
 	var sky := Sky.new()
 	sky.sky_material = sky_mat
+	# Bake radiance once instead of re-filtering every frame — REALTIME
+	# re-bakes on any uniform change; QUALITY + 128 is the cheap static path.
+	sky.process_mode = Sky.PROCESS_MODE_QUALITY
+	sky.radiance_size = Sky.RADIANCE_SIZE_128
 	env.background_mode = Environment.BG_SKY
 	env.sky = sky
 	env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
 	env.ambient_light_sky_contribution = 1.0
 	env.ambient_light_energy = 0.85
 	env.tonemap_mode = Environment.TONE_MAPPER_FILMIC
+	# Docs: tonemap_white "must be set to 2.0 or lower on the Mobile renderer
+	# to produce bright images" — the default 6.0 was dimming everything.
+	env.tonemap_white = 2.0
+	# Depth-mode fog (begin/end distances) replaces the old exponential
+	# density: artist-controllable falloff, plus sun_scatter for a warm glow
+	# toward the sun. Per-level values come from _apply_ambience's look table.
 	env.fog_enabled = true
-	env.fog_light_color = Color(0.78, 0.72, 0.62)
-	env.fog_density = 0.0005
-	env.fog_sky_affect = 0.0
+	env.fog_mode = Environment.FOG_MODE_DEPTH
+	env.fog_light_color = Color(0.80, 0.84, 0.86)
+	env.fog_depth_begin = 50.0
+	env.fog_depth_end = 340.0
+	env.fog_depth_curve = 1.6
+	env.fog_sky_affect = 0.15
+	env.fog_sun_scatter = 0.25
+	env.fog_height = 14.0
+	# Keep this LOW: the camera lives inside the height-fog layer, so density
+	# compounds over every meter of view distance — 0.06 washed out a tank at
+	# 15m (transmittance e^(-0.06*15) ≈ 0.41). 0.01 reads as ground haze.
+	env.fog_height_density = 0.01
 	var we := WorldEnvironment.new()
 	we.environment = env
 	add_child(we)
@@ -201,7 +245,21 @@ func _setup_environment() -> void:
 	sun.rotation = Vector3(deg_to_rad(-38), deg_to_rad(48), 0)
 	sun.light_color = Color(1.0, 0.93, 0.80)
 	sun.light_energy = 1.25
-	sun.shadow_enabled = false
+	# Real-time sun shadows (2026-07-30): the game's own store art has always
+	# been captured WITH shadows (tools/store_capture.gd) while the shipped
+	# game ran without — contact shadows are what make procedural boxes read
+	# as objects in a place. ORTHOGONAL mode draws casters once per frame
+	# (PSSM-4 is up to 5 passes); terrain chunks and scatter MultiMeshes all
+	# set cast_shadow=OFF already, so the caster set is just vehicles,
+	# buildings, and props. Measured budget headroom covers this (~1ms est).
+	sun.shadow_enabled = true
+	sun.directional_shadow_mode = DirectionalLight3D.SHADOW_ORTHOGONAL
+	sun.directional_shadow_max_distance = 55.0
+	sun.directional_shadow_fade_start = 0.85
+	sun.shadow_bias = 0.04
+	sun.shadow_normal_bias = 2.5
+	sun.shadow_blur = 2.0
+	sun.shadow_opacity = 0.78
 	sun.light_cull_mask = 0xFFFFF & ~2
 	add_child(sun)
 	# fake GI: a dim upward "bounce" fill from the opposite azimuth
@@ -220,6 +278,15 @@ func _setup_environment() -> void:
 	env.glow_hdr_threshold = 1.08
 	env.glow_blend_mode = Environment.GLOW_BLEND_MODE_ADDITIVE
 
+# Per-level "lighting personality" (2026-07-30 visual-identity pass): every
+# level carries a `look` dict in Levels.CONFIGS (sun angle/color, fill,
+# ambient, depth-fog range/color, sky ramp, shadow opacity) instead of one
+# hardcoded global noon. Time-of-day is applied as a MODIFIER on top of the
+# level's look (lower the sun, warm the palette, thicken the fog) rather
+# than a wholesale override, so golden hour on the beach and golden hour in
+# the castle read differently. Fog is depth-mode (begin/end), not the old
+# exponential density — 0.0005 exponential over a 232m arena was ~11% at
+# the far rim, i.e. invisible.
 func _apply_ambience(menu_mode: bool) -> void:
 	if menu_mode:
 		env.ambient_light_energy = 0.35
@@ -228,49 +295,103 @@ func _apply_ambience(menu_mode: bool) -> void:
 		env.background_color = Color(0.02, 0.025, 0.03)
 		sun.light_energy = 0.0
 	else:
-		env.ambient_light_energy = 0.85
-		env.fog_enabled = true
-		env.background_mode = Environment.BG_SKY
-		sun.light_energy = Levels.current.get("sun_energy", 1.25)
-		sun.light_color = Color(1.0, 0.93, 0.80)
-		env.fog_light_color = Color(0.78, 0.72, 0.62)
-		env.fog_density = 0.0005
-		_sky_mat.sky_top_color = Color(0.28, 0.42, 0.66)
-		_sky_mat.sky_horizon_color = Color(0.66, 0.60, 0.50)
-		sun.rotation = Vector3(deg_to_rad(-38), deg_to_rad(48), 0)
-		if fill:
-			fill.light_energy = 0.22
-			fill.light_color = Color(0.85, 0.75, 0.6)
+		var look: Dictionary = Levels.current.get("look", {})
+		var sun_elev: float = look.get("sun_elev", 26.0)
+		var sun_azim: float = look.get("sun_azim", 40.0)
+		var sun_col: Color = look.get("sun_col", Color(1.0, 0.94, 0.82))
+		var sun_e: float = Levels.current.get("sun_energy", 1.25)
+		var fill_e: float = look.get("fill_e", 0.26)
+		var fill_col: Color = look.get("fill_col", Color(0.62, 0.70, 0.88))
+		var amb_e: float = look.get("amb_e", 0.80)
+		var fog_col: Color = look.get("fog_col", Color(0.80, 0.84, 0.86))
+		var fog_begin: float = look.get("fog_begin", 50.0)
+		var fog_end: float = look.get("fog_end", 340.0)
+		var fog_height: float = look.get("fog_height", 14.0)
+		var sky_top: Color = look.get("sky_top", Color(0.30, 0.48, 0.72))
+		var sky_h: Color = look.get("sky_horizon", Color(0.78, 0.86, 0.90))
+		var shadow_op: float = look.get("shadow_opacity", 0.78)
+		var vacuum: bool = look.get("vacuum", false)
 		if Game.time_of_day == 1:
-			# GOLDEN HOUR: low warm sun, long light, pink horizon
-			sun.rotation = Vector3(deg_to_rad(-9), deg_to_rad(96), 0)
-			sun.light_energy = 1.15
-			sun.light_color = Color(1.0, 0.62, 0.32)
-			env.ambient_light_energy = 0.62
-			env.fog_light_color = Color(0.9, 0.6, 0.42)
-			env.fog_density = 0.0009
-			_sky_mat.sky_top_color = Color(0.30, 0.32, 0.55)
-			_sky_mat.sky_horizon_color = Color(0.98, 0.55, 0.32)
-			if fill:
-				fill.light_energy = 0.3
-				fill.light_color = Color(0.55, 0.45, 0.65)  # cool sky bounce
+			# GOLDEN HOUR modifier: drop the sun low, warm everything, pull
+			# the fog in, cool the bounce fill (warm/cool split is the cue).
+			sun_elev = minf(sun_elev, 9.0)
+			sun_azim += 40.0
+			sun_col = sun_col.lerp(Color(1.0, 0.62, 0.32), 0.75)
+			sun_e *= 0.92
+			amb_e *= 0.75
+			fog_col = fog_col.lerp(Color(0.9, 0.6, 0.42), 0.65)
+			fog_begin *= 0.6
+			fog_end *= 0.75
+			sky_top = sky_top.lerp(Color(0.30, 0.32, 0.55), 0.6)
+			sky_h = sky_h.lerp(Color(0.98, 0.55, 0.32), 0.8)
+			fill_e = maxf(fill_e, 0.30)
+			fill_col = Color(0.55, 0.45, 0.65)  # cool sky bounce
 		elif Game.time_night:
 			# moonlight: dark enough that headlights matter
-			sun.light_energy = 0.09
-			sun.light_color = Color(0.65, 0.72, 1.0)
-			env.ambient_light_energy = 0.10
-			env.fog_light_color = Color(0.05, 0.06, 0.10)
-			_sky_mat.sky_top_color = Color(0.01, 0.015, 0.05)
-			_sky_mat.sky_horizon_color = Color(0.04, 0.05, 0.10)
-			if fill:
-				fill.light_energy = 0.05
-				fill.light_color = Color(0.3, 0.4, 0.7)
+			sun_elev = 42.0
+			sun_col = Color(0.65, 0.72, 1.0)
+			sun_e = 0.09
+			amb_e = 0.10
+			fog_col = Color(0.05, 0.06, 0.10)
+			sky_top = Color(0.01, 0.015, 0.05)
+			sky_h = Color(0.04, 0.05, 0.10)
+			fill_e = 0.05
+			fill_col = Color(0.3, 0.4, 0.7)
+			shadow_op = minf(shadow_op, 0.55)
+		env.background_mode = Environment.BG_SKY
+		env.ambient_light_energy = amb_e
+		# Interior levels (gym, babyroom) skip the sky as an ambient source —
+		# flat colored ambient reads as indoor bounce light.
+		if look.get("interior", false):
+			env.ambient_light_source = Environment.AMBIENT_SOURCE_COLOR
+			env.ambient_light_color = sky_h
+		else:
+			env.ambient_light_source = Environment.AMBIENT_SOURCE_SKY
+		env.fog_enabled = not vacuum
+		env.fog_light_color = fog_col
+		env.fog_depth_begin = fog_begin
+		env.fog_depth_end = fog_end
+		env.fog_height = fog_height
+		env.fog_height_density = look.get("fog_height_density", 0.01)
+		sun.rotation = Vector3(deg_to_rad(-sun_elev), deg_to_rad(sun_azim), 0)
+		sun.light_color = sun_col
+		sun.light_energy = sun_e
+		sun.shadow_opacity = 1.0 if vacuum else shadow_op
+		_sky_mat.sky_top_color = sky_top
+		_sky_mat.sky_horizon_color = sky_h
+		# Cloud cover: per-level tint/density, warmed at golden hour, dimmed
+		# to silhouettes at night, absent in vacuum/interior levels.
+		var cloud: Color = look.get("cloud", Color(1, 1, 1, 0.65))
+		if vacuum or look.get("interior", false):
+			cloud.a = 0.0
+		elif Game.time_of_day == 1:
+			cloud = Color(1.0, 0.72, 0.55, cloud.a)
+		elif Game.time_night:
+			cloud = Color(0.05, 0.06, 0.10, cloud.a * 0.85)
+		_sky_mat.sky_cover_modulate = cloud
+		_cur_horizon = sky_h
+		if fill:
+			fill.light_energy = fill_e
+			fill.light_color = fill_col
 		if Game.mutator == "underwater":
 			env.fog_light_color = Color(0.15, 0.4, 0.45)
-			env.fog_density = 0.012
+			env.fog_depth_begin = 2.0
+			env.fog_depth_end = 48.0
 			env.ambient_light_energy = 0.55
 			sun.light_energy *= 0.6
+			_cur_horizon = Color(0.15, 0.4, 0.45)
 	_set_underwater_audio(Game.mutator == "underwater" and not menu_mode)
+
+# The horizon color the terrain's aerial-perspective haze should agree with.
+# Applied to the terrain's ground shader after the terrain is (re)built —
+# _apply_ambience runs before Terrain.new() in _start_level, so the value is
+# stashed here and pushed by _sync_terrain_horizon().
+var _cur_horizon := Color(0.78, 0.86, 0.90)
+
+func _sync_terrain_horizon() -> void:
+	if terrain and terrain.ground_mat:
+		terrain.ground_mat.set_shader_parameter(
+			"horizon_col", Vector3(_cur_horizon.r, _cur_horizon.g, _cur_horizon.b))
 
 var _lp_effect_on := false
 func _set_underwater_audio(on: bool) -> void:
@@ -302,6 +423,12 @@ func _setup_rig() -> void:
 	var xr := XRServer.find_interface("OpenXR")
 	if xr and xr.is_initialized():
 		get_viewport().use_xr = true
+		# REQUIRED for foveation on the Vulkan Mobile renderer (4.7 docs:
+		# "vrs_mode must be set to Viewport.VRS_XR to support foveation").
+		# Without this line, foveation_level below was likely inert — the
+		# fragment-density-map path never engaged. Verify in logcat that
+		# foveation actually kicks in on device.
+		get_viewport().vrs_mode = Viewport.VRS_XR
 		DisplayServer.window_set_vsync_mode(DisplayServer.VSYNC_DISABLED)
 		if "foveation_level" in xr:
 			xr.foveation_level = int(Tune.v("foveation_level"))
@@ -792,6 +919,7 @@ func start_game() -> void:
 	add_child(world)
 	terrain = Terrain.new(Levels.current)
 	world.add_child(terrain)
+	_sync_terrain_horizon()
 	world.add_child(WorldDressing.new(terrain))
 	fx = FxPool.new()
 	world.add_child(fx)

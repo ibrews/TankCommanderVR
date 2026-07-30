@@ -190,7 +190,12 @@ func _apply_gloom(k: float) -> void:
 	var base_amb := 0.10 if Game.time_night else 0.85
 	sun.light_energy = base * (1.0 - 0.72 * clampf(k, 0.0, 1.0))
 	env.ambient_light_energy = base_amb * (1.0 - 0.45 * clampf(k, 0.0, 1.0))
-	env.fog_density = 0.0005 + 0.0022 * clampf(k, 0.0, 1.0)
+	# Depth-mode fog (2026-07-30): storms pull the fog wall in from the
+	# level's baseline toward a ~90m murk instead of raising exponential
+	# density (env.fog_mode is FOG_MODE_DEPTH now, density is inert).
+	var lk: Dictionary = Levels.current.get("look", {})
+	env.fog_depth_begin = lerpf(lk.get("fog_begin", 50.0), 12.0, clampf(k, 0.0, 1.0))
+	env.fog_depth_end = lerpf(lk.get("fog_end", 340.0), 95.0, clampf(k, 0.0, 1.0))
 
 # Reduced-visibility fog bank. Mobile renderer only has Environment's
 # fixed-function fog (fog_enabled/fog_density/fog_light_color/fog_sky_affect)
@@ -208,9 +213,13 @@ func _apply_fog(k: float) -> void:
 	var base: float = 0.09 if Game.time_night else Levels.current.get("sun_energy", 1.25)
 	sun.light_energy = lerpf(base, base * 0.55, k)
 	env.ambient_light_energy = lerpf(0.10 if Game.time_night else 0.85, 0.55, k)
-	env.fog_density = lerpf(0.0005, 0.05, k)
+	# Depth-mode equivalents of the old density 0.0005→0.05 ramp: full fog
+	# weather closes visibility to ~35m (was ~ the same wall via density).
+	var lk: Dictionary = Levels.current.get("look", {})
+	env.fog_depth_begin = lerpf(lk.get("fog_begin", 50.0), 4.0, k)
+	env.fog_depth_end = lerpf(lk.get("fog_end", 340.0), 38.0, k)
 	env.fog_light_color = Color(0.78, 0.72, 0.62).lerp(Color(0.80, 0.81, 0.80), k)
-	env.fog_sky_affect = lerpf(0.0, 0.85, k)
+	env.fog_sky_affect = lerpf(0.15, 0.85, k)
 
 func _lightning() -> void:
 	if sun == null:
