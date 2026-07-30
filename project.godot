@@ -1,4 +1,4 @@
-; Tank Commander VR — Quest 3 standalone (Godot 4.7-beta3, Mobile renderer)
+; Tank Commander VR — Quest 3 standalone (Godot 4.7-stable, Mobile renderer)
 ; Render/XR config follows the proven Fort recipe in
 ; kb: intelligence/techniques/godot-metahuman-quest-standalone.md
 ; (Mobile renderer base value, scaling_3d_scale=1.0 always, no ASW, shadows off)
@@ -77,6 +77,11 @@ openxr/default_action_map="res://openxr_action_map.tres"
 openxr/reference_space=2
 openxr/foveation_level=3
 openxr/foveation_dynamic=false
+; New in Godot 4.7: Vulkan subsampled images for foveated rendering — ~1ms/frame
+; measured on Quest 3 by the Godot devs. Requires FXAA/TAA off (both already off
+; here) and no incompatible post effects; the engine auto-falls-back with a log
+; warning if the swapchain can't support it, so worst case is a no-op.
+openxr/foveation_with_subsampled_images=true
 shaders/enabled=true
 openxr/extensions/hand_tracking=true
 ; The action map declares bindings for /interaction_profiles/ext/hand_interaction_ext
