@@ -37,6 +37,10 @@ window/size/viewport_width=1280
 window/size/viewport_height=1280
 window/size/resizable=true
 
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/pico_manifest_patch/plugin.cfg")
+
 [layer_names]
 
 3d_physics/layer_1="Static World"
