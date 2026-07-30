@@ -1,3 +1,46 @@
+# Tank Commander VR v0.6.29
+
+## The visual identity pass — real shadows, atmosphere, per-level lighting
+- **Real-time shadows.** Every light in the game ran shadowless in the
+  shipped build even though the store screenshots were always captured
+  with shadows on — the store art looked better than the actual game.
+  Tanks, buildings, and props now cast proper contact shadows.
+- **The mountains aren't a brown wall anymore.** Distant terrain used to
+  darken toward black with range; it now fades toward the sky's horizon
+  color instead, like real atmospheric haze — the biggest single change to
+  how the world reads at a glance.
+- **Every level has its own lighting personality now** instead of one
+  global noon: castle glows at a raking golden-hour angle, volcano is an
+  ash-choked near-monochrome, moon is a true black-sky vacuum with
+  jet-black shadows, mudpit is a flat grey overcast, and so on across all
+  13 battlefields. Time of day (day/golden hour/night) now modifies each
+  level's look instead of overriding it, so golden hour on the beach and
+  golden hour at the castle read as different places.
+- **Fog you can actually see**, with a warm glow toward the sun, plus
+  procedural cloud cover in the sky (no imported textures, generated at
+  boot).
+- **Juicier explosions:** more, smaller fireballs with a real scale-pop
+  instead of drifting-balloon particles, a two-stage detonation flash, and
+  an XR-safe "screen punch" on big hits (a brief exposure bump — never
+  camera shake, which is a comfort hazard in VR).
+- **Foveated rendering was probably never actually engaging** — the
+  setting was there, but the required `vrs_mode` flag on the XR viewport
+  wasn't, which the Vulkan Mobile renderer needs to use it. Fixed; should
+  free up real GPU headroom on-device.
+
+# Tank Commander VR v0.6.28
+
+## On-foot camera fix — a real XR bug caught by live scripted QA
+- **Third-person camera cycling on foot could black-screen the game.** The
+  detached chase-camera added for on-foot third/far-person view worked on
+  desktop but was fundamentally incompatible with real XR headsets (an XR
+  camera's transform gets rewritten from the real headset pose every
+  frame, which a "detached" camera fights). Found and confirmed by an
+  automated headset-streaming test, not manual play. Fixed by removing the
+  on-foot detached camera entirely rather than patching it further —
+  camera cycling on foot is now a no-op; seated vehicles still get the
+  full 1st/3rd/far-3rd cycle.
+
 # Tank Commander VR v0.6.27
 
 ## The release-prep blitz — controls deconflicted, multiplayer hardened, radio expanded

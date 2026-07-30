@@ -123,8 +123,17 @@ Edit, restart, report back.
 
 Golden-hour beach, full combat demo, glow + fill-light on: **locked 72/72 fps,
 App GPU 9.2 ms avg of the 13.8 ms budget** (VrApi logcat, v0.6.0). Glow costs
-<1 ms on the Adreno 740 — it stays on. Foveation ships at level 2: the A/B
-against level 3 measured within run variance, so the sharper periphery is free. Foveation, glow, and 40+ gameplay dials are
+<1 ms on the Adreno 740 — it stays on.
+
+*Needs re-measuring:* the number above predates v0.6.29, which found that
+foveated rendering had likely never actually been engaging — the setting was
+present but the Vulkan Mobile renderer's required `Viewport.vrs_mode` flag
+wasn't, so the 9.2ms figure (and the "foveation level 2 vs 3 is free" A/B)
+may both have been measured with foveation effectively off the whole time.
+v0.6.29 also turns on real-time shadows, which cost GPU foveation is meant to
+help pay for. Both need a fresh on-device pass.
+
+Foveation, glow, and 40+ gameplay dials are
 runtime-tunable via `tuning.cfg` (see above); `autostart.cfg` in the same dir
 boots the game into a self-playing demo scene for hands-off profiling:
 
