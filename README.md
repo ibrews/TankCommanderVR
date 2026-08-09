@@ -178,3 +178,7 @@ ImageMagick if screenshots change — see git history for the exact commands.
 
 MIT — see [LICENSE](LICENSE). The bundled `godot_openxr_vendors` addon keeps
 its own MIT/Apache licenses (see `addons/godotopenxrvendors/`).
+
+## Support
+
+If you like seeing this kind of thing get built and shared, [donations are always welcome](https://www.alexcoulombepresents.com/support) — they buy hardware, render time, and the freedom to keep giving most of this away.
