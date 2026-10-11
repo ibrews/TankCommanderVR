@@ -24,6 +24,9 @@ Validate with `python tools/agent_skills.py --check` (standard-library Python 3)
 After changing skill metadata, regenerate the Claude entry points with
 `python tools/agent_skills.py --sync`. The check verifies matching names and
 descriptions, reference links, named production files, and upstream file hashes.
+Hashes use LF-normalized text so Git's Windows newline conversion does not
+invalidate an otherwise unchanged reference. `.gitattributes` keeps new skill
+checkouts on LF. The validator also supports existing CRLF working copies.
 It does not prove gameplay, shader compilation, frame rate, or model behavior.
 
 ## Sources and adaptation

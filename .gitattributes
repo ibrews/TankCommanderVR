@@ -1,0 +1,7 @@
+# Keep the shared skill pack portable across Windows, macOS, and Linux.
+.agents/skills/** text eol=lf
+.claude/skills/** text eol=lf
+AGENTS.md text eol=lf
+CLAUDE.md text eol=lf
+docs/agent-skills.md text eol=lf
+tools/agent_skills.py text eol=lf

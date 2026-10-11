@@ -75,10 +75,14 @@ def run(sync):
     if discovered != EXPECTED:
         raise ValueError(f"Unexpected Claude skills: {sorted(discovered ^ EXPECTED)}")
     manifest = json.loads((CANONICAL / "sources.json").read_text(encoding="utf-8"))
+    if manifest.get("hash_normalization") != "lf":
+        raise ValueError("Source manifest must specify LF-normalized hashes")
     for source in manifest["sources"]:
         for key in ("reference", "license"):
             entry = source[key]
-            actual = hashlib.sha256((ROOT / entry["path"]).read_bytes()).hexdigest()
+            # Existing Windows checkouts may predate the pack's LF attributes.
+            payload = (ROOT / entry["path"]).read_bytes().replace(b"\r\n", b"\n")
+            actual = hashlib.sha256(payload).hexdigest()
             if actual != entry["sha256"]:
                 raise ValueError(f"Upstream {key} changed: {entry['path']}")
     print("PASS: 5 canonical skills, 5 matching Claude entries, production paths, references, and upstream hashes")
