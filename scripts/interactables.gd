@@ -15,6 +15,8 @@ var grabbed_by: Node = null   # the hand/controller node that holds us
 var enabled := true
 var handle: MeshInstance3D = null
 var _handle_mat: StandardMaterial3D = null
+var coached := false
+var _highlighted := false
 
 func _ready() -> void:
 	# THE missing line, found 2026-07-03: xr_rig.gd's grab loop
@@ -31,6 +33,15 @@ func _ready() -> void:
 func grab_point() -> Vector3:
 	return handle.global_position if handle else global_position
 
+func grab_distance(hand_pos: Vector3) -> float:
+	return grab_point().distance_to(hand_pos)
+
+static func tracked_hand_position(hand: Node3D) -> Vector3:
+	return hand.call("hand_pos") if hand.has_method("hand_pos") else hand.global_position
+
+func reset_touch() -> void:
+	poke_check(global_position + Vector3(0, 5, 0), 0.0)
+
 func can_grab() -> bool:
 	return enabled
 
@@ -43,15 +54,29 @@ func release() -> void:
 func on_hand_update(_hand_pos: Vector3) -> void:
 	pass
 
+func on_hand_pose(hand_pose: Transform3D) -> void:
+	on_hand_update(hand_pose.origin)
+
 func poke_check(_tip: Vector3, _delta: float) -> void:
 	pass
 
 func set_highlight(on: bool) -> void:
+	if _highlighted == on:
+		return
+	_highlighted = on
+	_update_feedback()
+
+func set_coached(on: bool) -> void:
+	if coached == on:
+		return
+	coached = on
+	_update_feedback()
+
+func _update_feedback() -> void:
 	if _handle_mat:
-		_handle_mat.emission_enabled = on
-		if on:
-			_handle_mat.emission = Color(0.9, 0.6, 0.2)
-			_handle_mat.emission_energy_multiplier = 0.35
+		_handle_mat.emission_enabled = _highlighted or coached
+		_handle_mat.emission = Color(0.9, 0.6, 0.2) if _highlighted else Color(0.2, 0.65, 1.0)
+		_handle_mat.emission_energy_multiplier = 0.45 if _highlighted else 0.3
 
 func _make_handle_mat(col: Color) -> StandardMaterial3D:
 	_handle_mat = StandardMaterial3D.new()
@@ -95,6 +120,8 @@ class Lever:
 				value = nv
 
 	var _was_center := true
+	var _grab_angle := 0.0
+	var _grab_value := 0.0
 
 	static func create(length: float, knob_col: Color, lever_max_deg: float, autocenter: bool) -> Lever:
 		var lv := Lever.new()
@@ -122,12 +149,17 @@ class Lever:
 		lv.handle = knob
 		return lv
 
+	func on_grab(hand: Node) -> void:
+		super.on_grab(hand)
+		var local := to_local(tracked_hand_position(hand))
+		_grab_angle = atan2(-local.z, local.y)
+		_grab_value = value
+
 	func on_hand_update(hand_pos: Vector3) -> void:
 		var local := to_local(hand_pos)
 		# angle of hand around X axis in the Y/Z plane; lever up = 0
 		var ang := atan2(-local.z, local.y)
-		ang = clampf(ang, -max_angle, max_angle)
-		var new_value := ang / max_angle
+		var new_value := clampf(_grab_value + wrapf(ang - _grab_angle, -PI, PI) / max_angle, -1.0, 1.0)
 		var at_center := absf(new_value) < 0.08
 		if detent_center and at_center and not _was_center:
 			_haptic(0.3, 0.015)
@@ -175,11 +207,11 @@ class TwoAxisGrip:
 		return g
 
 	func grab_point() -> Vector3:
-		return to_global(Vector3(0, 0.24, 0))
+		return pivot.to_global(Vector3(0, 0.24, 0))
 
 	func on_grab(hand: Node) -> void:
 		super.on_grab(hand)
-		_rest = to_local(hand.global_position)
+		_rest = to_local(tracked_hand_position(hand))
 		_haptic(0.5, 0.03)
 
 	func on_hand_update(hand_pos: Vector3) -> void:
@@ -232,7 +264,7 @@ class SteeringWheel:
 
 	static func create(rim_col := Color(0.16, 0.16, 0.17)) -> SteeringWheel:
 		var w := SteeringWheel.new()
-		w.grab_radius = RIM_RADIUS + 0.05
+		w.grab_radius = 0.065
 		w.wheel_mesh = Node3D.new()
 		w.add_child(w.wheel_mesh)
 		var st := MeshKit.begin()
@@ -263,16 +295,17 @@ class SteeringWheel:
 		w.handle = mesh
 		return w
 
-	# Grabbable anywhere on the rim, not just dead-center top — same "rim, not
-	# hub" feel as a real wheel. Rig picks the nearest control by grab_point()
-	# distance; the rim-top point is close enough for that check everywhere a
-	# hand would plausibly reach for it.
 	func grab_point() -> Vector3:
 		return to_global(Vector3(0, RIM_RADIUS, 0))
 
+	func grab_distance(hand_pos: Vector3) -> float:
+		var local := to_local(hand_pos)
+		var radial := Vector2(local.x, local.y).length()
+		return Vector2(radial - RIM_RADIUS, local.z).length()
+
 	func on_grab(hand: Node) -> void:
 		super.on_grab(hand)
-		var local := to_local(hand.global_position)
+		var local := to_local(tracked_hand_position(hand))
 		_grab_ang = atan2(local.y, local.x)
 		_grab_value = value
 		_haptic(0.4, 0.02)
@@ -367,6 +400,7 @@ class ToggleSwitch:
 	var on := false
 	var bat: MeshInstance3D
 	var _cool := 0.0
+	var _touching := false
 
 	static func create(col := Color(0.85, 0.85, 0.8)) -> ToggleSwitch:
 		var t := ToggleSwitch.new()
@@ -391,10 +425,10 @@ class ToggleSwitch:
 
 	func poke_check(tip: Vector3, delta: float) -> void:
 		_cool = maxf(0.0, _cool - delta)
-		if _cool > 0.0:
-			return
-		if to_local(tip).length() < grab_radius:
+		var touching := to_local(tip).length() < grab_radius
+		if touching and not _touching and _cool <= 0.0:
 			flip()
+		_touching = touching
 
 	func flip() -> void:
 		_cool = 0.4
@@ -416,6 +450,8 @@ class Knob:
 	var _grab_ang := 0.0
 	var _grab_value := 0.5
 	var _last_detent := -1
+	var _grab_rotation := Quaternion.IDENTITY
+	var _wrist_drag := false
 
 	# Lock-to-lock authority, like a real volume dial (matches SteeringWheel's
 	# own MAX_TURN idiom).
@@ -454,9 +490,21 @@ class Knob:
 	# it, regardless of how the knob is mounted.
 	func on_grab(hand: Node) -> void:
 		super.on_grab(hand)
-		var local := to_local(hand.global_position)
+		var local := to_local(tracked_hand_position(hand))
 		_grab_ang = atan2(local.y, local.x)
 		_grab_value = value
+		_grab_rotation = (global_basis.inverse() * hand.global_basis).get_rotation_quaternion()
+		_wrist_drag = false
+
+	func on_hand_pose(hand_pose: Transform3D) -> void:
+		var rotation := (global_basis.inverse() * hand_pose.basis).get_rotation_quaternion()
+		var change := rotation * _grab_rotation.inverse()
+		var twist := wrapf(2.0 * atan2(change.z, change.w), -PI, PI)
+		if absf(twist) > 0.04 or _wrist_drag:
+			_wrist_drag = true
+			_set_value(clampf(_grab_value - twist / TURN_RANGE, 0.0, 1.0))
+		else:
+			on_hand_update(hand_pose.origin)
 
 	func on_hand_update(hand_pos: Vector3) -> void:
 		var local := to_local(hand_pos)
@@ -469,6 +517,9 @@ class Knob:
 		# needs the opposite sign.
 		var d := -wrapf(ang - _grab_ang, -PI, PI)
 		var nv := clampf(_grab_value + d / TURN_RANGE, 0.0, 1.0)
+		_set_value(nv)
+
+	func _set_value(nv: float) -> void:
 		if absf(nv - value) > 0.002:
 			value = nv
 			_apply()
@@ -491,6 +542,7 @@ class SafetyCover:
 	var open := false
 	var lid: Node3D
 	var _cool := 0.0
+	var _touching := false
 
 	static func create() -> SafetyCover:
 		var c := SafetyCover.new()
@@ -510,14 +562,18 @@ class SafetyCover:
 	func can_grab() -> bool:
 		return false
 
+	func grab_point() -> Vector3:
+		return handle.to_global(Vector3(0, 0.020, 0.045))
+
 	func poke_check(tip: Vector3, delta: float) -> void:
 		_cool = maxf(0.0, _cool - delta)
-		if _cool > 0.0:
-			return
-		if to_local(tip).length() < (0.09 if open else grab_radius):
+		# Once open, touch the raised lid, not the switch under it.
+		var touching := grab_point().distance_to(tip) < grab_radius
+		if touching and not _touching and _cool <= 0.0:
 			_cool = 0.5
 			open = not open
 			var tw := create_tween()
 			tw.tween_property(lid, "rotation:x", deg_to_rad(-115.0) if open else 0.0, 0.15)
 			Sfx.play_at("switch", global_position, -4.0, 0.8)
 			toggled_on.emit(open)
+		_touching = touching

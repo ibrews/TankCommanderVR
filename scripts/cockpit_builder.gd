@@ -209,7 +209,7 @@ static func _build_static(root: Node3D) -> void:
 	MeshKit.box(st, Transform3D(Basis(), Vector3(0.10, -0.30, -0.16)), Vector3(0.20, 0.34, 0.20), STEEL)
 	# tiller floor mounts
 	for tx in [EYE.x - 0.20, EYE.x + 0.20]:
-		MeshKit.box(st, Transform3D(Basis(), Vector3(tx, -0.72, -0.16)), Vector3(0.09, 0.10, 0.16), STEEL_DARK)
+		MeshKit.box(st, Transform3D(Basis(), Vector3(tx, -0.50, 0.02)), Vector3(0.09, 0.10, 0.16), STEEL_DARK)
 
 	# ---- ammo rack (brass shells) on rear-right wall, decor
 	for i in 5:
@@ -249,11 +249,11 @@ static func _build_controls(root: Node3D, out: Dictionary) -> void:
 
 	# driving tillers — knee height in front of seat
 	var tiller_l := VRControl.Lever.create(0.34, Color(0.15, 0.15, 0.16), 32.0, true)
-	tiller_l.position = Vector3(EYE.x - 0.20, -0.66, -0.16)
+	tiller_l.position = Vector3(EYE.x - 0.20, -0.44, 0.02)
 	root.add_child(tiller_l)
 	c["tiller_l"] = tiller_l
 	var tiller_r := VRControl.Lever.create(0.34, Color(0.15, 0.15, 0.16), 32.0, true)
-	tiller_r.position = Vector3(EYE.x + 0.20, -0.66, -0.16)
+	tiller_r.position = Vector3(EYE.x + 0.20, -0.44, 0.02)
 	root.add_child(tiller_r)
 	c["tiller_r"] = tiller_r
 
@@ -265,11 +265,11 @@ static func _build_controls(root: Node3D, out: Dictionary) -> void:
 
 	# rocket console (left): safety cover + arm switch under it + fire button
 	var cover := VRControl.SafetyCover.create()
-	cover.position = Vector3(X0 + 0.11, -0.145, -0.18)
+	cover.position = Vector3(X0 + 0.19, -0.145, -0.08)
 	root.add_child(cover)
 	c["rocket_cover"] = cover
 	var arm := VRControl.ToggleSwitch.create(Color(0.9, 0.25, 0.2))
-	arm.position = Vector3(X0 + 0.11, -0.145, -0.18)
+	arm.position = Vector3(X0 + 0.19, -0.145, -0.08)
 	arm.enabled = false
 	root.add_child(arm)
 	c["rocket_arm"] = arm
@@ -313,7 +313,7 @@ static func _build_controls(root: Node3D, out: Dictionary) -> void:
 	_label(root, "BATTERY", Vector3(X0 + 0.22, -0.135, 0.115), -90, 20, 90)
 	_label(root, "STARTER", Vector3(X0 + 0.13, -0.135, 0.115), -90, 20, 90)
 	_label(root, "LIGHTS", Vector3(X0 + 0.22, -0.135, 0.235), -90, 20, 90)
-	_label(root, "ROCKETS ARM", Vector3(X0 + 0.11, -0.135, -0.255), -90, 20, 90)
+	_label(root, "ROCKETS ARM", Vector3(X0 + 0.19, -0.135, -0.155), -90, 20, 90)
 	_label(root, "ROCKET FIRE", Vector3(X0 + 0.11, -0.135, -0.05), -90, 20, 90)
 	_label(root, "TURRET", Vector3(0.10, -0.135, 0.145), -90, 20, 90)
 
@@ -323,7 +323,8 @@ static func _label(root: Node3D, text: String, pos: Vector3, pitch_deg := 0.0, s
 	l.font_size = size * 4
 	l.pixel_size = 0.0002
 	l.modulate = Color(0.92, 0.94, 0.90)
-	l.outline_size = 0
+	l.outline_size = 4
+	l.outline_modulate = Color(0.025, 0.03, 0.025)
 	l.position = pos
 	l.rotation_degrees = Vector3(pitch_deg, yaw_deg, 0)
 	root.add_child(l)
@@ -431,6 +432,7 @@ static func _build_panel(root: Node3D, out: Dictionary) -> void:
 	var plaque := _label(root, "WAVE 1    SCORE 0", Vector3(EYE.x, 0.50, Z0 + 0.02), 0, 30)
 	out["labels"]["plaque"] = plaque
 	var hint := _label(root, "", Vector3(EYE.x, 0.445, Z0 + 0.02), 0, 16)
+	hint.pixel_size = 0.0003
 	hint.modulate = Color(1.0, 0.8, 0.35)
 	out["labels"]["hint"] = hint
 
@@ -557,13 +559,14 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 	root.add_child(screen)
 	out["thermal_screen"] = screen
 	var ir := VRControl.ToggleSwitch.create(Color(0.3, 0.8, 0.4))
-	ir.position = Vector3(X1 - 0.05, THERMAL_Y - 0.125, THERMAL_Z)
-	ir.rotation.z = deg_to_rad(90)
+	# Keep the screen on the wall; put its switch within the seated arm reach.
+	ir.position = Vector3(0.23, -0.10, 0.12)
 	root.add_child(ir)
 	c["ir"] = ir
 	ir.toggled_on.connect(func(on):
 		screen.visible = on
-		thermal_vp.render_target_update_mode = SubViewport.UPDATE_ALWAYS if on else SubViewport.UPDATE_DISABLED)
+		thermal_vp.render_target_update_mode = SubViewport.UPDATE_ONCE if on else SubViewport.UPDATE_DISABLED)
+	_label(root, "IR", Vector3(0.23, -0.09, 0.185), -90, 16)
 	var tl := _label(root, "THERMAL", Vector3(X1 - 0.045, THERMAL_Y + 0.185, THERMAL_Z), 0, 13)
 	tl.rotation.y = deg_to_rad(-90)
 
@@ -583,11 +586,11 @@ static func _build_extra(root: Node3D, out: Dictionary) -> void:
 
 	# horn — big button on the left tiller mount (mandatory fun)
 	var horn := VRControl.PushButton.create(Color(0.9, 0.75, 0.2), 0.03)
-	horn.position = Vector3(EYE.x - 0.20, -0.66, -0.245)
+	horn.position = Vector3(EYE.x - 0.20, -0.20, -0.04)
 	horn.rotation.x = deg_to_rad(-50)
 	root.add_child(horn)
 	c["horn"] = horn
-	_label(root, "HORN", Vector3(EYE.x - 0.20, -0.60, -0.29), -40, 13)
+	_label(root, "HORN", Vector3(EYE.x - 0.20, -0.14, -0.09), -40, 13)
 
 	# return-to-menu — guarded switch, rear of left console
 	var menu_cover := VRControl.SafetyCover.create()

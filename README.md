@@ -5,6 +5,9 @@
 **[🎮 Get it on Meta Horizon App Lab](https://www.meta.com/s/6mSdrdXX6)** — one-tap
 install on Quest 2/3/Pro, no adb required (alpha channel, auto-approve invite link).
 
+The v0.6.30 source/APK changes below passed XRSim checks. Its alpha upload is
+pending recovery of the original signing key; see [the audit](docs/audit-2026-10-11.md).
+
 *Made for Ani* 🧡
 
 A VR tank game for Meta Quest 3, built with [Godot 4](https://godotengine.org/)
@@ -78,21 +81,21 @@ adb install -r -g TankCommanderVR.apk
 
 Or build it yourself: Godot 4.7 + the
 [godot_openxr_vendors](https://github.com/GodotVR/godot_openxr_vendors) addon
-(included), Android SDK 34, JDK 17. Export preset "Meta Quest" is configured
-in `export_presets.cfg`.
+(included), matching Android build template, Android SDK, and JDK 17 or newer.
+The "Meta Quest" preset targets SDK 34 and ARM64. For an isolated export with
+data-volume caches, run `python tools/build_quest.py --help` from a named worktree.
 
 ## Controls
 
-**Thumbsticks (fully working, recommended for now):** drive, aim, fire,
-reload, rockets, restart, and MG are all mapped to thumbsticks/buttons.
-This is the reliable way to play today.
+**Thumbsticks:** drive, aim, fire, reload, rockets, restart, and MG are mapped
+to thumbsticks/buttons. Physical cockpit controls provide an alternate way to play.
 
 | Input | Action |
 |---|---|
 | X | Auto start ritual (battery + engine) |
 | Left stick | Drive (tracks mix automatically) |
 | Right stick | Turret traverse / gun elevation |
-| Right trigger | Throttle forward (every ground/water/air vehicle) |
+| Right trigger | Forward throttle when the hand is free and away from cockpit controls; trigger on the held turret stick fires |
 | Right grip (empty hand) | Fire cannon (auto-reloads) — or trigger while gripping the turret stick |
 | A (hold) | Coax machine gun · quick tap cycles the radio station |
 | B (tap) | Fire rocket salvo · hold ~1s toggles the HUD |
@@ -104,13 +107,16 @@ This is the reliable way to play today.
 **Physical grab/poke:** the cockpit is built entirely from real `VRControl`
 levers/switches/knobs/buttons meant to be grabbed and poked by hand —
 flip the battery switch, pull the starter, work the tillers, cycle the
-breech lever, grab the jeep's steering wheel. Follow the yellow hints on
-the front wall the first time through.
+breech lever, grab the jeep's steering wheel. Follow the yellow hints and blue
+next-control highlight. Nearby controls glow amber. Hold grip to grab; release
+to let go. Touch switches once, withdraw, then touch again to change them.
+Radio knobs support wrist twisting. The red reload lever stays with the seat
+through turret rotation, and the driving tillers, horn, and IR switch are closer.
 
 **Hand tracking:** put the controllers down — pinch = trigger (fire), whole-
-hand squeeze = grab. There's currently no bare-hand equivalent for the
-analog thumbsticks, so **driving/turret-aim need a physical controller
-today** — hand tracking alone can fire but can't steer.
+hand squeeze = grab. Bare hands have no analog thumbsticks; driving and aiming
+use the physical controls. Controller interaction passed XRSim/OpenXR acceptance;
+optical hand tracking and wearer comfort still need headset validation.
 (Runner/on-foot mode: pump your arms to sprint, or switch to stick-sprint
 in the menu — either way it works hands-free.)
 
@@ -120,6 +126,12 @@ in the menu — either way it works hands-free.)
 Edit, restart, report back.
 
 ## Performance (measured on Quest 3S)
+
+The v0.6.30 source caps the enabled thermal sight at 30Hz and skips hidden diagnostic text.
+It preserves Mobile/OpenXR, XR VRS, and dynamic foveation. See the
+[October audit](docs/audit-2026-10-11.md) for reach measurements, 25 XRSim checks,
+regressions, and the remaining graphics/performance priorities. Current standalone
+Quest frame times still need a fresh device capture.
 
 Golden-hour beach, full combat demo, glow + fill-light on: **locked 72/72 fps,
 App GPU 9.2 ms avg of the 13.8 ms budget** (VrApi logcat, v0.6.0). Glow costs
@@ -181,6 +193,8 @@ metadata, run `python tools/agent_skills.py --sync` to refresh the Claude entrie
 3. Open the checkout in Claude Code or Codex and ask it to use `tcvr-testing`
    to select a check for a cockpit-control change.
 4. Run `python tools/agent_skills.py --check` to verify the shared skill pack.
+5. Start the tank using its battery, fuel cover/switch, and starter; grip the
+   tillers to drive, fire using the held turret stick, then pull the red reload lever.
 
 ## Store assets
 

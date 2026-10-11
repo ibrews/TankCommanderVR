@@ -177,9 +177,37 @@ class XRHand:
 		# isn't guaranteed to track the real hand position accurately — the
 		# hand tracker's own position (feeding the visible hand mesh) is the
 		# authoritative source whenever it has data.
+		if uses_controller():
+			return global_position
 		if hand_mesh and hand_mesh.get_has_tracking_data():
 			return hand_mesh.global_position
 		return global_position
+
+	func uses_controller() -> bool:
+		var positional := XRServer.get_tracker(tracker) as XRPositionalTracker
+		if positional == null or not get_has_tracking_data():
+			return false
+		# EXT hand interaction also synthesizes a tracked controller pose.
+		var profile := String(positional.get_tracker_profile())
+		return profile != "" and profile != "/interaction_profiles/none" and not "hand_interaction" in profile
+
+	func interaction_tracked() -> bool:
+		return get_has_tracking_data() or (hand_mesh != null and hand_mesh.get_has_tracking_data())
+
+	func poke_position() -> Vector3:
+		return poke_tip.global_position if uses_controller() else hand_pos()
+
+	func clear_interaction() -> void:
+		if is_instance_valid(holding):
+			holding.release()
+			if holding is VRControl.TwoAxisGrip and is_instance_valid(rig.tank):
+				rig.tank.call("set_mg", false)
+		if is_instance_valid(_last_near):
+			_last_near.set_highlight(false)
+		_last_near = null
+		holding = null
+		_grip_was = false
+		set_meta("trig_was", false)
 
 	# get_float("trigger")/("grip") only ever have data while the physical
 	# controller is tracked. XR_FB_hand_tracking_aim gives the bare-hand
@@ -189,14 +217,18 @@ class XRHand:
 	# fold in cleanly: whichever source is actually live wins, since the
 	# untracked source always reads 0.
 	func effective_trigger() -> float:
+		if not interaction_tracked():
+			return 0.0
 		var t := get_float("trigger")
-		if hand_aim:
+		if not uses_controller() and hand_aim and hand_aim.get_has_tracking_data():
 			t = maxf(t, hand_aim.get_float("index_pinch_strength"))
 		return t
 
 	func effective_grip() -> float:
+		if not interaction_tracked():
+			return 0.0
 		var g := get_float("grip")
-		if hand_aim:
+		if not uses_controller() and hand_aim and hand_aim.get_has_tracking_data():
 			var squeeze := (hand_aim.get_float("middle_pinch_strength")
 				+ hand_aim.get_float("ring_pinch_strength")
 				+ hand_aim.get_float("little_pinch_strength")) / 3.0
@@ -214,8 +246,11 @@ class XRHand:
 		# a pose on this SAME tracker during bare-hand play (see hand_pos()),
 		# so get_has_tracking_data() alone can read true with no controller
 		# in hand.
-		var bare := hand_mesh != null and hand_mesh.get_has_tracking_data()
-		var controllers := get_has_tracking_data() and not bare
+		var bare := not uses_controller() and hand_mesh != null and hand_mesh.get_has_tracking_data()
+		var controllers := uses_controller()
+		if hand_mesh:
+			hand_mesh.show_when_tracked = false
+			hand_mesh.visible = bare
 		# "four arms" fix: the licensed Touch GLB (controller_model) and the
 		# godot-xr-tools lowpoly glove BOTH used to render at the same hand
 		# point whenever a controller was tracked — two hand-props per hand,
@@ -234,17 +269,21 @@ class XRHand:
 		# contract, and the two states are mutually exclusive so there is
 		# never more than one to route to.
 		if Game.state == Game.GState.MENU or Game.paused:
+			clear_interaction()
 			_menu_pointer()
 			_interact_mat.albedo_color = Color(1, 1, 1, 0.25)
 			return
 		laser.visible = false
-		if rig.tank == null:
+		if not is_instance_valid(rig.tank) or not interaction_tracked() or Game.player_mode == Game.PlayerMode.ON_FOOT:
+			clear_interaction()
 			return
-		var gripping := effective_grip() > 0.55
+		if not is_instance_valid(holding):
+			holding = null
+		var gripping := effective_grip() > (0.4 if holding != null else 0.55)
 		if holding == null:
 			var near := _nearest_control()
 			if near != _last_near:
-				if _last_near:
+				if is_instance_valid(_last_near):
 					_last_near.set_highlight(false)
 				if near:
 					near.set_highlight(true)
@@ -256,22 +295,22 @@ class XRHand:
 				pulse(0.45, 0.02)
 		else:
 			if gripping:
-				holding.on_hand_update(hand_pos())
+				var hand_basis := global_basis if uses_controller() or hand_mesh == null else hand_mesh.global_basis
+				holding.on_hand_pose(Transform3D(hand_basis, hand_pos()))
 			else:
-				holding.release()
-				holding = null
+				clear_interaction()
 		_grip_was = gripping
 		# poke_tip is a rigid child offset in controller-grip space — meaningless
 		# once the controller's untracked and this node's own transform has gone
 		# stale, so fall back to the live hand-tracking position instead.
-		var tip := poke_tip.global_position if get_has_tracking_data() else hand_pos()
-		_indicator.global_position = tip   # ball now always shows the REAL hitbox, not a rigid guess
+		var tip := poke_position()
+		_indicator.global_position = tip
 		var poke_near := false
 		for c in get_tree().get_nodes_in_group("vrcontrols"):
 			var vc := c as VRControl
-			if vc and not vc.can_grab() and vc.enabled and vc.global_position.distance_to(tip) < 0.25:
-				vc.poke_check(tip, delta)
-				poke_near = true
+			if vc and vc.enabled and rig.tank.is_ancestor_of(vc) and not vc.can_grab():
+				if vc.grab_distance(tip) < vc.grab_radius * 1.5:
+					poke_near = true
 		if holding != null:
 			_interact_mat.albedo_color = Color(0.3, 1.0, 0.3, 0.9)
 		elif _last_near != null or poke_near:
@@ -308,10 +347,10 @@ class XRHand:
 		# controller itself is untracked (true bare-hand play); its aim pose
 		# is garbage while a controller is held (ray "pointed up instead of
 		# out", live report 2026-07-04).
-		if get_has_tracking_data() and aim and aim.get_has_tracking_data():
+		if uses_controller() and aim and aim.get_has_tracking_data():
 			from = aim.global_position
 			dir = -aim.global_transform.basis.z
-		elif get_has_tracking_data():
+		elif uses_controller():
 			from = global_position
 			dir = -global_transform.basis.z
 		elif hand_aim and hand_aim.get_has_tracking_data():
@@ -363,9 +402,11 @@ class XRHand:
 		var hp := hand_pos()
 		for c in get_tree().get_nodes_in_group("vrcontrols"):
 			var vc := c as VRControl
-			if vc == null or not vc.can_grab() or not vc.enabled:
+			if vc == null or not vc.can_grab() or not vc.enabled or not rig.tank.is_ancestor_of(vc):
 				continue
-			var d := vc.grab_point().distance_to(hp)
+			if is_instance_valid(vc.grabbed_by) and vc.grabbed_by != self:
+				continue
+			var d := vc.grab_distance(hp)
 			if d < vc.grab_radius and d < best_d:
 				best_d = d
 				best = vc
@@ -881,8 +922,48 @@ func local_body_pose(relative_to: Node3D) -> Dictionary:
 		"hand_r": inv * (base * hand_r.transform),
 	}
 
+func _update_control_pokes(delta: float) -> void:
+	var active := is_instance_valid(tank) and not Game.paused and Game.state != Game.GState.MENU and Game.player_mode != Game.PlayerMode.ON_FOOT
+	var controls: Array[VRControl] = []
+	var touches := {}
+	for node in get_tree().get_nodes_in_group("vrcontrols"):
+		var control := node as VRControl
+		if control == null or control.can_grab():
+			continue
+		controls.append(control)
+		if not active or not control.enabled or not tank.is_ancestor_of(control):
+			control.set_meta("poke_armed", false)
+			continue
+		if not control.get_meta("poke_armed", true):
+			var clear := true
+			for hand: XRHand in [hand_l, hand_r]:
+				if hand.interaction_tracked() and control.grab_distance(hand.poke_position()) < control.grab_radius * 1.5:
+					clear = false
+			control.set_meta("poke_armed", clear)
+	if active:
+		for hand: XRHand in [hand_l, hand_r]:
+			if not hand.interaction_tracked() or hand.holding != null:
+				continue
+			var tip := hand.poke_position()
+			var nearest: VRControl = null
+			var nearest_ratio := 1.5
+			for control in controls:
+				if not control.enabled or not tank.is_ancestor_of(control) or not control.get_meta("poke_armed", true):
+					continue
+				var ratio := control.grab_distance(tip) / control.grab_radius
+				if ratio < nearest_ratio:
+					nearest_ratio = ratio
+					nearest = control
+			if nearest != null:
+				touches[nearest] = tip
+	for control in controls:
+		var touched := touches.has(control)
+		control.poke_check(touches.get(control, control.global_position + Vector3(0, 5, 0)), delta)
+		control.set_highlight(touched)
+
 func _update_debug_label() -> void:
-	_debug_label.text = "%s\n%s" % [_hand_debug_line("L", hand_l), _hand_debug_line("R", hand_r)]
+	if _debug_label.visible:
+		_debug_label.text = "%s\n%s" % [_hand_debug_line("L", hand_l), _hand_debug_line("R", hand_r)]
 	_update_mp_board()
 
 # Persistent MP scoreboard/lobby panel (see _ready). Names the other player,
@@ -970,6 +1051,7 @@ func _mp_hotkeys(delta: float) -> void:
 		_pulse_both(0.4, 0.06)
 
 func _physics_process(delta: float) -> void:
+	_update_control_pokes(delta)
 	_update_debug_label()
 	if Game.state == Game.GState.MENU:
 		return
@@ -1150,7 +1232,7 @@ func _physics_process(delta: float) -> void:
 	# Heli and the parachute keep their own distinct schemes (collective/
 	# cyclic, drift) where "forward throttle" doesn't apply.
 	var drive_y := _dz(ls.y)
-	if not (tank is PlayerAlt.Heli or tank is PlayerParachute):
+	if not (tank is PlayerAlt.Heli or tank is PlayerParachute) and hand_r.holding == null and hand_r._nearest_control() == null:
 		drive_y = maxf(drive_y, hand_r.effective_trigger())
 	tank.call("set_stick_drive", Vector2(-_dz(ls.x), drive_y))
 	tank.call("set_stick_turret", Vector2(_dz(rs.x), _dz(rs.y)))
@@ -1162,14 +1244,14 @@ func _physics_process(delta: float) -> void:
 	# committed to aiming, not throttling). Parachute is the one exception:
 	# it has no throttle at all, so its trigger keeps its documented
 	# "pull to deploy" behavior instead of moving to the grip.
+	var fire_input := hand_r.effective_trigger() > 0.6 if tank is PlayerParachute else hand_r.is_button_pressed("grip_click")
 	if not (hand_r.holding is VRControl.TwoAxisGrip):
-		var trig := (hand_r.effective_trigger() > 0.6 if tank is PlayerParachute \
-			else hand_r.is_button_pressed("grip_click")) and hand_r.holding == null
-		if trig and not get_meta("rtrig_was", false):
+		var empty_hand := hand_r.holding == null and hand_r._nearest_control() == null
+		if fire_input and empty_hand and not get_meta("rtrig_was", false):
 			tank.call("stick_fire")
-		set_meta("rtrig_was", trig)
 		if not (hand_l.holding is VRControl.TwoAxisGrip):
 			tank.call("set_mg", hand_r.is_button_pressed("ax_button") and hand_r.holding == null)
+	set_meta("rtrig_was", fire_input)
 	# Rockets (B tap), seat recalibrate (Y tap), and radio cycle (A tap) all
 	# moved to the tap-vs-hold deconflict block earlier in this function —
 	# they were double-bound here (2026-07-16 audit). Only X quick-start

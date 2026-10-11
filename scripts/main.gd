@@ -40,7 +40,7 @@ func _ready() -> void:
 	# 0, timers are queued against a live scene) — the splash's whole point
 	# is delaying that, so any hook still in flight skips it entirely.
 	var skip_splash := ("--smoke" in args or "--shots" in args or "--disaster" in args
-		or "--rain" in args or "--mp-host" in args or "--mp-join" in args)
+		or "--rain" in args or "--mp-host" in args or "--mp-join" in args or "--xr-audit" in args)
 	if skip_splash:
 		to_menu()
 	else:

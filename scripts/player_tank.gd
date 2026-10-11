@@ -69,6 +69,9 @@ var _latched_drive_cmd := Vector2.ZERO  # SP gunner-seated: frozen (l,r) track c
 # thermal sight (see _ready's note: camera must STAY inside its SubViewport)
 var _thermal_cam: Camera3D = null
 var _thermal_vp: SubViewport = null
+var _thermal_update_t := 0.0
+var _thermal_updates := 0
+var breech_lever: VRControl.Lever
 const THERMAL_CAM_OFFSET := Vector3(0, 0.28, -1.4)  # gun_pivot-local mount point
 
 # inputs
@@ -108,6 +111,12 @@ func _ready() -> void:
 	if Game.mutator == "balloon":
 		Game.balloonize(self)   # exterior only — cockpit is built next
 	cockpit = CockpitBuilder.build(turret)
+	# A cradle-mounted lever swings out of the driver's reach as the turret
+	# traverses. The reload control belongs to the crew basket like the stick.
+	breech_lever.reparent(cockpit["root"], false)
+	breech_lever.position = Vector3(CockpitBuilder.EYE.x + 0.37, 0.10, -0.09)
+	CockpitBuilder._label(cockpit["root"], "RELOAD", Vector3(-0.13, 0.06, -0.13), 0, 16)
+	cockpit["controls"]["breech"] = breech_lever
 	_wire_controls()
 	_build_reticle()
 	# Thermal sight camera: cockpit_builder.gd builds the SubViewport/Camera3D
@@ -272,7 +281,7 @@ func _build_exterior() -> void:
 	gun_pivot.add_child(coax)
 
 	# breech reload lever — mounted on the gun cradle, left side (player side)
-	var breech_lever := VRControl.Lever.create(0.22, Color(0.75, 0.15, 0.1), 45.0, true)
+	breech_lever = VRControl.Lever.create(0.22, Color(0.75, 0.15, 0.1), 45.0, true)
 	breech_lever.center_rate = 5.0
 	# base overlaps the breech box's left face (x -0.03) so the lever is
 	# visibly MOUNTED on it, not floating mid-air (Alex: "levers not
@@ -601,7 +610,7 @@ func _physics_process(delta: float) -> void:
 	_update_drive(delta)
 	_update_turret(delta)
 	_sync_seat_declutch(delta)
-	_sync_thermal_cam()
+	_sync_thermal_cam(delta)
 	_update_weapons(delta)
 	_update_gauges(delta)
 	_update_hints()
@@ -631,7 +640,7 @@ func _puppet_update(delta: float) -> void:
 	gun_pivot.rotation.x = gun_elev
 	turret_p.volume_db = -14.0 if inp.length() > 0.1 else -80.0
 	_sync_seat_declutch(delta)
-	_sync_thermal_cam()
+	_sync_thermal_cam(delta)
 	_update_gauges(delta)
 	_update_reticle()
 	var gp := global_position
@@ -836,12 +845,20 @@ func toggle_seat() -> void:
 ## inside the thermal SubViewport (never reparent it out -- see _ready).
 ## Skipped entirely while the IR switch has the viewport disabled, so the
 ## only per-frame cost when the sight is off is this one enum compare.
-func _sync_thermal_cam() -> void:
+func _sync_thermal_cam(delta: float) -> void:
 	if _thermal_cam == null or _thermal_vp == null:
 		return
-	if _thermal_vp.render_target_update_mode != SubViewport.UPDATE_ALWAYS:
+	if not cockpit["controls"]["ir"].on:
+		_thermal_vp.render_target_update_mode = SubViewport.UPDATE_DISABLED
+		_thermal_update_t = 0.0
 		return
 	_thermal_cam.global_transform = gun_pivot.global_transform * Transform3D(Basis(), THERMAL_CAM_OFFSET)
+	# A small instrument feed does not need a second full world render at 72Hz.
+	_thermal_update_t += delta
+	if _thermal_update_t >= 1.0 / 30.0:
+		_thermal_update_t = fmod(_thermal_update_t, 1.0 / 30.0)
+		_thermal_vp.render_target_update_mode = SubViewport.UPDATE_ONCE
+		_thermal_updates += 1
 
 ## Keeps the crew basket's declutch hinge (cockpit_builder.gd's SeatDeclutch)
 ## tracking the current seat: identity while gunner-seated (basket follows the
@@ -1040,6 +1057,23 @@ func _update_hints() -> void:
 	if not Game.alive:
 		return
 	var hint: Label3D = cockpit["labels"]["hint"]
+	var controls: Dictionary = cockpit["controls"]
+	var target := ""
+	match _hint_stage:
+		0: target = "battery"
+		1: target = "fuel_pump" if controls["fuel_cover"].open else "fuel_cover"
+		2: target = "starter"
+		3: target = "gear"
+		4: target = "tiller_r"
+	if not loaded and not auto_reload and Game.help_on:
+		hint.text = "PULL RED BREECH LEVER\nTO RELOAD"
+		for control: VRControl in controls.values():
+			control.set_coached(false)
+		breech_lever.set_coached(true)
+		return
+	breech_lever.set_coached(false)
+	for key: String in controls:
+		controls[key].set_coached(Game.help_on and key == target)
 	if not Game.help_on:
 		# veteran mode: no written coaching (game-over handle text still shows)
 		if _hint_stage < 90:
@@ -1048,28 +1082,28 @@ func _update_hints() -> void:
 		return
 	match _hint_stage:
 		0:
-			hint.text = "FLIP BATTERY SWITCH (LEFT CONSOLE)"
+			hint.text = "TOUCH BATTERY SWITCH\nLEFT CONSOLE · X = QUICK START"
 			if battery_on:
 				_hint_stage = 1
 		1:
-			hint.text = "OPEN FUEL PUMP COVER + FLIP THE SWITCH"
+			hint.text = "TOUCH FUEL COVER\nTHEN TOUCH THE SWITCH"
 			if fuel_on:
 				_hint_stage = 2
 		2:
-			hint.text = "HOLD GREEN STARTER BUTTON"
+			hint.text = "HOLD GREEN STARTER\nUNTIL THE ENGINE CATCHES"
 			if engine_on:
 				_hint_stage = 3
 		3:
-			hint.text = "SHIFT GEAR LEVER TO 'D' (RIGHT PEDESTAL)"
+			hint.text = "GRIP GEAR LEVER · PUSH TO D\nRIGHT PEDESTAL"
 			if gear != 0:
 				_hint_stage = 4
 		4:
-			hint.text = "TILLERS OR R-TRIGGER TO DRIVE · GRIP TURRET+TRIGGER OR SQUEEZE GRIP = FIRE"
+			hint.text = "GRIP TILLERS · PUSH TO DRIVE\nOR LEFT STICK + RIGHT TRIGGER"
 			if absf(_spd) > 2.0:
 				_hint_stage = 5
 		5:
 			_hint_t += get_physics_process_delta_time()
-			hint.text = "ROCKETS: OPEN RED COVER, FLIP ARM, PRESS THE BUTTON"
+			hint.text = "GRIP RED TURRET STICK TO AIM\nTRIGGER = FIRE · RED LEVER = RELOAD"
 			if _hint_t > 11.0 or rockets_left < 12:
 				_hint_stage = 6
 				_hint_t = 0.0

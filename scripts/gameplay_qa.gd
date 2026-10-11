@@ -35,7 +35,7 @@ func _ready() -> void:
 	await _test_solo_flow()
 	await _test_coop_vs_menu_wiring()
 	_print_summary()
-	get_tree().quit(0)
+	get_tree().quit(1 if _results.any(func(r): return not r["ok"]) else 0)
 
 
 func _find_enemy_manager() -> Node:
@@ -50,6 +50,7 @@ func _find_enemy_manager() -> Node:
 func _test_solo_flow() -> void:
 	print("\n===== SOLO: menu -> drive/fire/reload -> waves -> game over -> menu -> restart =====")
 	Game.mode = Game.Mode.SOLO
+	Game.vehicle = "tank"
 	_log("menu visible before start", Game.state == Game.GState.MENU)
 	main_inst.menu.start_requested.emit(Game.Mode.SOLO, "outdoor", 1, "")
 	await get_tree().create_timer(2.0).timeout
