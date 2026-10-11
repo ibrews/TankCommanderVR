@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "sources": [
+    {
+      "skill": "godot-code-gen",
+      "repository": "https://github.com/alexmeckes/godot-claude-skills",
+      "commit": "881ff9d285b8dfa5e343ce1b32bdcff367fe89f8",
+      "source_path": "skills/godot-code-gen/SKILL.md",
+      "reference": {
+        "path": ".agents/skills/godot-code-gen/references/upstream.md",
+        "sha256": "d9360e231a566e18b6992b1676a93ceeaca026867affa14c7f43adce604fa09e"
+      },
+      "license": {
+        "path": ".agents/skills/godot-code-gen/LICENSE",
+        "sha256": "06dcddbb6908a0c6dd4a9e8ec822eea41d5a460a53089fecccc8a68049e99241"
+      }
+    },
+    {
+      "skill": "godot-shader",
+      "repository": "https://github.com/alexmeckes/godot-claude-skills",
+      "commit": "881ff9d285b8dfa5e343ce1b32bdcff367fe89f8",
+      "source_path": "skills/godot-shader/SKILL.md",
+      "reference": {
+        "path": ".agents/skills/godot-shader/references/upstream.md",
+        "sha256": "47490a4a78c140516d308aa56d60610fecdb83bcbcd4ed0e656cbbdaff0d41d5"
+      },
+      "license": {
+        "path": ".agents/skills/godot-shader/LICENSE",
+        "sha256": "06dcddbb6908a0c6dd4a9e8ec822eea41d5a460a53089fecccc8a68049e99241"
+      }
+    }
+  ]
+}

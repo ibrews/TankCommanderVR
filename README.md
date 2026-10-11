@@ -164,6 +164,24 @@ built at runtime in pure GDScript — nothing is instantiated from a `.tscn`
 scene file — which is unusual but deliberate; see the wiki's Architecture
 page for why and what it costs.
 
+### Claude Code and Codex skills
+
+Five repository-local skills cover GDScript, shaders, Quest performance,
+multiplayer, and verification. Both agents use the same maintained instructions,
+with optional MIT-licensed community references. See
+[the skill guide](docs/agent-skills.md) for discovery, example prompts, and sources.
+
+Check the pack with `python tools/agent_skills.py --check`; after changing skill
+metadata, run `python tools/agent_skills.py --sync` to refresh the Claude entries.
+
+## Things to Try
+
+1. Install the game using the App Lab link above and start a solo beach session.
+2. Open this checkout in Godot 4.7 and run the main scene to explore the desktop fallback.
+3. Open the checkout in Claude Code or Codex and ask it to use `tcvr-testing`
+   to select a check for a cockpit-control change.
+4. Run `python tools/agent_skills.py --check` to verify the shared skill pack.
+
 ## Store assets
 
 `docs/store-art/` holds App Lab / marketing assets composed from the game's
