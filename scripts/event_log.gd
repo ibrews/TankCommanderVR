@@ -1,5 +1,5 @@
 # Autoload "EventLog": lightweight structured play-session log, written to
-# user://events.jsonl (on Quest: /sdcard/Android/data/com.agilelens.tankcommander/
+# user://events.jsonl (on Quest: /sdcard/Android/data/com.agilelens.tankcommandervr/
 # files/events.jsonl — same user:// convention as tune.gd's tuning.cfg). Exists
 # because Alex plays solo with nobody watching; this is what lets a future
 # session see "what actually happened" without live narration. Deliberately

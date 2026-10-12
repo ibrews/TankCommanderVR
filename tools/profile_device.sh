@@ -6,7 +6,7 @@ TIME=${2:-1}
 GLOW=${3:-1}
 FOV=${5:-3}
 TAG=${4:-run}
-PKG=com.agilelens.tankcommander
+PKG=com.agilelens.tankcommandervr
 FILES=/sdcard/Android/data/$PKG/files
 
 cd /d/Projects/TankCommanderVR

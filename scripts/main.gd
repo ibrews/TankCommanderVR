@@ -1344,7 +1344,7 @@ func _clear_world() -> void:
 # a self-playing scene — no one needs to wear the headset:
 #   [auto]
 #   level="beach"  vehicle="tank"  mutator=""  time=1  demo=true  delay=6.0
-const EXT_FILES := "/sdcard/Android/data/com.agilelens.tankcommander/files"
+const EXT_FILES := "/sdcard/Android/data/com.agilelens.tankcommandervr/files"
 
 func _check_autostart() -> void:
 	var cfg := ConfigFile.new()

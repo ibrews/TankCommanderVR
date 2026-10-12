@@ -122,7 +122,7 @@ in the menu — either way it works hands-free.)
 
 **Playtest tuning:** every gameplay number lives in `tuning.cfg`
 (auto-created in the app's files dir; on Quest:
-`/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg`).
+`/sdcard/Android/data/com.agilelens.tankcommandervr/files/tuning.cfg`).
 Edit, restart, report back.
 
 ## Performance (measured on Quest 3S)

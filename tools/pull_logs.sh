@@ -10,7 +10,7 @@
 set -uo pipefail
 
 ADB="${ADB_PATH:-C:/Users/Sam/AppData/Local/Android/Sdk/platform-tools/adb.exe}"
-PKG="com.agilelens.tankcommander"
+PKG="com.agilelens.tankcommandervr"
 PROJ="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 STAMP=$(date -u '+%Y%m%d-%H%M%S')
 OUT="$PROJ/docs/logs/$STAMP"

@@ -5,6 +5,7 @@ and an existing Godot editor settings file containing SDK/JDK paths.
 """
 import argparse
 import datetime
+import hashlib
 import json
 import os
 from pathlib import Path
@@ -89,22 +90,33 @@ def main():
         text += f"\n{key}={value}\n"
     properties.write_text(text, encoding="utf-8")
     preset = (project / "export_presets.cfg").read_text(encoding="utf-8")
-    if args.expected_signer_sha256:
-        def preset_string(key):
-            return json.loads(re.search(r"^" + re.escape(key) + r'=(".*")$', preset, re.M)[1])
-        certificate = subprocess.run(
-            [str(jdk / "bin/keytool.exe" if os.name == "nt" else jdk / "bin/keytool"),
-             "-exportcert", "-keystore", preset_string("keystore/release"),
-             "-alias", preset_string("keystore/release_user"),
-             "-storepass:env", "TCVR_SIGNING_PASSWORD"],
-            env={**env, "TCVR_SIGNING_PASSWORD": preset_string("keystore/release_password")},
-            capture_output=True, check=True).stdout
-        import hashlib
-        actual = hashlib.sha256(certificate).hexdigest()
-        expected = args.expected_signer_sha256.replace(":", "").lower()
-        if actual != expected:
-            raise ValueError(f"Signing certificate mismatch: {actual}; expected {expected}. "
-                             "Recover the original key before updating the existing Meta app.")
+
+    def preset_string(key):
+        found = re.search(r"^" + re.escape(key) + r'=(".*")$', preset, re.M)
+        return json.loads(found[1]) if found else ""
+
+    # Signing config comes from the ENVIRONMENT first (GODOT_ANDROID_KEYSTORE_RELEASE_*, which Godot itself
+    # also honours); the committed preset is only a fallback and is kept BLANK in git. This repo is public and
+    # the previous key's password sat in the preset from the first commit. Custody rules:
+    # knowledge-base intelligence/runbooks/store-signing-key-custody.md
+    keystore = os.environ.get("GODOT_ANDROID_KEYSTORE_RELEASE_PATH") or preset_string("keystore/release")
+    alias = os.environ.get("GODOT_ANDROID_KEYSTORE_RELEASE_USER") or preset_string("keystore/release_user")
+    password = os.environ.get("GODOT_ANDROID_KEYSTORE_RELEASE_PASSWORD") or preset_string("keystore/release_password")
+    if not (keystore and alias and password):
+        raise ValueError("No release signing key configured. Set GODOT_ANDROID_KEYSTORE_RELEASE_PATH / _USER / "
+                         "_PASSWORD (see tools/tcvr_signing_env.sh). Never fall back to a debug keystore.")
+    if not Path(keystore).is_file():
+        raise ValueError(f"Release keystore not found: {keystore}")
+    keytool = jdk / ("bin/keytool.exe" if os.name == "nt" else "bin/keytool")
+    certificate = subprocess.run(
+        [str(keytool), "-exportcert", "-keystore", keystore, "-alias", alias, "-storepass:env", "TCVR_SIGNING_PASSWORD"],
+        env={**env, "TCVR_SIGNING_PASSWORD": password}, capture_output=True, check=True).stdout
+    actual = hashlib.sha256(certificate).hexdigest()
+    expected = args.expected_signer_sha256.replace(":", "").lower() if args.expected_signer_sha256 else ""
+    print(f"Release key certificate SHA-256: {actual}", flush=True)
+    if expected and actual != expected:
+        raise ValueError(f"Signing certificate mismatch: {actual}; expected {expected}. A valid signature on the "
+                         "wrong identity is how a lost key hides -- recover the registered key, do not regenerate.")
     code = int(re.search(r"version/code=(\d+)", preset)[1])
     name = re.search(r'version/name="([^"]+)"', preset)[1]
     now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
@@ -136,7 +148,22 @@ def main():
             raise RuntimeError("APK is missing its Quest manifest/native engine")
         if not any(item.startswith("assets/") for item in archive.namelist()):
             raise RuntimeError("APK has no packaged project content")
-    print(f"Quest export complete: {apk} ({apk.stat().st_size} bytes). Verify manifest and signature before upload.")
+    if expected:
+        def _ver(path):
+            return tuple(int(part) for part in path.name.split(".") if part.isdigit())
+        tools = sorted((sdk / "build-tools").iterdir(), key=_ver)
+        if not tools:
+            raise RuntimeError(f"No Android build-tools under {sdk}; cannot verify the APK signer.")
+        signer = tools[-1] / ("apksigner.bat" if os.name == "nt" else "apksigner")
+        command = ["cmd", "/c", str(signer)] if os.name == "nt" else [str(signer)]
+        verdict = subprocess.run(command + ["verify", "--print-certs", str(apk)],
+                                 capture_output=True, text=True, env=env)
+        digest = re.search(r"certificate SHA-256 digest: ([0-9a-fA-F]+)", verdict.stdout)
+        if verdict.returncode or not digest or digest[1].lower() != expected:
+            raise RuntimeError(f"Exported APK signer {digest[1] if digest else 'UNREADABLE'} != expected {expected}; "
+                               f"do NOT upload. {verdict.stderr.strip()[:200]}")
+        print(f"APK signer verified against expected certificate: {expected}", flush=True)
+    print(f"Quest export complete: {apk} ({apk.stat().st_size} bytes). Signer verified only if --expected-signer-sha256 was given.")
 
 
 if __name__ == "__main__":

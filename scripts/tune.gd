@@ -1,7 +1,7 @@
 # Autoload "Tune": every gameplay dial in one place, overridable without a
 # rebuild for playtesting. Priority: user://tuning.cfg > defaults below.
 # On first run a commented template is written to user://tuning.cfg —
-# on Quest that's /sdcard/Android/data/com.agilelens.tankcommander/files/
+# on Quest that's /sdcard/Android/data/com.agilelens.tankcommandervr/files/
 # (adb pull it, edit numbers, adb push it back, restart the game).
 extends Node
 
@@ -81,7 +81,7 @@ func _ready() -> void:
 	var cfg := ConfigFile.new()
 	var path := "user://tuning.cfg"
 	# adb-pushable external override wins (Android playtesting)
-	var ext := "/sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg"
+	var ext := "/sdcard/Android/data/com.agilelens.tankcommandervr/files/tuning.cfg"
 	if FileAccess.file_exists(ext):
 		path = ext
 	if cfg.load(path) == OK:
@@ -109,7 +109,7 @@ func _write_template(path: String) -> void:
 	if f == null:
 		return
 	f.store_line("; Tank Commander VR — playtest tuning. Edit numbers, restart the game.")
-	f.store_line("; Quest path: /sdcard/Android/data/com.agilelens.tankcommander/files/tuning.cfg")
+	f.store_line("; Quest path: /sdcard/Android/data/com.agilelens.tankcommandervr/files/tuning.cfg")
 	f.store_line("[tuning]")
 	for key in DEFAULTS:
 		f.store_line("%s=%s" % [key, DEFAULTS[key]])
