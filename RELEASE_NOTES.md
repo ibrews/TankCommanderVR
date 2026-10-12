@@ -1,3 +1,24 @@
+# Tank Commander VR v0.7.0
+
+## A new app, a new key — and everything since v0.6.29
+- **This is a brand-new App Lab app** ("Tank Commander VR (Alpha)"). The signing key behind the original alpha was lost, and Meta
+  can never update an app signed by a different key, so the old alpha is frozen at v0.6.29. New invite link:
+  https://www.meta.com/s/53lmhEPTk. The package name changed to `com.agilelens.tankcommandervr`, so the new build installs alongside
+  the old one — uninstall the old one if you don't want both. The release key is now purpose-made, backed up in three places, and
+  every build is checked against its recorded fingerprint before upload.
+- **Cockpit controls you can actually reach and trust** (the v0.6.30 audit): switches fire once per touch instead of repeating,
+  buttons release when your hand leaves, grips have proper hold/release thresholds and one hand can't steal the other's control,
+  firing the turret stick no longer also applies throttle, and grabbing a control now beats the empty-hand fire fallback.
+- **Closer controls:** tillers moved from ~75cm to ~43cm from your shoulder, the rocket cover, IR switch and horn pulled in by
+  10-50cm, and the reload lever now stays in reach through a full turret traverse.
+- **Radio knobs turn with a wrist twist**, with arc-dragging kept as a fallback.
+- **Clearer guidance:** shorter two-line prompts, bigger outlined labels, blue coaching for the next control, amber proximity feedback.
+- **Quest Touch Plus controllers** now have an explicit input profile (previously the game's actions could sit inactive under
+  Meta XR Simulator), and hand tracking no longer overrides live controllers.
+- **Lighter rendering:** the thermal sight renders at 30Hz, and hidden debug text and an unsupported scaling option are gone.
+- Includes the **v0.6.29 visual identity pass**: per-level lighting, real shadows, atmospheric haze, procedural clouds, juicier
+  explosions, and the foveation fix.
+
 # Tank Commander VR v0.6.29
 
 ## The visual identity pass — real shadows, atmosphere, per-level lighting

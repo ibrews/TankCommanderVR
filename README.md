@@ -2,8 +2,9 @@
 
 ![Tank Commander VR](docs/store-art/banner_1280x400.png)
 
-**[🎮 Get it on Meta Horizon App Lab](https://www.meta.com/s/6mSdrdXX6)** — one-tap
+**[🎮 Get it on Meta Horizon App Lab](https://www.meta.com/s/53lmhEPTk)** — one-tap
 install on Quest 2/3/Pro, no adb required (alpha channel, auto-approve invite link).
+*New app as of v0.7.0 — the original alpha (v0.6.29) is frozen and can't be updated; the new build uses package `com.agilelens.tankcommandervr`, so uninstall the old one first. Details in [RELEASE_NOTES.md](RELEASE_NOTES.md).*
 
 The v0.6.30 source/APK changes below passed XRSim checks. Its alpha upload is
 pending recovery of the original signing key; see [the audit](docs/audit-2026-10-11.md).
@@ -69,7 +70,7 @@ itself.
 
 ## Play
 
-**[Get it on App Lab](https://www.meta.com/s/6mSdrdXX6)** (recommended) — open that
+**[Get it on App Lab](https://www.meta.com/s/53lmhEPTk)** (recommended) — open that
 link on your headset, accept the invite, and install like any other Quest app; you'll
 also get "Update" notifications for future builds through your normal App Lab library.
 
